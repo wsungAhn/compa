@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>COMPA — 方案反馈</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet" />
+  <style>
+    body { font-family: 'Noto Sans SC', 'Inter', sans-serif; }
+    .section-card { transition: box-shadow 0.2s, border-color 0.2s; }
+    .section-card.status-approved { border-left: 4px solid #22c55e; }
+    .section-card.status-change   { border-left: 4px solid #f97316; }
+    .section-card.status-question { border-left: 4px solid #3b82f6; }
+    .section-card.status-pending  { border-left: 4px solid #e5e7eb; }
+    .btn-status { transition: all 0.15s; }
+    .btn-status.active-approved { background: #22c55e; color: white; }
+    .btn-status.active-change   { background: #f97316; color: white; }
+    .btn-status.active-question { background: #3b82f6; color: white; }
+    .code-block { background: #1e1e2e; color: #cdd6f4; border-radius: 8px; padding: 12px 16px; font-family: 'Consolas', monospace; font-size: 12px; overflow-x: auto; line-height: 1.6; }
+    .tag-regular { background: #dbeafe; color: #1d4ed8; }
+    .tag-surprise { background: #ffedd5; color: #c2410c; }
+    details > summary { cursor: pointer; user-select: none; }
+    details > summary::-webkit-details-marker { display: none; }
+    .chevron { transition: transform 0.2s; }
+    details[open] .chevron { transform: rotate(180deg); }
+    #progress-bar { transition: width 0.4s ease; }
+    .toast { position: fixed; bottom: 24px; right: 24px; z-index: 9999; animation: slideIn 0.3s ease; }
+    @keyframes slideIn { from{transform:translateY(20px);opacity:0} to{transform:translateY(0);opacity:1} }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { background: #f8fafc; padding: 8px 12px; text-align: left; color: #64748b; font-weight: 600; border-bottom: 1px solid #e2e8f0; }
+    td { padding: 8px 12px; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+    .feedback-badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 99px; font-weight: 600; }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+
+<!-- Language Nav -->
+<div class="bg-gray-900 text-xs text-gray-300 flex justify-center gap-1 py-2">
+  <a href="../" class="px-3 py-1 rounded hover:bg-gray-700 transition">🇰🇷 한국어</a>
+  <a href="../en/" class="px-3 py-1 rounded hover:bg-gray-700 transition">🇺🇸 English</a>
+  <span class="px-3 py-1 rounded bg-rose-600 text-white font-semibold">🇨🇳 中文</span>
+</div>
+
+<!-- Header -->
+<header class="bg-white border-b border-gray-200 sticky top-0 z-40 shadow-sm">
+  <div class="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 bg-rose-500 rounded-lg flex items-center justify-center text-white font-bold text-sm">C</div>
+      <div>
+        <h1 class="text-gray-900 font-bold text-lg leading-tight">COMPA 主计划 v2</h1>
+        <p class="text-gray-400 text-xs">化妆品折扣活动追踪应用 · 已更新反馈</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      <button onclick="resetAll()" class="text-xs text-gray-400 hover:text-gray-600 px-3 py-1.5 rounded border border-gray-200 hover:border-gray-300 transition">重置</button>
+      <button onclick="copyFeedback()" class="text-xs border border-gray-300 text-gray-600 px-3 py-1.5 rounded-lg hover:bg-gray-50 transition">复制 📋</button>
+      <button onclick="submitToGitHub()" class="text-xs bg-gray-900 text-white px-4 py-1.5 rounded-lg hover:bg-gray-700 transition font-medium">发送到GitHub 🐙</button>
+    </div>
+  </div>
+  <!-- Progress bar -->
+  <div class="max-w-5xl mx-auto px-6 pb-4">
+    <div class="flex items-center justify-between mb-1.5">
+      <span class="text-xs text-gray-500 font-medium">审核进度</span>
+      <span class="text-xs text-gray-500">已审核 <span id="approved-count">0</span> / <span id="total-count">0</span> 个章节</span>
+    </div>
+    <div class="h-2 bg-gray-100 rounded-full overflow-hidden">
+      <div id="progress-bar" class="h-full bg-gradient-to-r from-rose-400 to-rose-500 rounded-full" style="width:0%"></div>
+    </div>
+    <div class="flex gap-4 mt-2 text-xs text-gray-400">
+      <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-green-400 inline-block"></span>已批准 <span id="cnt-approved" class="font-medium text-gray-600">0</span></span>
+      <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-orange-400 inline-block"></span>需修改 <span id="cnt-change" class="font-medium text-gray-600">0</span></span>
+      <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-blue-400 inline-block"></span>有问题 <span id="cnt-question" class="font-medium text-gray-600">0</span></span>
+      <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-gray-300 inline-block"></span>未审核 <span id="cnt-pending" class="font-medium text-gray-600">0</span></span>
+    </div>
+  </div>
+</header>
+
+<main class="max-w-5xl mx-auto px-6 py-8 space-y-6">
+
+  <!-- Context banner -->
+  <div class="bg-rose-50 border border-rose-100 rounded-xl p-5">
+    <div class="flex items-start gap-3">
+      <span class="text-2xl">🛍️</span>
+      <div>
+        <p class="text-sm text-rose-800 font-semibold mb-1">COMPA — 化妆品折扣活动追踪器</p>
+        <p class="text-sm text-rose-700 leading-relaxed">
+          只需输入一个产品名称，即可查看<strong>韩国、美国、日本、中国</strong>近3年所有折扣活动，
+          并获得<strong>"现在买 / 等等再买"</strong>的建议。<br/>
+          请阅读每个章节，并留下反馈：✅ 批准 / ✏️ 需修改 / ❓ 有问题
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div id="sections-container" class="space-y-5"></div>
+
+  <!-- Feedback Summary -->
+  <div id="summary-panel" class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden hidden">
+    <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+      <h2 class="font-bold text-gray-800 text-base">反馈摘要</h2>
+      <span class="text-xs text-gray-400">仅显示需修改和有问题的条目</span>
+    </div>
+    <div id="summary-content" class="divide-y divide-gray-50"></div>
+  </div>
+
+</main>
+
+<div id="toast-container"></div>
+
+<script>
+const PLAN_SECTIONS = [
+  {
+    id: 1,
+    title: "项目结构",
+    icon: "🗂️",
+    summary: "系统各组件及其功能说明",
+    prevFeedback: "请解释每个部分的具体作用",
+    content: `<div class="space-y-4 text-sm text-gray-600">
+      <div class="bg-amber-50 border border-amber-200 rounded-xl p-4">
+        <p class="text-amber-800 font-semibold text-xs mb-1">📌 已根据反馈更新 — 新增各部件说明</p>
+        <p class="text-amber-700 text-xs">用通俗语言解释，无需编程知识即可理解。</p>
+      </div>
+      <div class="grid grid-cols-1 gap-3">
+        <div class="border border-blue-200 rounded-xl overflow-hidden">
+          <div class="bg-blue-50 px-4 py-2.5 font-bold text-blue-800 text-sm">🖥️ 后端（服务器）— 应用的大脑</div>
+          <div class="divide-y divide-blue-50">
+            <div class="px-4 py-3 flex gap-3">
+              <span class="font-mono text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded h-fit whitespace-nowrap mt-0.5">FastAPI</span>
+              <div><p class="text-sm text-gray-700 font-medium">请求处理服务器</p><p class="text-xs text-gray-500 mt-0.5">当你搜索"雪花秀精华打折信息"时，这个服务器接收请求，在数据库里查找，然后把结果返回给页面。相当于餐厅的<strong>前台服务员</strong>。</p></div>
+            </div>
+            <div class="px-4 py-3 flex gap-3">
+              <span class="font-mono text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded h-fit whitespace-nowrap mt-0.5">Celery</span>
+              <div><p class="text-sm text-gray-700 font-medium">自动采集工作者</p><p class="text-xs text-gray-500 mt-0.5">凌晨3点自动爬取Olive Young、Sephora等网站，收集新的折扣信息。相当于餐厅的<strong>食材采购员</strong>。</p></div>
+            </div>
+            <div class="px-4 py-3 flex gap-3">
+              <span class="font-mono text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded h-fit whitespace-nowrap mt-0.5">Redis</span>
+              <div><p class="text-sm text-gray-700 font-medium">快速便签板</p><p class="text-xs text-gray-500 mt-0.5">将频繁搜索的产品结果暂存在内存中，加快响应速度。也管理Celery的任务队列。相当于<strong>便签板</strong>。</p></div>
+            </div>
+          </div>
+        </div>
+        <div class="border border-green-200 rounded-xl overflow-hidden">
+          <div class="bg-green-50 px-4 py-2.5 font-bold text-green-800 text-sm">🗄️ 数据库 — 3年数据仓库</div>
+          <div class="px-4 py-3 flex gap-3">
+            <span class="font-mono text-xs bg-green-100 text-green-700 px-2 py-1 rounded h-fit whitespace-nowrap mt-0.5">PostgreSQL</span>
+            <div><p class="text-sm text-gray-700 font-medium">主数据存储</p><p class="text-xs text-gray-500 mt-0.5">安全保存3年所有折扣活动数据的<strong>仓库</strong>。数百万条记录：产品名称、价格、日期、平台、活动类型等。</p></div>
+          </div>
+        </div>
+        <div class="border border-violet-200 rounded-xl overflow-hidden">
+          <div class="bg-violet-50 px-4 py-2.5 font-bold text-violet-800 text-sm">🖼️ 前端（界面）— 用户看到的部分</div>
+          <div class="divide-y divide-violet-50">
+            <div class="px-4 py-3 flex gap-3">
+              <span class="font-mono text-xs bg-violet-100 text-violet-700 px-2 py-1 rounded h-fit whitespace-nowrap mt-0.5">React</span>
+              <div><p class="text-sm text-gray-700 font-medium">界面构建工具</p><p class="text-xs text-gray-500 mt-0.5">创建用户看到的所有界面：搜索栏、图表、卡片。Instagram和Coupang等应用使用类似技术。</p></div>
+            </div>
+            <div class="px-4 py-3 flex gap-3">
+              <span class="font-mono text-xs bg-violet-100 text-violet-700 px-2 py-1 rounded h-fit whitespace-nowrap mt-0.5">Recharts</span>
+              <div><p class="text-sm text-gray-700 font-medium">图表库</p><p class="text-xs text-gray-500 mt-0.5">绘制显示3年价格变化的精美折线图，让你一眼看出什么时候价格最低。</p></div>
+            </div>
+          </div>
+        </div>
+        <div class="border border-amber-200 rounded-xl overflow-hidden">
+          <div class="bg-amber-50 px-4 py-2.5 font-bold text-amber-800 text-sm">🤖 AI层 — 文字理解大脑</div>
+          <div class="divide-y divide-amber-50">
+            <div class="px-4 py-3 flex gap-3">
+              <span class="font-mono text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded h-fit whitespace-nowrap mt-0.5">Claude API</span>
+              <div><p class="text-sm text-gray-700 font-medium">社交文本分析</p><p class="text-xs text-gray-500 mt-0.5">读取"昨天Olive Young雪花秀精华47折😭"这样的Instagram文字，自动提取产品名称、折扣率、日期。同时处理4种语言（韩/英/日/中）。</p></div>
+            </div>
+            <div class="px-4 py-3 flex gap-3">
+              <span class="font-mono text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded h-fit whitespace-nowrap mt-0.5">Gemma 4</span>
+              <div><p class="text-sm text-gray-700 font-medium">轻量级辅助AI（本地运行）</p><p class="text-xs text-gray-500 mt-0.5">购物网站价格表等格式规律的数据使用这个小型AI处理，节省成本。Claude只用于复杂的社交文本。<strong>→ 混合策略</strong></p></div>
+            </div>
+          </div>
+        </div>
+        <div class="border border-gray-200 rounded-xl overflow-hidden">
+          <div class="bg-gray-50 px-4 py-2.5 font-bold text-gray-700 text-sm">🐳 基础设施 — 将一切打包的容器</div>
+          <div class="px-4 py-3 flex gap-3">
+            <span class="font-mono text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded h-fit whitespace-nowrap mt-0.5">Docker</span>
+            <div><p class="text-sm text-gray-700 font-medium">环境容器化工具</p><p class="text-xs text-gray-500 mt-0.5">将所有组件（服务器、数据库、工作者、缓存）打包成一个在任何地方都能以相同方式运行的包。解决"只在我电脑上能运行"的问题。</p></div>
+          </div>
+        </div>
+      </div>
+    </div>`
+  },
+  {
+    id: 2,
+    title: "数据库结构",
+    icon: "🗄️",
+    summary: "4个数据表：products · platforms · sale_events · social_posts",
+    content: `<div class="space-y-4 text-sm text-gray-600">
+      <div class="space-y-3">
+        <div class="border border-gray-200 rounded-lg overflow-hidden">
+          <div class="bg-gray-50 px-4 py-2 font-semibold text-gray-700 text-xs uppercase tracking-wide">products — 产品列表</div>
+          <table><thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead>
+          <tbody>
+            <tr><td class="font-mono text-purple-700">id</td><td class="text-gray-400">UUID PK</td><td></td></tr>
+            <tr><td class="font-mono text-purple-700">name_kr / name_en / name_jp / name_cn</td><td class="text-gray-400">VARCHAR</td><td>4个国家语言的产品名称</td></tr>
+            <tr><td class="font-mono text-purple-700">brand</td><td class="text-gray-400">VARCHAR</td><td>品牌名称</td></tr>
+            <tr><td class="font-mono text-purple-700">category</td><td class="text-gray-400">ENUM</td><td>base / color / functional</td></tr>
+          </tbody></table>
+        </div>
+        <div class="border border-rose-200 rounded-lg overflow-hidden">
+          <div class="bg-rose-50 px-4 py-2 font-semibold text-rose-700 text-xs uppercase tracking-wide">sale_events — 核心数据表</div>
+          <table><thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead>
+          <tbody>
+            <tr><td class="font-mono text-purple-700">event_name</td><td class="text-gray-400">VARCHAR</td><td>黑色星期五、618、双11、Olive Young大促等</td></tr>
+            <tr><td class="font-mono text-purple-700">event_type</td><td class="text-gray-400">ENUM</td><td><span class="feedback-badge tag-regular">定期活动</span> / <span class="feedback-badge tag-surprise">突发活动</span></td></tr>
+            <tr><td class="font-mono text-purple-700">original_price / sale_price / discount_rate</td><td class="text-gray-400">NUMERIC</td><td>价格信息</td></tr>
+            <tr><td class="font-mono text-purple-700">currency</td><td class="text-gray-400">CHAR(3)</td><td>KRW / USD / JPY / CNY</td></tr>
+            <tr><td class="font-mono text-purple-700">reason</td><td class="text-gray-400">TEXT</td><td>折扣原因 — 判断"值不值得等"的核心依据</td></tr>
+            <tr><td class="font-mono text-purple-700">confidence</td><td class="text-gray-400">FLOAT</td><td>AI提取置信度 0~1（低于0.7 → 人工审核）</td></tr>
+          </tbody></table>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div class="border border-gray-200 rounded-lg overflow-hidden">
+            <div class="bg-gray-50 px-4 py-2 font-semibold text-gray-700 text-xs">platforms（平台）</div>
+            <div class="px-4 py-3 text-xs text-gray-500 space-y-1">
+              <div>name · country（KR/US/JP/CN）</div>
+              <div>scrape_method: scraping / official_api / unofficial_api</div>
+            </div>
+          </div>
+          <div class="border border-gray-200 rounded-lg overflow-hidden">
+            <div class="bg-gray-50 px-4 py-2 font-semibold text-gray-700 text-xs">social_posts（社交帖子）</div>
+            <div class="px-4 py-3 text-xs text-gray-500 space-y-1">
+              <div>platform: instagram / tiktok / facebook / naver_blog</div>
+              <div>processed（已处理）· sale_event_id（外键）</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>`
+  },
+  {
+    id: 3,
+    title: "数据收集策略",
+    icon: "🕸️",
+    summary: "三阶段方案 + 新增Google Trends。韩国MVP → 美日 → 中国·社交媒体",
+    prevFeedback: "用谷歌搜索趋势的数据不也挺好的吗？",
+    content: `<div class="space-y-4 text-sm text-gray-600">
+      <div class="bg-green-50 border border-green-200 rounded-xl p-4">
+        <p class="text-green-800 font-semibold text-xs mb-1">✅ 已根据反馈更新 — 新增Google Trends</p>
+        <p class="text-green-700 text-xs">某产品搜索量突然上升 = 即将有折扣活动的信号。使用<code class="bg-green-100 px-1 rounded">pytrends</code>库免费采集。</p>
+      </div>
+      <div class="border border-blue-100 bg-blue-50 rounded-xl p-4">
+        <div class="flex items-center gap-2 mb-2"><span class="text-base">📈</span><span class="font-semibold text-blue-800 text-sm">Google Trends — 活动预测辅助信号</span><span class="feedback-badge bg-blue-200 text-blue-800 text-xs">新增</span></div>
+        <ul class="text-xs text-blue-700 space-y-1.5">
+          <li>• 通过<code class="bg-blue-100 px-1 rounded">pytrends</code>库采集3年搜索量数据（免费）</li>
+          <li>• 比较搜索量激增时间点与实际折扣活动时间点 → 学习规律</li>
+          <li>• "这个产品去年同期搜索量翻倍，随后Olive Young大促开始" → <strong>增强预测功能</strong></li>
+          <li>• 采集频率：每周一次</li>
+        </ul>
+      </div>
+      <div class="space-y-3">
+        <div class="border border-green-200 bg-green-50 rounded-xl p-4">
+          <div class="flex items-center gap-2 mb-3"><span class="bg-green-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">第一阶段</span><span class="font-semibold text-green-800">韩国（MVP · 4周）</span></div>
+          <table><thead><tr><th class="bg-transparent text-green-700">数据源</th><th class="bg-transparent text-green-700">方式</th><th class="bg-transparent text-green-700">备注</th></tr></thead>
+          <tbody>
+            <tr><td class="font-medium">Olive Young</td><td>Playwright爬取</td><td class="text-gray-500">商品页面 + 优惠券/活动标签</td></tr>
+            <tr><td class="font-medium">Naver购物</td><td>官方Search API</td><td class="text-gray-500">价格历史 + 促销活动</td></tr>
+            <tr><td class="font-medium">Naver博客</td><td>官方Search API</td><td class="text-gray-500">采集提及折扣的帖子</td></tr>
+            <tr><td class="font-medium">Coupang</td><td>httpx + BeautifulSoup</td><td class="text-gray-500">价格变动检测</td></tr>
+            <tr><td class="font-medium text-blue-700">Google Trends 🆕</td><td>pytrends（免费）</td><td class="text-blue-600">搜索量激增 = 活动预测</td></tr>
+          </tbody></table>
+        </div>
+        <div class="border border-blue-200 bg-blue-50 rounded-xl p-4">
+          <div class="flex items-center gap-2 mb-3"><span class="bg-blue-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">第二阶段</span><span class="font-semibold text-blue-800">美国·日本（2周）</span></div>
+          <table><thead><tr><th class="bg-transparent text-blue-700">数据源</th><th class="bg-transparent text-blue-700">方式</th><th class="bg-transparent text-blue-700">备注</th></tr></thead>
+          <tbody>
+            <tr><td class="font-medium">Sephora / Ulta</td><td>Playwright</td><td class="text-gray-500">促销活动页面</td></tr>
+            <tr><td class="font-medium">Amazon US</td><td>PA API</td><td class="text-gray-500">需要联盟账号</td></tr>
+            <tr><td class="font-medium">@cosme</td><td>httpx</td><td class="text-gray-500">特卖信息</td></tr>
+            <tr><td class="font-medium">乐天（Rakuten）</td><td>官方Ichiba API</td><td class="text-gray-500"></td></tr>
+          </tbody></table>
+        </div>
+        <div class="border border-orange-200 bg-orange-50 rounded-xl p-4">
+          <div class="flex items-center gap-2 mb-3"><span class="bg-orange-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">第三阶段</span><span class="font-semibold text-orange-800">中国·社交媒体（3周）</span></div>
+          <table><thead><tr><th class="bg-transparent text-orange-700">数据源</th><th class="bg-transparent text-orange-700">方式</th><th class="bg-transparent text-orange-700">备注</th></tr></thead>
+          <tbody>
+            <tr><td class="font-medium">天猫（Tmall）</td><td>非官方API + Playwright</td><td class="text-gray-500">618·双11活动</td></tr>
+            <tr><td class="font-medium">小红书</td><td>Playwright（需登录）</td><td class="text-red-500">⚠ 难度较高</td></tr>
+            <tr><td class="font-medium">Instagram</td><td>Graph API</td><td class="text-gray-500">#skincaresale 话题标签</td></tr>
+            <tr><td class="font-medium">TikTok</td><td>Research API</td><td class="text-gray-500">需申请</td></tr>
+            <tr><td class="font-medium">Facebook</td><td>Graph API</td><td class="text-gray-500">品牌官方主页</td></tr>
+          </tbody></table>
+        </div>
+      </div>
+    </div>`
+  },
+  {
+    id: 4,
+    title: "AI流水线 — 模型策略",
+    icon: "🤖",
+    summary: "Gemma 4（结构化数据）+ Claude（社交非结构化）混合方案，成本优化",
+    prevFeedback: "用最小版本的Gemma 4不就够了吗？真的需要Claude吗？",
+    content: `<div class="space-y-4 text-sm text-gray-600">
+      <div class="bg-amber-50 border border-amber-200 rounded-xl p-4">
+        <p class="text-amber-800 font-semibold text-xs mb-2">💡 已根据反馈更新 — AI模型策略调整</p>
+        <p class="text-amber-700 text-xs">说得很对，不是所有任务都需要Claude。采用<strong>混合策略</strong>可以大幅降低成本。</p>
+      </div>
+      <div class="border border-gray-200 rounded-xl overflow-hidden">
+        <div class="bg-gray-50 px-4 py-2 font-semibold text-gray-700 text-xs">模型对比</div>
+        <table>
+          <thead><tr><th>对比项</th><th>Gemma 4 2B（本地）</th><th>Claude sonnet-4-6（API）</th></tr></thead>
+          <tbody>
+            <tr><td class="font-medium">费用</td><td class="text-green-600 font-semibold">免费（本地运行）</td><td class="text-orange-600">付费（可通过缓存节省）</td></tr>
+            <tr><td class="font-medium">韩语处理</td><td class="text-green-600">✅ 良好</td><td class="text-green-600">✅ 完美</td></tr>
+            <tr><td class="font-medium">4语言同时处理</td><td class="text-red-500">⚠ 不稳定</td><td class="text-green-600">✅ 完美</td></tr>
+            <tr><td class="font-medium">社交非结构化文本</td><td class="text-red-500">⚠ 较困难</td><td class="text-green-600">✅ 擅长</td></tr>
+            <tr><td class="font-medium">速度</td><td class="text-orange-500">中等（需GPU）</td><td class="text-green-600">快（API调用）</td></tr>
+            <tr><td class="font-medium text-rose-600">负责任务</td><td class="font-semibold text-blue-700">购物网站结构化数据</td><td class="font-semibold text-violet-700">社交媒体非结构化数据</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div class="border border-blue-200 bg-blue-50 rounded-xl p-4">
+          <div class="font-semibold text-blue-800 text-sm mb-2">Gemma 4 2B 负责</div>
+          <ul class="text-xs text-blue-700 space-y-1.5">
+            <li>• Olive Young / Sephora价格提取<br/><span class="text-gray-500">（格式规律 → 小型模型即可）</span></li>
+            <li>• 购物网站活动名称分类</li>
+            <li>• 初步筛选（去除无关帖子）</li>
+          </ul>
+        </div>
+        <div class="border border-violet-200 bg-violet-50 rounded-xl p-4">
+          <div class="font-semibold text-violet-800 text-sm mb-2">Claude sonnet-4-6 负责</div>
+          <ul class="text-xs text-violet-700 space-y-1.5">
+            <li>• Instagram/博客自由文本分析<br/><span class="text-gray-500">（"昨天Olive Young打了47折😭"这类句子）</span></li>
+            <li>• 多语言混合文本</li>
+            <li>• 最终定期/突发分类</li>
+            <li>• 提示词缓存降低成本约60%</li>
+          </ul>
+        </div>
+      </div>
+      <div class="bg-gray-50 rounded-xl p-4">
+        <div class="font-semibold text-gray-700 text-sm mb-2">处理流程</div>
+        <div class="text-xs text-gray-600 space-y-1">
+          <div class="flex items-center gap-2"><span class="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center flex-shrink-0 font-bold">1</span><span>采集到的文本 → <strong>Gemma</strong> 初步分类（相关/无关）</span></div>
+          <div class="flex items-center gap-2"><span class="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center flex-shrink-0 font-bold">2</span><span>结构化数据（购物网站）→ <strong>Gemma</strong> 提取价格/日期</span></div>
+          <div class="flex items-center gap-2"><span class="w-6 h-6 bg-violet-500 text-white rounded-full flex items-center justify-center flex-shrink-0 font-bold">3</span><span>非结构化数据（社交）→ <strong>Claude</strong> 精准提取</span></div>
+          <div class="flex items-center gap-2"><span class="w-6 h-6 bg-rose-500 text-white rounded-full flex items-center justify-center flex-shrink-0 font-bold">4</span><span>最终定期/突发分类 → <strong>Claude</strong>（规律分析）</span></div>
+        </div>
+      </div>
+    </div>`
+  },
+  {
+    id: 5,
+    title: "API接口",
+    icon: "🔌",
+    summary: "GET /products/search · GET /products/{id}/events · POST /admin/collect",
+    content: `<div class="space-y-3 text-sm text-gray-600">
+      <div class="border border-gray-200 rounded-xl overflow-hidden">
+        <div class="bg-gray-50 px-4 py-2 flex items-center gap-2"><span class="text-xs font-bold bg-green-500 text-white px-2 py-0.5 rounded">GET</span><span class="font-mono text-sm text-gray-700">/api/products/search?q={query}&lang={ko|en|ja|zh}</span></div>
+        <div class="px-4 py-3 text-xs text-gray-500">按产品名称搜索候选列表。支持多语言，模糊匹配。</div>
+      </div>
+      <div class="border border-gray-200 rounded-xl overflow-hidden">
+        <div class="bg-gray-50 px-4 py-2 flex items-center gap-2"><span class="text-xs font-bold bg-green-500 text-white px-2 py-0.5 rounded">GET</span><span class="font-mono text-sm text-gray-700">/api/products/{id}/events?years=3&country=all</span></div>
+        <div class="px-4 py-3">
+          <p class="text-xs text-gray-500 mb-2">返回3年折扣活动列表 + "现在买/等等再买"建议</p>
+          <div class="code-block">{
+  "product": { "name_cn": "雪花秀滋盈肌本精华 75ml", ... },
+  "events": [
+    {
+      "event_name": "黑色星期五",
+      "event_type": "regular",
+      "year": 2024,
+      "period": "2024-11-22 ~ 2024-11-29",
+      "platform": "Sephora (US)",
+      "original_price": 85.00,
+      "sale_price": 59.50,
+      "discount_rate": 30,
+      "recurring_pattern": "每年11月第四周"
+    },
+    {
+      "event_name": "库存清仓特价",
+      "event_type": "surprise",
+      "year": 2023,
+      "platform": "Olive Young (KR)",
+      "discount_rate": 40,
+      "reason": "新品上市，清理旧款库存"
+    }
+  ],
+  "recommendation": {
+    "verdict": "wait",
+    "reason": "距黑色星期五（11月）约6个月，预计折扣约30%"
+  }
+}</div>
+        </div>
+      </div>
+    </div>`
+  },
+  {
+    id: 6,
+    title: "前端用户体验与可视化",
+    icon: "🖥️",
+    summary: "热力图日历 · 最低价标注 · 倒计时组件 · 用户操作流程设计",
+    prevFeedback: "如何做出出色的可视化效果将是关键。如何引导用户体验也很重要。",
+    content: `<div class="space-y-4 text-sm text-gray-600">
+      <div class="bg-violet-50 border border-violet-200 rounded-xl p-4">
+        <p class="text-violet-800 font-semibold text-xs mb-1">🎨 已根据反馈更新 — 用户体验流程和可视化具体化</p>
+      </div>
+      <div class="border border-gray-200 rounded-xl p-4">
+        <div class="font-semibold text-gray-800 mb-3 text-sm">📱 用户操作流程</div>
+        <div class="flex flex-col gap-2 text-xs">
+          <div class="flex items-start gap-3 p-2.5 bg-gray-50 rounded-lg"><span class="w-6 h-6 bg-rose-500 text-white rounded-full flex items-center justify-center flex-shrink-0 font-bold text-xs">1</span><div>搜索<strong>"雪花秀精华"</strong> → 通过自动补全选择准确产品</div></div>
+          <div class="flex items-start gap-3 p-2.5 bg-gray-50 rounded-lg"><span class="w-6 h-6 bg-rose-500 text-white rounded-full flex items-center justify-center flex-shrink-0 font-bold text-xs">2</span><div>页面顶部大字显示<strong>"现在买 / 等等再买"</strong>结论 — 无需滚动即可获取核心信息</div></div>
+          <div class="flex items-start gap-3 p-2.5 bg-gray-50 rounded-lg"><span class="w-6 h-6 bg-rose-500 text-white rounded-full flex items-center justify-center flex-shrink-0 font-bold text-xs">3</span><div>向下滚动，通过图表和时间线查看详细依据</div></div>
+          <div class="flex items-start gap-3 p-2.5 bg-gray-50 rounded-lg"><span class="w-6 h-6 bg-rose-500 text-white rounded-full flex items-center justify-center flex-shrink-0 font-bold text-xs">4</span><div>满意后设置<strong>"提醒"</strong> → 下次活动开始时收到推送通知</div></div>
+        </div>
+      </div>
+      <div class="grid grid-cols-1 gap-3">
+        <div class="border border-rose-200 bg-rose-50 rounded-xl p-4">
+          <div class="font-semibold text-rose-800 mb-2 text-sm">🎯 核心组件 — "现在买 / 等等再买"</div>
+          <div class="grid grid-cols-3 gap-2 text-xs">
+            <div class="bg-white rounded-lg p-3 text-center"><div class="text-2xl font-bold text-rose-500">D-47</div><div class="text-gray-500 mt-1">距下次黑五</div></div>
+            <div class="bg-white rounded-lg p-3 text-center"><div class="text-2xl font-bold text-green-500">-30%</div><div class="text-gray-500 mt-1">预计折扣率</div></div>
+            <div class="bg-white rounded-lg p-3 text-center"><div class="text-2xl font-bold text-blue-500">非最低</div><div class="text-gray-500 mt-1">当前价格非历史最低</div></div>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div class="border border-gray-200 rounded-xl p-4">
+            <div class="font-semibold text-gray-800 mb-2 text-sm">📊 价格历史图表</div>
+            <ul class="text-xs text-gray-500 space-y-1">
+              <li>• 3年正价 vs 最低价折线图</li>
+              <li>• 折扣活动时间点标注+折扣率</li>
+              <li>• 历史最低价区间高亮显示</li>
+              <li>• 悬停显示活动名称/原因提示</li>
+            </ul>
+          </div>
+          <div class="border border-gray-200 rounded-xl p-4">
+            <div class="font-semibold text-gray-800 mb-2 text-sm">📅 年度热力图日历</div>
+            <ul class="text-xs text-gray-500 space-y-1">
+              <li>• GitHub贡献图样式日历</li>
+              <li>• 折扣力度越大颜色越深</li>
+              <li>• 直观展示"这个月常有折扣"规律</li>
+              <li>• 点击查看当月活动列表</li>
+            </ul>
+          </div>
+        </div>
+        <div class="border border-gray-200 rounded-xl p-4">
+          <div class="font-semibold text-gray-800 mb-2 text-sm">🏷️ 活动时间线卡片</div>
+          <div class="flex gap-2 text-xs">
+            <div class="flex-1 bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <div class="flex items-center gap-1 mb-1"><span class="feedback-badge tag-regular">定期活动</span><span class="font-semibold text-gray-700">黑色星期五 2024</span></div>
+              <div class="text-gray-500">Sephora（美国）· -30%</div>
+              <div class="text-blue-600 mt-1">🔁 每年11月第四周重复</div>
+            </div>
+            <div class="flex-1 bg-orange-50 border border-orange-200 rounded-lg p-3">
+              <div class="flex items-center gap-1 mb-1"><span class="feedback-badge tag-surprise">突发活动</span><span class="font-semibold text-gray-700">库存清仓特价 2023</span></div>
+              <div class="text-gray-500">Olive Young（韩国）· -40%</div>
+              <div class="text-orange-600 mt-1">💡 新品上市清理旧款库存</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>`
+  },
+  {
+    id: 7,
+    title: "基础设施、部署与收益模型",
+    icon: "💰",
+    summary: "6个Docker Compose服务 + 广告与高级会员收益结构",
+    prevFeedback: "应该留出广告位。通过广告赚钱，也可以通过去掉广告（高级会员）赚钱。",
+    content: `<div class="space-y-4 text-sm text-gray-600">
+      <div class="bg-green-50 border border-green-200 rounded-xl p-4">
+        <p class="text-green-800 font-semibold text-xs mb-1">💡 已根据反馈更新 — 新增收益模型</p>
+      </div>
+      <div class="border border-amber-200 bg-amber-50 rounded-xl p-4">
+        <div class="font-semibold text-amber-800 mb-3 text-sm">💰 收益结构</div>
+        <div class="space-y-3">
+          <div class="bg-white rounded-lg p-3">
+            <div class="flex items-center gap-2 mb-1"><span class="text-base">📣</span><div class="font-semibold text-gray-800 text-sm">第一层 — 广告（免费用户）</div></div>
+            <ul class="text-xs text-gray-600 space-y-1">
+              <li>• 在搜索结果<strong>底部</strong>显示广告横幅（与内容明确区分）</li>
+              <li>• 相关化妆品品牌定向广告（Google AdSense）</li>
+              <li>• 病毒式传播增加流量 → 广告收入随之增长</li>
+            </ul>
+          </div>
+          <div class="bg-white rounded-lg p-3">
+            <div class="flex items-center gap-2 mb-1"><span class="text-base">⭐</span><div class="font-semibold text-gray-800 text-sm">第二层 — 高级会员（月度订阅）</div></div>
+            <ul class="text-xs text-gray-600 space-y-1">
+              <li>• 完全去除广告</li>
+              <li>• 活动开始时即时通知（推送通知 / 微信）</li>
+              <li>• 价格提醒设置（"低于X元时通知我"）</li>
+              <li>• 全国家同时搜索（免费版仅限韩国）</li>
+            </ul>
+          </div>
+          <div class="bg-white rounded-lg p-3">
+            <div class="flex items-center gap-2 mb-1"><span class="text-base">🚀</span><div class="font-semibold text-gray-800 text-sm">第三层 — 病毒式变现</div></div>
+            <ul class="text-xs text-gray-600 space-y-1">
+              <li>• 应用本身作为病毒内容 → 鼓励Instagram/博客评测</li>
+              <li>• 联盟链接（Olive Young、Coupang联盟计划）→ 点击收入</li>
+              <li>• 品牌官方合作（品牌直接提供活动信息以换取曝光）</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <div class="border border-gray-200 rounded-xl overflow-hidden">
+        <div class="bg-gray-50 px-4 py-2 font-semibold text-gray-700 text-xs">docker-compose 服务列表</div>
+        <table><thead><tr><th>服务</th><th>镜像</th><th>职责</th></tr></thead>
+        <tbody>
+          <tr><td class="font-mono text-blue-700">api</td><td class="text-gray-400">python:3.12</td><td>FastAPI应用</td></tr>
+          <tr><td class="font-mono text-blue-700">worker</td><td class="text-gray-400">python:3.12</td><td>Celery采集工作者</td></tr>
+          <tr><td class="font-mono text-blue-700">beat</td><td class="text-gray-400">python:3.12</td><td>Celery Beat调度器</td></tr>
+          <tr><td class="font-mono text-green-700">db</td><td class="text-gray-400">postgres:16</td><td>PostgreSQL数据库</td></tr>
+          <tr><td class="font-mono text-red-700">redis</td><td class="text-gray-400">redis:7</td><td>任务队列 + 缓存</td></tr>
+          <tr><td class="font-mono text-violet-700">frontend</td><td class="text-gray-400">node:20</td><td>Vite开发服务器</td></tr>
+        </tbody></table>
+      </div>
+    </div>`
+  },
+  {
+    id: 8,
+    title: "Claude Code配置（技能与钩子）",
+    icon: "⚙️",
+    summary: "钩子已安装。保存爬虫文件自动运行pytest · 保存模型文件运行alembic · 运行docker前检查.env",
+    prevFeedback: "需要什么就下载安装，没有现成的就自己写",
+    content: `<div class="space-y-4 text-sm text-gray-600">
+      <div class="bg-green-50 border border-green-200 rounded-xl p-4">
+        <p class="text-green-800 font-semibold text-xs mb-1">✅ 已根据反馈更新 — 钩子实际安装完成</p>
+        <p class="text-green-700 text-xs">通过update-config技能安装到项目settings.json中。</p>
+      </div>
+      <div class="border border-gray-200 rounded-xl overflow-hidden">
+        <div class="bg-gray-50 px-4 py-2 font-semibold text-gray-700 text-xs">已安装的钩子列表</div>
+        <div class="divide-y divide-gray-50 text-xs">
+          <div class="px-4 py-3">
+            <div class="flex items-center gap-2 mb-1"><span class="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-mono">PostToolUse · Write</span><span class="bg-green-100 text-green-700 px-1.5 py-0.5 rounded">✅ 已安装</span></div>
+            <div class="text-gray-500">触发条件：保存<code class="bg-gray-100 px-1 rounded">scrapers/</code>目录下的文件</div>
+            <div class="text-gray-700 mt-1">→ 自动运行<code class="bg-gray-100 px-1 rounded">python -m pytest tests/scrapers/ -q</code></div>
+          </div>
+          <div class="px-4 py-3">
+            <div class="flex items-center gap-2 mb-1"><span class="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-mono">PostToolUse · Write</span><span class="bg-green-100 text-green-700 px-1.5 py-0.5 rounded">✅ 已安装</span></div>
+            <div class="text-gray-500">触发条件：保存<code class="bg-gray-100 px-1 rounded">models/</code>目录下的文件</div>
+            <div class="text-gray-700 mt-1">→ 运行<code class="bg-gray-100 px-1 rounded">alembic check</code>警告未应用的迁移</div>
+          </div>
+          <div class="px-4 py-3">
+            <div class="flex items-center gap-2 mb-1"><span class="bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-mono">PreToolUse · Bash</span><span class="bg-green-100 text-green-700 px-1.5 py-0.5 rounded">✅ 已安装</span></div>
+            <div class="text-gray-500">触发条件：执行<code class="bg-gray-100 px-1 rounded">docker</code>命令前</div>
+            <div class="text-gray-700 mt-1">→ 检查<code class="bg-gray-100 px-1 rounded">.env</code>文件是否存在，不存在则警告并中断</div>
+          </div>
+        </div>
+      </div>
+    </div>`
+  },
+  {
+    id: 9,
+    title: "开发里程碑",
+    icon: "🗓️",
+    summary: "M0（环境搭建）→ M1（韩国+AI）→ M2（前端）→ M3（美日）→ M4（中国·社交）",
+    content: (function() {
+      var BG  = {gray:'bg-gray-50',green:'bg-green-50',violet:'bg-violet-50',blue:'bg-blue-50',orange:'bg-orange-50'};
+      var DOT = {gray:'bg-gray-500',green:'bg-green-500',violet:'bg-violet-500',blue:'bg-blue-500',orange:'bg-orange-500'};
+      var TXT = {gray:'text-gray-700',green:'text-green-700',violet:'text-violet-700',blue:'text-blue-700',orange:'text-orange-700'};
+      var milestones = [
+        {m:'M0',label:'环境搭建',days:'第1~2天',c:'gray',items:['创建项目目录结构','编写docker-compose.yml（db, redis, api, worker）','alembic初始化 + 数据库迁移','FastAPI基础应用 + 健康检查','钩子安装（已完成 ✅）']},
+        {m:'M1',label:'韩国采集器 + AI流水线',days:'第3~10天',c:'green',items:['Olive Young爬虫（Playwright）','Naver购物API集成','Naver博客API集成','Google Trends（pytrends）集成 🆕','Gemma 4 2B本地安装 + 结构化数据提取','Claude API提取器（社交非结构化，含提示词缓存）','Claude API分类器（定期/突发分类）','Celery采集任务连接','API接口实现']},
+        {m:'M2',label:'前端开发',days:'第11~16天',c:'violet',items:['Vite + React + TypeScript + Tailwind初始化','搜索栏（多语言自动补全）','现在买/等等再买核心组件','价格图表 + 最低价标注（Recharts）','年度热力图日历','活动时间线 + 活动卡片（定期/突发徽章）','广告区域布局设计']},
+        {m:'M3',label:'美国·日本扩展',days:'第17~21天',c:'blue',items:['Sephora、Ulta爬虫','Amazon PA API集成','@cosme、乐天API集成','多语言产品名称匹配（matcher.py）']},
+        {m:'M4',label:'中国·社交媒体 + 变现',days:'第22~30天',c:'orange',items:['天猫采集器','Instagram / TikTok / Facebook API','社交帖子 → 活动数据流水线','Google AdSense广告区域应用','高级订阅支付（Portone或Stripe）','推送通知（FCM）']}
+      ];
+      var rows = milestones.map(function(ms) {
+        var lis = ms.items.map(function(i) {
+          return '<li class="flex items-start gap-1.5 text-xs text-gray-600"><span class="mt-0.5 w-3.5 h-3.5 border border-gray-300 rounded-sm flex-shrink-0 bg-white"></span>' + i + '</li>';
+        }).join('');
+        return '<div class="relative">' +
+          '<div class="absolute -left-4 w-4 h-4 ' + DOT[ms.c] + ' rounded-full border-2 border-white shadow-sm top-1"></div>' +
+          '<div class="' + BG[ms.c] + ' rounded-xl p-4">' +
+            '<div class="flex items-center justify-between mb-2">' +
+              '<div class="flex items-center gap-2">' +
+                '<span class="font-bold ' + TXT[ms.c] + ' text-sm">' + ms.m + '</span>' +
+                '<span class="font-semibold text-gray-700 text-sm">' + ms.label + '</span>' +
+              '</div>' +
+              '<span class="text-xs text-gray-400">' + ms.days + '</span>' +
+            '</div>' +
+            '<ul class="space-y-1">' + lis + '</ul>' +
+          '</div></div>';
+      }).join('');
+      return '<div class="space-y-3 text-sm"><div class="relative pl-6 space-y-4">' +
+        '<div class="absolute left-2 top-2 bottom-2 w-0.5 bg-gray-200"></div>' +
+        rows + '</div></div>';
+    })()
+  }
+];
+
+const STORAGE_KEY = 'compa-plan-feedback-v2';
+function loadState() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); } catch { return {}; } }
+function saveState(s) { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); }
+let state = loadState();
+
+function renderSections() {
+  document.getElementById('sections-container').innerHTML = PLAN_SECTIONS.map(section => {
+    const s = state[section.id] || { status: 'pending', comment: '' };
+    return `
+    <div id="card-${section.id}" class="section-card status-${s.status} bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <details id="details-${section.id}">
+        <summary class="px-6 py-4 flex items-center justify-between cursor-pointer hover:bg-gray-50 transition">
+          <div class="flex items-center gap-3 flex-1 min-w-0">
+            <span class="text-xl flex-shrink-0">${section.icon}</span>
+            <div class="min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="text-xs text-gray-400 font-mono">#${section.id}</span>
+                <h2 class="font-bold text-gray-800 text-base">${section.title}</h2>
+                ${s.status !== 'pending' ? `<span class="status-badge-${section.id} flex-shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ${statusBadgeClass(s.status)}">${statusLabel(s.status)}</span>` : `<span class="status-badge-${section.id}"></span>`}
+              </div>
+              <p class="text-xs text-gray-400 mt-0.5 truncate">${section.summary}</p>
+              ${section.prevFeedback ? `<p class="text-xs text-orange-500 mt-0.5 truncate">上次反馈："${section.prevFeedback}"</p>` : ''}
+            </div>
+          </div>
+          <div class="flex items-center gap-2 flex-shrink-0 ml-4">
+            <div class="flex gap-1" onclick="event.stopPropagation()">
+              <button onclick="setStatus(${section.id}, 'approved')" class="btn-status text-xs px-2.5 py-1 rounded-lg border border-gray-200 hover:border-green-300 hover:bg-green-50 ${s.status === 'approved' ? 'active-approved' : 'text-gray-500'}" title="批准">✅</button>
+              <button onclick="setStatus(${section.id}, 'change')" class="btn-status text-xs px-2.5 py-1 rounded-lg border border-gray-200 hover:border-orange-300 hover:bg-orange-50 ${s.status === 'change' ? 'active-change' : 'text-gray-500'}" title="需修改">✏️</button>
+              <button onclick="setStatus(${section.id}, 'question')" class="btn-status text-xs px-2.5 py-1 rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50 ${s.status === 'question' ? 'active-question' : 'text-gray-500'}" title="有问题">❓</button>
+            </div>
+            <svg class="chevron w-4 h-4 text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+          </div>
+        </summary>
+        <div class="px-6 pb-4 border-t border-gray-100">
+          <div class="pt-4">${section.content}</div>
+          <div class="mt-4 border-t border-gray-100 pt-4">
+            <label class="text-xs font-medium text-gray-600 mb-1.5 block">评论 / 反馈</label>
+            <div class="flex gap-2">
+              <textarea id="comment-${section.id}" rows="2"
+                class="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-2 text-gray-700 placeholder-gray-300 resize-none focus:outline-none focus:ring-2 focus:ring-rose-200 focus:border-rose-300 transition"
+                placeholder="请随时留下您的意见、问题或建议..."
+                onkeydown="if(event.key==='Enter'&&event.metaKey)saveComment(${section.id})"
+              >${s.comment || ''}</textarea>
+              <button onclick="saveComment(${section.id})" class="text-xs bg-gray-800 hover:bg-gray-700 text-white px-3 py-2 rounded-lg transition self-end whitespace-nowrap">保存</button>
+            </div>
+            <div id="saved-indicator-${section.id}" class="text-xs text-green-500 mt-1 h-4"></div>
+          </div>
+        </div>
+      </details>
+    </div>`;
+  }).join('');
+}
+
+function statusBadgeClass(s) { return { approved:'bg-green-100 text-green-700', change:'bg-orange-100 text-orange-700', question:'bg-blue-100 text-blue-700' }[s] || ''; }
+function statusLabel(s) { return { approved:'✅ 已批准', change:'✏️ 需修改', question:'❓ 有问题', pending:'' }[s] || ''; }
+
+function setStatus(id, status) {
+  if (!state[id]) state[id] = { status: 'pending', comment: '' };
+  state[id].status = state[id].status === status ? 'pending' : status;
+  saveState(state);
+  const card = document.getElementById('card-' + id);
+  card.className = 'section-card status-' + state[id].status + ' bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden';
+  const badge = card.querySelector('.status-badge-' + id);
+  const ns = state[id].status;
+  if (ns !== 'pending') { badge.className = 'status-badge-' + id + ' flex-shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ' + statusBadgeClass(ns); badge.textContent = statusLabel(ns); }
+  else { badge.className = 'status-badge-' + id; badge.textContent = ''; }
+  document.getElementById('details-' + id).open = true;
+  updateProgress(); updateSummary();
+}
+
+function saveComment(id) {
+  if (!state[id]) state[id] = { status: 'pending', comment: '' };
+  state[id].comment = document.getElementById('comment-' + id).value;
+  saveState(state);
+  const ind = document.getElementById('saved-indicator-' + id);
+  ind.textContent = '已保存 ✓'; setTimeout(function() { ind.textContent = ''; }, 2000);
+  updateSummary();
+}
+
+function updateProgress() {
+  const total = PLAN_SECTIONS.length;
+  const counts = { approved:0, change:0, question:0 };
+  PLAN_SECTIONS.forEach(function(s) { const st = (state[s.id]||{}).status||'pending'; if(counts[st]!==undefined) counts[st]++; });
+  const pending = total - counts.approved - counts.change - counts.question;
+  document.getElementById('total-count').textContent = total;
+  document.getElementById('approved-count').textContent = counts.approved;
+  document.getElementById('progress-bar').style.width = (counts.approved/total*100) + '%';
+  document.getElementById('cnt-approved').textContent = counts.approved;
+  document.getElementById('cnt-change').textContent = counts.change;
+  document.getElementById('cnt-question').textContent = counts.question;
+  document.getElementById('cnt-pending').textContent = pending;
+}
+
+function updateSummary() {
+  const items = PLAN_SECTIONS.filter(function(s) { const st=(state[s.id]||{}).status||'pending'; return st==='change'||st==='question'; });
+  const panel = document.getElementById('summary-panel');
+  if (!items.length) { panel.classList.add('hidden'); return; }
+  panel.classList.remove('hidden');
+  document.getElementById('summary-content').innerHTML = items.map(function(s) {
+    const st = state[s.id]||{};
+    const isChange = st.status==='change';
+    return '<div class="px-6 py-4 flex items-start gap-3">' +
+      '<span class="text-base">' + s.icon + '</span>' +
+      '<div class="flex-1">' +
+        '<div class="flex items-center gap-2 mb-1"><span class="text-sm font-semibold text-gray-800">' + s.title + '</span><span class="text-xs px-2 py-0.5 rounded-full ' + (isChange?'bg-orange-100 text-orange-700':'bg-blue-100 text-blue-700') + '">' + (isChange?'✏️ 需修改':'❓ 有问题') + '</span></div>' +
+        (st.comment ? '<p class="text-xs text-gray-600 bg-gray-50 rounded-lg px-3 py-2">' + st.comment.replace(/\n/g,'<br/>') + '</p>' : '<p class="text-xs text-gray-400 italic">无评论</p>') +
+      '</div></div>';
+  }).join('');
+}
+
+function copyFeedback() {
+  const result = { exported_at: new Date().toISOString(), project: 'COMPA主计划v2',
+    sections: PLAN_SECTIONS.map(function(s) { const st=state[s.id]||{status:'pending',comment:''}; return {id:s.id,title:s.title,status:st.status,comment:st.comment||null}; })
+  };
+  navigator.clipboard.writeText(JSON.stringify(result, null, 2)).then(function() { showToast('已复制到剪贴板 ✅'); });
+}
+
+function submitToGitHub() {
+  const lines = PLAN_SECTIONS.map(function(s) {
+    const st = state[s.id] || { status:'pending', comment:'' };
+    const emoji = { approved:'✅', change:'✏️', question:'❓', pending:'⬜' }[st.status];
+    return '### ' + emoji + ' ' + s.id + '. ' + s.title + '\n- **状态**: ' + (statusLabel(st.status)||'未审核') + '\n- **评论**: ' + (st.comment||'（无）');
+  }).join('\n\n');
+  const body = '## COMPA方案反馈（v2）\n\n> 提交日期：' + new Date().toLocaleDateString('zh-CN') + '\n\n' + lines + '\n\n---\n*此问题由[COMPA方案反馈页面](https://wsungahn.github.io/compa/plan-feedback/zh/)自动生成。*';
+  const url = 'https://github.com/wsungAhn/compa/issues/new?title=' + encodeURIComponent('📋 方案反馈 — ' + new Date().toLocaleDateString('zh-CN')) + '&body=' + encodeURIComponent(body) + '&labels=feedback';
+  window.open(url, '_blank');
+  showToast('GitHub问题页面已打开，请登录后点击提交 🐙');
+}
+
+function resetAll() {
+  if (!confirm('确定要重置所有反馈吗？')) return;
+  state = {}; saveState(state); renderSections(); updateProgress(); updateSummary(); showToast('已重置');
+}
+
+function showToast(msg) {
+  const t = document.createElement('div');
+  t.className = 'toast px-4 py-3 rounded-xl shadow-lg text-sm font-medium bg-gray-900 text-white';
+  t.textContent = msg;
+  document.getElementById('toast-container').appendChild(t);
+  setTimeout(function() { t.remove(); }, 3500);
+}
+
+renderSections(); updateProgress(); updateSummary();
+</script>
+</body>
+</html>

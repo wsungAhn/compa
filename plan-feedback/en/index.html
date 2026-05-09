@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>COMPA — Plan Feedback</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    .section-card { transition: box-shadow 0.2s, border-color 0.2s; }
+    .section-card.status-approved { border-left: 4px solid #22c55e; }
+    .section-card.status-change   { border-left: 4px solid #f97316; }
+    .section-card.status-question { border-left: 4px solid #3b82f6; }
+    .section-card.status-pending  { border-left: 4px solid #e5e7eb; }
+    .btn-status { transition: all 0.15s; }
+    .btn-status.active-approved { background: #22c55e; color: white; }
+    .btn-status.active-change   { background: #f97316; color: white; }
+    .btn-status.active-question { background: #3b82f6; color: white; }
+    .code-block { background: #1e1e2e; color: #cdd6f4; border-radius: 8px; padding: 12px 16px; font-family: 'Consolas', monospace; font-size: 12px; overflow-x: auto; line-height: 1.6; }
+    .tag-regular { background: #dbeafe; color: #1d4ed8; }
+    .tag-surprise { background: #ffedd5; color: #c2410c; }
+    details > summary { cursor: pointer; user-select: none; }
+    details > summary::-webkit-details-marker { display: none; }
+    .chevron { transition: transform 0.2s; }
+    details[open] .chevron { transform: rotate(180deg); }
+    #progress-bar { transition: width 0.4s ease; }
+    .toast { position: fixed; bottom: 24px; right: 24px; z-index: 9999; animation: slideIn 0.3s ease; }
+    @keyframes slideIn { from{transform:translateY(20px);opacity:0} to{transform:translateY(0);opacity:1} }
+    .role-chip { display: inline-flex; align-items: center; gap: 6px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 12px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { background: #f8fafc; padding: 8px 12px; text-align: left; color: #64748b; font-weight: 600; border-bottom: 1px solid #e2e8f0; }
+    td { padding: 8px 12px; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+    .feedback-badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 99px; font-weight: 600; }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+
+<!-- Language Nav -->
+<div class="bg-gray-900 text-xs text-gray-300 flex justify-center gap-1 py-2">
+  <a href="../" class="px-3 py-1 rounded hover:bg-gray-700 transition">🇰🇷 한국어</a>
+  <span class="px-3 py-1 rounded bg-rose-600 text-white font-semibold">🇺🇸 English</span>
+  <a href="../zh/" class="px-3 py-1 rounded hover:bg-gray-700 transition">🇨🇳 中文</a>
+</div>
+
+<!-- Header -->
+<header class="bg-white border-b border-gray-200 sticky top-0 z-40 shadow-sm">
+  <div class="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 bg-rose-500 rounded-lg flex items-center justify-center text-white font-bold text-sm">C</div>
+      <div>
+        <h1 class="text-gray-900 font-bold text-lg leading-tight">COMPA Master Plan v2</h1>
+        <p class="text-gray-400 text-xs">Cosmetics Sale Event Tracker · Updated with Feedback</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      <button onclick="resetAll()" class="text-xs text-gray-400 hover:text-gray-600 px-3 py-1.5 rounded border border-gray-200 hover:border-gray-300 transition">Reset</button>
+      <button onclick="copyFeedback()" class="text-xs border border-gray-300 text-gray-600 px-3 py-1.5 rounded-lg hover:bg-gray-50 transition">Copy 📋</button>
+      <button onclick="submitToGitHub()" class="text-xs bg-gray-900 text-white px-4 py-1.5 rounded-lg hover:bg-gray-700 transition font-medium">Send as GitHub Issue 🐙</button>
+    </div>
+  </div>
+  <!-- Progress bar -->
+  <div class="max-w-5xl mx-auto px-6 pb-4">
+    <div class="flex items-center justify-between mb-1.5">
+      <span class="text-xs text-gray-500 font-medium">Review Progress</span>
+      <span class="text-xs text-gray-500"><span id="approved-count">0</span> / <span id="total-count">0</span> sections approved</span>
+    </div>
+    <div class="h-2 bg-gray-100 rounded-full overflow-hidden">
+      <div id="progress-bar" class="h-full bg-gradient-to-r from-rose-400 to-rose-500 rounded-full" style="width:0%"></div>
+    </div>
+    <div class="flex gap-4 mt-2 text-xs text-gray-400">
+      <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-green-400 inline-block"></span>Approved <span id="cnt-approved" class="font-medium text-gray-600">0</span></span>
+      <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-orange-400 inline-block"></span>Needs Revision <span id="cnt-change" class="font-medium text-gray-600">0</span></span>
+      <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-blue-400 inline-block"></span>Question <span id="cnt-question" class="font-medium text-gray-600">0</span></span>
+      <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-gray-300 inline-block"></span>Not Reviewed <span id="cnt-pending" class="font-medium text-gray-600">0</span></span>
+    </div>
+  </div>
+</header>
+
+<main class="max-w-5xl mx-auto px-6 py-8 space-y-6">
+
+  <!-- Context banner -->
+  <div class="bg-rose-50 border border-rose-100 rounded-xl p-5">
+    <div class="flex items-start gap-3">
+      <span class="text-2xl">🛍️</span>
+      <div>
+        <p class="text-sm text-rose-800 font-semibold mb-1">COMPA — Cosmetics Sale Event Tracker</p>
+        <p class="text-sm text-rose-700 leading-relaxed">
+          Just enter a product name to see <strong>3 years of discount events</strong> across Korea, US, Japan &amp; China —
+          then get a clear <strong>"Buy Now / Wait"</strong> recommendation.<br/>
+          Read each section and leave feedback: ✅ Approve / ✏️ Needs Revision / ❓ Question
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div id="sections-container" class="space-y-5"></div>
+
+  <!-- Feedback Summary -->
+  <div id="summary-panel" class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden hidden">
+    <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+      <h2 class="font-bold text-gray-800 text-base">Feedback Summary</h2>
+      <span class="text-xs text-gray-400">Showing revision requests &amp; questions only</span>
+    </div>
+    <div id="summary-content" class="divide-y divide-gray-50"></div>
+  </div>
+
+</main>
+
+<div id="toast-container"></div>
+
+<script>
+const PLAN_SECTIONS = [
+  {
+    id: 1,
+    title: "Project Structure",
+    icon: "🗂️",
+    summary: "System components and their roles",
+    prevFeedback: "Please explain what each component does",
+    content: `<div class="space-y-4 text-sm text-gray-600">
+      <div class="bg-amber-50 border border-amber-200 rounded-xl p-4">
+        <p class="text-amber-800 font-semibold text-xs mb-1">📌 Feedback Applied — Role descriptions added</p>
+        <p class="text-amber-700 text-xs">Explained in plain language — no programming knowledge required.</p>
+      </div>
+      <div class="grid grid-cols-1 gap-3">
+        <div class="border border-blue-200 rounded-xl overflow-hidden">
+          <div class="bg-blue-50 px-4 py-2.5 font-bold text-blue-800 text-sm">🖥️ Backend (Server) — The App's Brain</div>
+          <div class="divide-y divide-blue-50">
+            <div class="px-4 py-3 flex gap-3">
+              <span class="font-mono text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded h-fit whitespace-nowrap mt-0.5">FastAPI</span>
+              <div><p class="text-sm text-gray-700 font-medium">Request Handler</p><p class="text-xs text-gray-500 mt-0.5">When you search "Sulwhasoo Essence discounts," this server receives the request, queries the database, and sends results back to the screen. Think of it as the <strong>front-of-house staff</strong> at a restaurant.</p></div>
+            </div>
+            <div class="px-4 py-3 flex gap-3">
+              <span class="font-mono text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded h-fit whitespace-nowrap mt-0.5">Celery</span>
+              <div><p class="text-sm text-gray-700 font-medium">Auto-collection Worker</p><p class="text-xs text-gray-500 mt-0.5">Automatically crawls Olive Young, Sephora, etc. at 3am to collect new discount info. Like the <strong>procurement team</strong> sourcing fresh ingredients.</p></div>
+            </div>
+            <div class="px-4 py-3 flex gap-3">
+              <span class="font-mono text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded h-fit whitespace-nowrap mt-0.5">Redis</span>
+              <div><p class="text-sm text-gray-700 font-medium">Fast Memo Board</p><p class="text-xs text-gray-500 mt-0.5">Temporarily stores frequently searched product results in RAM for faster responses. Also manages Celery's task queue. Like a <strong>sticky-note whiteboard</strong>.</p></div>
+            </div>
+          </div>
+        </div>
+        <div class="border border-green-200 rounded-xl overflow-hidden">
+          <div class="bg-green-50 px-4 py-2.5 font-bold text-green-800 text-sm">🗄️ Database — 3-Year Warehouse</div>
+          <div class="px-4 py-3 flex gap-3">
+            <span class="font-mono text-xs bg-green-100 text-green-700 px-2 py-1 rounded h-fit whitespace-nowrap mt-0.5">PostgreSQL</span>
+            <div><p class="text-sm text-gray-700 font-medium">Main Data Store</p><p class="text-xs text-gray-500 mt-0.5">The <strong>warehouse</strong> that safely stores all 3 years of discount event data. Millions of records: product names, prices, dates, platforms, and event types.</p></div>
+          </div>
+        </div>
+        <div class="border border-violet-200 rounded-xl overflow-hidden">
+          <div class="bg-violet-50 px-4 py-2.5 font-bold text-violet-800 text-sm">🖼️ Frontend — What Users See</div>
+          <div class="divide-y divide-violet-50">
+            <div class="px-4 py-3 flex gap-3">
+              <span class="font-mono text-xs bg-violet-100 text-violet-700 px-2 py-1 rounded h-fit whitespace-nowrap mt-0.5">React</span>
+              <div><p class="text-sm text-gray-700 font-medium">UI Builder</p><p class="text-xs text-gray-500 mt-0.5">Creates everything users see: search bars, charts, and cards. Instagram and Coupang apps use similar technology.</p></div>
+            </div>
+            <div class="px-4 py-3 flex gap-3">
+              <span class="font-mono text-xs bg-violet-100 text-violet-700 px-2 py-1 rounded h-fit whitespace-nowrap mt-0.5">Recharts</span>
+              <div><p class="text-sm text-gray-700 font-medium">Chart Library</p><p class="text-xs text-gray-500 mt-0.5">Draws beautiful line charts showing 3 years of price changes. See at a glance when a product was cheapest.</p></div>
+            </div>
+          </div>
+        </div>
+        <div class="border border-amber-200 rounded-xl overflow-hidden">
+          <div class="bg-amber-50 px-4 py-2.5 font-bold text-amber-800 text-sm">🤖 AI Layer — Text Understanding Brain</div>
+          <div class="divide-y divide-amber-50">
+            <div class="px-4 py-3 flex gap-3">
+              <span class="font-mono text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded h-fit whitespace-nowrap mt-0.5">Claude API</span>
+              <div><p class="text-sm text-gray-700 font-medium">Social Text Analysis</p><p class="text-xs text-gray-500 mt-0.5">Reads Instagram captions like "Sulwhasoo essence was 47% off at Olive Young yesterday😭" and automatically extracts product name, discount rate, and date. Processes 4 languages (Korean/English/Japanese/Chinese) simultaneously.</p></div>
+            </div>
+            <div class="px-4 py-3 flex gap-3">
+              <span class="font-mono text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded h-fit whitespace-nowrap mt-0.5">Gemma 4</span>
+              <div><p class="text-sm text-gray-700 font-medium">Lightweight Assistant AI (local)</p><p class="text-xs text-gray-500 mt-0.5">Structured data like shop price tables uses this smaller AI to cut costs. Claude is reserved for complex social text only. <strong>→ Hybrid strategy</strong></p></div>
+            </div>
+          </div>
+        </div>
+        <div class="border border-gray-200 rounded-xl overflow-hidden">
+          <div class="bg-gray-50 px-4 py-2.5 font-bold text-gray-700 text-sm">🐳 Infrastructure — The Containerization Layer</div>
+          <div class="px-4 py-3 flex gap-3">
+            <span class="font-mono text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded h-fit whitespace-nowrap mt-0.5">Docker</span>
+            <div><p class="text-sm text-gray-700 font-medium">Environment Containerizer</p><p class="text-xs text-gray-500 mt-0.5">Bundles all components (server, DB, workers, cache) into one package that runs identically anywhere. Eliminates the classic "works only on my machine" problem.</p></div>
+          </div>
+        </div>
+      </div>
+    </div>`
+  },
+  {
+    id: 2,
+    title: "Database Schema",
+    icon: "🗄️",
+    summary: "4 tables: products · platforms · sale_events · social_posts",
+    content: `<div class="space-y-4 text-sm text-gray-600">
+      <div class="space-y-3">
+        <div class="border border-gray-200 rounded-lg overflow-hidden">
+          <div class="bg-gray-50 px-4 py-2 font-semibold text-gray-700 text-xs uppercase tracking-wide">products — Product List</div>
+          <table><thead><tr><th>Column</th><th>Type</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td class="font-mono text-purple-700">id</td><td class="text-gray-400">UUID PK</td><td></td></tr>
+            <tr><td class="font-mono text-purple-700">name_kr / name_en / name_jp / name_cn</td><td class="text-gray-400">VARCHAR</td><td>Product name in 4 languages</td></tr>
+            <tr><td class="font-mono text-purple-700">brand</td><td class="text-gray-400">VARCHAR</td><td>Brand name</td></tr>
+            <tr><td class="font-mono text-purple-700">category</td><td class="text-gray-400">ENUM</td><td>base / color / functional</td></tr>
+          </tbody></table>
+        </div>
+        <div class="border border-rose-200 rounded-lg overflow-hidden">
+          <div class="bg-rose-50 px-4 py-2 font-semibold text-rose-700 text-xs uppercase tracking-wide">sale_events — Core Table</div>
+          <table><thead><tr><th>Column</th><th>Type</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td class="font-mono text-purple-700">event_name</td><td class="text-gray-400">VARCHAR</td><td>Black Friday, 618, Olive Young Sale, etc.</td></tr>
+            <tr><td class="font-mono text-purple-700">event_type</td><td class="text-gray-400">ENUM</td><td><span class="feedback-badge tag-regular">regular</span> / <span class="feedback-badge tag-surprise">surprise</span></td></tr>
+            <tr><td class="font-mono text-purple-700">original_price / sale_price / discount_rate</td><td class="text-gray-400">NUMERIC</td><td>Pricing info</td></tr>
+            <tr><td class="font-mono text-purple-700">currency</td><td class="text-gray-400">CHAR(3)</td><td>KRW / USD / JPY / CNY</td></tr>
+            <tr><td class="font-mono text-purple-700">reason</td><td class="text-gray-400">TEXT</td><td>Reason for discount — key basis for "should I wait" decisions</td></tr>
+            <tr><td class="font-mono text-purple-700">confidence</td><td class="text-gray-400">FLOAT</td><td>AI extraction confidence 0–1 (below 0.7 → manual review)</td></tr>
+          </tbody></table>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div class="border border-gray-200 rounded-lg overflow-hidden">
+            <div class="bg-gray-50 px-4 py-2 font-semibold text-gray-700 text-xs">platforms</div>
+            <div class="px-4 py-3 text-xs text-gray-500 space-y-1">
+              <div>name · country (KR/US/JP/CN)</div>
+              <div>scrape_method: scraping / official_api / unofficial_api</div>
+            </div>
+          </div>
+          <div class="border border-gray-200 rounded-lg overflow-hidden">
+            <div class="bg-gray-50 px-4 py-2 font-semibold text-gray-700 text-xs">social_posts</div>
+            <div class="px-4 py-3 text-xs text-gray-500 space-y-1">
+              <div>platform: instagram / tiktok / facebook / naver_blog</div>
+              <div>processed (BOOLEAN) · sale_event_id (FK)</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>`
+  },
+  {
+    id: 3,
+    title: "Data Collection Strategy",
+    icon: "🕸️",
+    summary: "3-phase plan + Google Trends added. Korea MVP → US·Japan → China·Social",
+    prevFeedback: "Wouldn't Google Trends searches be useful here too?",
+    content: `<div class="space-y-4 text-sm text-gray-600">
+      <div class="bg-green-50 border border-green-200 rounded-xl p-4">
+        <p class="text-green-800 font-semibold text-xs mb-1">✅ Feedback Applied — Google Trends added</p>
+        <p class="text-green-700 text-xs">When search volume for a product spikes = signal that a sale is imminent. Free collection using the <code class="bg-green-100 px-1 rounded">pytrends</code> library.</p>
+      </div>
+      <div class="border border-blue-100 bg-blue-50 rounded-xl p-4">
+        <div class="flex items-center gap-2 mb-2"><span class="text-base">📈</span><span class="font-semibold text-blue-800 text-sm">Google Trends — Sale Prediction Signal</span><span class="feedback-badge bg-blue-200 text-blue-800 text-xs">New</span></div>
+        <ul class="text-xs text-blue-700 space-y-1.5">
+          <li>• Collect 3-year search volume data via <code class="bg-blue-100 px-1 rounded">pytrends</code> (free)</li>
+          <li>• Compare search volume spikes vs actual sale event timing → learn patterns</li>
+          <li>• "This product's search volume doubled at this time last year, right before the Olive Young Sale" → <strong>Improved prediction</strong></li>
+          <li>• Collection frequency: once per week</li>
+        </ul>
+      </div>
+      <div class="space-y-3">
+        <div class="border border-green-200 bg-green-50 rounded-xl p-4">
+          <div class="flex items-center gap-2 mb-3"><span class="bg-green-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">Phase 1</span><span class="font-semibold text-green-800">Korea (MVP · 4 weeks)</span></div>
+          <table><thead><tr><th class="bg-transparent text-green-700">Source</th><th class="bg-transparent text-green-700">Method</th><th class="bg-transparent text-green-700">Notes</th></tr></thead>
+          <tbody>
+            <tr><td class="font-medium">Olive Young</td><td>Playwright scraping</td><td class="text-gray-500">Product pages + coupon/sale tabs</td></tr>
+            <tr><td class="font-medium">Naver Shopping</td><td>Official Search API</td><td class="text-gray-500">Price history + promotional events</td></tr>
+            <tr><td class="font-medium">Naver Blog</td><td>Official Search API</td><td class="text-gray-500">Collect posts mentioning discounts</td></tr>
+            <tr><td class="font-medium">Coupang</td><td>httpx + BeautifulSoup</td><td class="text-gray-500">Price change detection</td></tr>
+            <tr><td class="font-medium text-blue-700">Google Trends 🆕</td><td>pytrends (free)</td><td class="text-blue-600">Search spike = sale prediction</td></tr>
+          </tbody></table>
+        </div>
+        <div class="border border-blue-200 bg-blue-50 rounded-xl p-4">
+          <div class="flex items-center gap-2 mb-3"><span class="bg-blue-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">Phase 2</span><span class="font-semibold text-blue-800">US · Japan (2 weeks)</span></div>
+          <table><thead><tr><th class="bg-transparent text-blue-700">Source</th><th class="bg-transparent text-blue-700">Method</th><th class="bg-transparent text-blue-700">Notes</th></tr></thead>
+          <tbody>
+            <tr><td class="font-medium">Sephora / Ulta</td><td>Playwright</td><td class="text-gray-500">Sale event pages</td></tr>
+            <tr><td class="font-medium">Amazon US</td><td>PA API</td><td class="text-gray-500">Affiliate account required</td></tr>
+            <tr><td class="font-medium">@cosme</td><td>httpx</td><td class="text-gray-500">Special sale info</td></tr>
+            <tr><td class="font-medium">Rakuten</td><td>Official Ichiba API</td><td class="text-gray-500"></td></tr>
+          </tbody></table>
+        </div>
+        <div class="border border-orange-200 bg-orange-50 rounded-xl p-4">
+          <div class="flex items-center gap-2 mb-3"><span class="bg-orange-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">Phase 3</span><span class="font-semibold text-orange-800">China · Social Media (3 weeks)</span></div>
+          <table><thead><tr><th class="bg-transparent text-orange-700">Source</th><th class="bg-transparent text-orange-700">Method</th><th class="bg-transparent text-orange-700">Notes</th></tr></thead>
+          <tbody>
+            <tr><td class="font-medium">Tmall</td><td>Unofficial API + Playwright</td><td class="text-gray-500">618 · 11.11 events</td></tr>
+            <tr><td class="font-medium">Xiaohongshu (小红书)</td><td>Playwright (login required)</td><td class="text-red-500">⚠ High difficulty</td></tr>
+            <tr><td class="font-medium">Instagram</td><td>Graph API</td><td class="text-gray-500">#skincaresale hashtags</td></tr>
+            <tr><td class="font-medium">TikTok</td><td>Research API</td><td class="text-gray-500">Application required</td></tr>
+            <tr><td class="font-medium">Facebook</td><td>Graph API</td><td class="text-gray-500">Brand official pages</td></tr>
+          </tbody></table>
+        </div>
+      </div>
+    </div>`
+  },
+  {
+    id: 4,
+    title: "AI Pipeline — Model Strategy",
+    icon: "🤖",
+    summary: "Gemma 4 (structured data) + Claude (social unstructured) hybrid. Cost optimized",
+    prevFeedback: "Can't the smallest Gemma 4 handle this? Do we really need Claude for everything?",
+    content: `<div class="space-y-4 text-sm text-gray-600">
+      <div class="bg-amber-50 border border-amber-200 rounded-xl p-4">
+        <p class="text-amber-800 font-semibold text-xs mb-2">💡 Feedback Applied — AI model strategy updated</p>
+        <p class="text-amber-700 text-xs">Good point. Not everything needs Claude. A <strong>hybrid strategy</strong> can significantly cut costs.</p>
+      </div>
+      <div class="border border-gray-200 rounded-xl overflow-hidden">
+        <div class="bg-gray-50 px-4 py-2 font-semibold text-gray-700 text-xs">Model Comparison</div>
+        <table>
+          <thead><tr><th>Criteria</th><th>Gemma 4 2B (local)</th><th>Claude sonnet-4-6 (API)</th></tr></thead>
+          <tbody>
+            <tr><td class="font-medium">Cost</td><td class="text-green-600 font-semibold">Free (runs locally)</td><td class="text-orange-600">Paid (reduced via caching)</td></tr>
+            <tr><td class="font-medium">Korean</td><td class="text-green-600">✅ Good</td><td class="text-green-600">✅ Excellent</td></tr>
+            <tr><td class="font-medium">4-language processing</td><td class="text-red-500">⚠ Unstable</td><td class="text-green-600">✅ Excellent</td></tr>
+            <tr><td class="font-medium">Social unstructured text</td><td class="text-red-500">⚠ Struggles</td><td class="text-green-600">✅ Strong suit</td></tr>
+            <tr><td class="font-medium">Speed</td><td class="text-orange-500">Medium (needs GPU)</td><td class="text-green-600">Fast (API)</td></tr>
+            <tr><td class="font-medium text-rose-600">Assigned Role</td><td class="font-semibold text-blue-700">Structured shop data</td><td class="font-semibold text-violet-700">Social unstructured data</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div class="border border-blue-200 bg-blue-50 rounded-xl p-4">
+          <div class="font-semibold text-blue-800 text-sm mb-2">Gemma 4 2B handles</div>
+          <ul class="text-xs text-blue-700 space-y-1.5">
+            <li>• Olive Young / Sephora price extraction<br/><span class="text-gray-500">(regular format → small model is sufficient)</span></li>
+            <li>• Shop event name classification</li>
+            <li>• First-pass filtering (remove irrelevant posts)</li>
+          </ul>
+        </div>
+        <div class="border border-violet-200 bg-violet-50 rounded-xl p-4">
+          <div class="font-semibold text-violet-800 text-sm mb-2">Claude sonnet-4-6 handles</div>
+          <ul class="text-xs text-violet-700 space-y-1.5">
+            <li>• Free text from Instagram/blogs<br/><span class="text-gray-500">("Was 47% off at Olive Young yesterday😭")</span></li>
+            <li>• Multi-language mixed text</li>
+            <li>• Final regular/surprise classification</li>
+            <li>• Prompt caching reduces cost ~60%</li>
+          </ul>
+        </div>
+      </div>
+      <div class="bg-gray-50 rounded-xl p-4">
+        <div class="font-semibold text-gray-700 text-sm mb-2">Processing Pipeline</div>
+        <div class="text-xs text-gray-600 space-y-1">
+          <div class="flex items-center gap-2"><span class="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center flex-shrink-0 font-bold">1</span><span>Collected text → <strong>Gemma</strong> first-pass classification (relevant / not)</span></div>
+          <div class="flex items-center gap-2"><span class="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center flex-shrink-0 font-bold">2</span><span>Structured data (shops) → <strong>Gemma</strong> price/date extraction</span></div>
+          <div class="flex items-center gap-2"><span class="w-6 h-6 bg-violet-500 text-white rounded-full flex items-center justify-center flex-shrink-0 font-bold">3</span><span>Unstructured data (social) → <strong>Claude</strong> precision extraction</span></div>
+          <div class="flex items-center gap-2"><span class="w-6 h-6 bg-rose-500 text-white rounded-full flex items-center justify-center flex-shrink-0 font-bold">4</span><span>Final regular/surprise classification → <strong>Claude</strong> (pattern analysis)</span></div>
+        </div>
+      </div>
+    </div>`
+  },
+  {
+    id: 5,
+    title: "API Endpoints",
+    icon: "🔌",
+    summary: "GET /products/search · GET /products/{id}/events · POST /admin/collect",
+    content: `<div class="space-y-3 text-sm text-gray-600">
+      <div class="border border-gray-200 rounded-xl overflow-hidden">
+        <div class="bg-gray-50 px-4 py-2 flex items-center gap-2"><span class="text-xs font-bold bg-green-500 text-white px-2 py-0.5 rounded">GET</span><span class="font-mono text-sm text-gray-700">/api/products/search?q={query}&lang={ko|en|ja|zh}</span></div>
+        <div class="px-4 py-3 text-xs text-gray-500">Search products by name. Multi-language support with fuzzy matching.</div>
+      </div>
+      <div class="border border-gray-200 rounded-xl overflow-hidden">
+        <div class="bg-gray-50 px-4 py-2 flex items-center gap-2"><span class="text-xs font-bold bg-green-500 text-white px-2 py-0.5 rounded">GET</span><span class="font-mono text-sm text-gray-700">/api/products/{id}/events?years=3&country=all</span></div>
+        <div class="px-4 py-3">
+          <p class="text-xs text-gray-500 mb-2">Returns 3-year discount history + buy now / wait recommendation</p>
+          <div class="code-block">{
+  "product": { "name_en": "Sulwhasoo Concentrated Ginseng Renewing Serum 75ml", ... },
+  "events": [
+    {
+      "event_name": "Black Friday",
+      "event_type": "regular",
+      "year": 2024,
+      "period": "2024-11-22 ~ 2024-11-29",
+      "platform": "Sephora (US)",
+      "original_price": 85.00,
+      "sale_price": 59.50,
+      "discount_rate": 30,
+      "recurring_pattern": "Every 4th week of November"
+    },
+    {
+      "event_name": "Clearance Sale",
+      "event_type": "surprise",
+      "year": 2023,
+      "platform": "Olive Young (KR)",
+      "discount_rate": 40,
+      "reason": "Clearing old stock due to new product launch"
+    }
+  ],
+  "recommendation": {
+    "verdict": "wait",
+    "reason": "Black Friday (November) is ~6 months away, expected ~30% off"
+  }
+}</div>
+        </div>
+      </div>
+    </div>`
+  },
+  {
+    id: 6,
+    title: "Frontend UX & Visualization",
+    icon: "🖥️",
+    summary: "Heatmap calendar · Best-price markers · D-day widget · User flow design",
+    prevFeedback: "How to make the visualization impressive will be key. And how to guide the user experience.",
+    content: `<div class="space-y-4 text-sm text-gray-600">
+      <div class="bg-violet-50 border border-violet-200 rounded-xl p-4">
+        <p class="text-violet-800 font-semibold text-xs mb-1">🎨 Feedback Applied — UX flow and visualization detailed</p>
+      </div>
+      <div class="border border-gray-200 rounded-xl p-4">
+        <div class="font-semibold text-gray-800 mb-3 text-sm">📱 User Experience Flow</div>
+        <div class="flex flex-col gap-2 text-xs">
+          <div class="flex items-start gap-3 p-2.5 bg-gray-50 rounded-lg"><span class="w-6 h-6 bg-rose-500 text-white rounded-full flex items-center justify-center flex-shrink-0 font-bold text-xs">1</span><div>Search <strong>"Sulwhasoo Essence"</strong> → autocomplete to select the exact product</div></div>
+          <div class="flex items-start gap-3 p-2.5 bg-gray-50 rounded-lg"><span class="w-6 h-6 bg-rose-500 text-white rounded-full flex items-center justify-center flex-shrink-0 font-bold text-xs">2</span><div><strong>"Buy Now / Wait"</strong> verdict shown prominently at the top — understand the key info without scrolling</div></div>
+          <div class="flex items-start gap-3 p-2.5 bg-gray-50 rounded-lg"><span class="w-6 h-6 bg-rose-500 text-white rounded-full flex items-center justify-center flex-shrink-0 font-bold text-xs">3</span><div>Scroll down to explore charts and timeline for the supporting evidence</div></div>
+          <div class="flex items-start gap-3 p-2.5 bg-gray-50 rounded-lg"><span class="w-6 h-6 bg-rose-500 text-white rounded-full flex items-center justify-center flex-shrink-0 font-bold text-xs">4</span><div>Satisfied? Set an <strong>"Alert"</strong> → get a push notification when the next sale begins</div></div>
+        </div>
+      </div>
+      <div class="grid grid-cols-1 gap-3">
+        <div class="border border-rose-200 bg-rose-50 rounded-xl p-4">
+          <div class="font-semibold text-rose-800 mb-2 text-sm">🎯 Core Widget — "Buy Now / Wait"</div>
+          <div class="grid grid-cols-3 gap-2 text-xs">
+            <div class="bg-white rounded-lg p-3 text-center"><div class="text-2xl font-bold text-rose-500">D-47</div><div class="text-gray-500 mt-1">Until next Black Friday</div></div>
+            <div class="bg-white rounded-lg p-3 text-center"><div class="text-2xl font-bold text-green-500">-30%</div><div class="text-gray-500 mt-1">Expected discount</div></div>
+            <div class="bg-white rounded-lg p-3 text-center"><div class="text-2xl font-bold text-blue-500">≠ Low</div><div class="text-gray-500 mt-1">Not at all-time low</div></div>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div class="border border-gray-200 rounded-xl p-4">
+            <div class="font-semibold text-gray-800 mb-2 text-sm">📊 Price History Chart</div>
+            <ul class="text-xs text-gray-500 space-y-1">
+              <li>• 3-year regular vs lowest price line chart</li>
+              <li>• Sale event markers with discount %</li>
+              <li>• All-time low periods highlighted</li>
+              <li>• Hover to see event name &amp; reason tooltip</li>
+            </ul>
+          </div>
+          <div class="border border-gray-200 rounded-xl p-4">
+            <div class="font-semibold text-gray-800 mb-2 text-sm">📅 Annual Heatmap Calendar</div>
+            <ul class="text-xs text-gray-500 space-y-1">
+              <li>• GitHub contribution-style calendar</li>
+              <li>• Deeper color = bigger discount</li>
+              <li>• Visualizes "this month often has sales"</li>
+              <li>• Click to see that month's event list</li>
+            </ul>
+          </div>
+        </div>
+        <div class="border border-gray-200 rounded-xl p-4">
+          <div class="font-semibold text-gray-800 mb-2 text-sm">🏷️ Event Timeline Cards</div>
+          <div class="flex gap-2 text-xs">
+            <div class="flex-1 bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <div class="flex items-center gap-1 mb-1"><span class="feedback-badge tag-regular">regular</span><span class="font-semibold text-gray-700">Black Friday 2024</span></div>
+              <div class="text-gray-500">Sephora (US) · -30%</div>
+              <div class="text-blue-600 mt-1">🔁 Repeats every 4th week of November</div>
+            </div>
+            <div class="flex-1 bg-orange-50 border border-orange-200 rounded-lg p-3">
+              <div class="flex items-center gap-1 mb-1"><span class="feedback-badge tag-surprise">surprise</span><span class="font-semibold text-gray-700">Clearance Sale 2023</span></div>
+              <div class="text-gray-500">Olive Young (KR) · -40%</div>
+              <div class="text-orange-600 mt-1">💡 Old stock cleared for new product launch</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>`
+  },
+  {
+    id: 7,
+    title: "Infrastructure, Deployment & Revenue Model",
+    icon: "💰",
+    summary: "6 Docker Compose services + ad-based and premium subscription revenue",
+    prevFeedback: "We should reserve space for ads. Earn from ads, then earn from removing them (premium).",
+    content: `<div class="space-y-4 text-sm text-gray-600">
+      <div class="bg-green-50 border border-green-200 rounded-xl p-4">
+        <p class="text-green-800 font-semibold text-xs mb-1">💡 Feedback Applied — Revenue model added</p>
+      </div>
+      <div class="border border-amber-200 bg-amber-50 rounded-xl p-4">
+        <div class="font-semibold text-amber-800 mb-3 text-sm">💰 Revenue Structure</div>
+        <div class="space-y-3">
+          <div class="bg-white rounded-lg p-3">
+            <div class="flex items-center gap-2 mb-1"><span class="text-base">📣</span><div class="font-semibold text-gray-800 text-sm">Tier 1 — Ads (Free Users)</div></div>
+            <ul class="text-xs text-gray-600 space-y-1">
+              <li>• Ad banner at the <strong>bottom</strong> of search results (clearly separated from content)</li>
+              <li>• Targeted cosmetics brand ads (Google AdSense)</li>
+              <li>• Viral content drives traffic → ad revenue grows</li>
+            </ul>
+          </div>
+          <div class="bg-white rounded-lg p-3">
+            <div class="flex items-center gap-2 mb-1"><span class="text-base">⭐</span><div class="font-semibold text-gray-800 text-sm">Tier 2 — Premium (Monthly subscription)</div></div>
+            <ul class="text-xs text-gray-600 space-y-1">
+              <li>• Complete ad removal</li>
+              <li>• Instant alerts when sales start (Push notification / KakaoTalk)</li>
+              <li>• Price alert setting ("notify me when it drops below $X")</li>
+              <li>• All-country search (free tier: Korea only)</li>
+            </ul>
+          </div>
+          <div class="bg-white rounded-lg p-3">
+            <div class="flex items-center gap-2 mb-1"><span class="text-base">🚀</span><div class="font-semibold text-gray-800 text-sm">Tier 3 — Viral Monetization</div></div>
+            <ul class="text-xs text-gray-600 space-y-1">
+              <li>• App itself as viral content → encourage Instagram/blog reviews</li>
+              <li>• Affiliate links (Olive Young · Coupang affiliate program) → click revenue</li>
+              <li>• Brand official partnerships (brands pay to have their sales listed directly)</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <div class="border border-gray-200 rounded-xl overflow-hidden">
+        <div class="bg-gray-50 px-4 py-2 font-semibold text-gray-700 text-xs">docker-compose Services</div>
+        <table><thead><tr><th>Service</th><th>Image</th><th>Role</th></tr></thead>
+        <tbody>
+          <tr><td class="font-mono text-blue-700">api</td><td class="text-gray-400">python:3.12</td><td>FastAPI app</td></tr>
+          <tr><td class="font-mono text-blue-700">worker</td><td class="text-gray-400">python:3.12</td><td>Celery collection worker</td></tr>
+          <tr><td class="font-mono text-blue-700">beat</td><td class="text-gray-400">python:3.12</td><td>Celery Beat scheduler</td></tr>
+          <tr><td class="font-mono text-green-700">db</td><td class="text-gray-400">postgres:16</td><td>PostgreSQL</td></tr>
+          <tr><td class="font-mono text-red-700">redis</td><td class="text-gray-400">redis:7</td><td>Task queue + cache</td></tr>
+          <tr><td class="font-mono text-violet-700">frontend</td><td class="text-gray-400">node:20</td><td>Vite dev server</td></tr>
+        </tbody></table>
+      </div>
+    </div>`
+  },
+  {
+    id: 8,
+    title: "Claude Code Config (Skills & Hooks)",
+    icon: "⚙️",
+    summary: "Hooks installed. Auto-pytest on scrapers save · alembic check on models save · .env check before docker",
+    prevFeedback: "Download/install what's needed; write it yourself if it doesn't exist",
+    content: `<div class="space-y-4 text-sm text-gray-600">
+      <div class="bg-green-50 border border-green-200 rounded-xl p-4">
+        <p class="text-green-800 font-semibold text-xs mb-1">✅ Feedback Applied — Hooks actually installed</p>
+        <p class="text-green-700 text-xs">Installed directly into project settings.json via the update-config skill.</p>
+      </div>
+      <div class="border border-gray-200 rounded-xl overflow-hidden">
+        <div class="bg-gray-50 px-4 py-2 font-semibold text-gray-700 text-xs">Installed Hooks</div>
+        <div class="divide-y divide-gray-50 text-xs">
+          <div class="px-4 py-3">
+            <div class="flex items-center gap-2 mb-1"><span class="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-mono">PostToolUse · Write</span><span class="bg-green-100 text-green-700 px-1.5 py-0.5 rounded">✅ Installed</span></div>
+            <div class="text-gray-500">Trigger: any file saved inside <code class="bg-gray-100 px-1 rounded">scrapers/</code></div>
+            <div class="text-gray-700 mt-1">→ Auto-runs <code class="bg-gray-100 px-1 rounded">python -m pytest tests/scrapers/ -q</code></div>
+          </div>
+          <div class="px-4 py-3">
+            <div class="flex items-center gap-2 mb-1"><span class="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-mono">PostToolUse · Write</span><span class="bg-green-100 text-green-700 px-1.5 py-0.5 rounded">✅ Installed</span></div>
+            <div class="text-gray-500">Trigger: any file saved inside <code class="bg-gray-100 px-1 rounded">models/</code></div>
+            <div class="text-gray-700 mt-1">→ Runs <code class="bg-gray-100 px-1 rounded">alembic check</code> to warn about unapplied migrations</div>
+          </div>
+          <div class="px-4 py-3">
+            <div class="flex items-center gap-2 mb-1"><span class="bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-mono">PreToolUse · Bash</span><span class="bg-green-100 text-green-700 px-1.5 py-0.5 rounded">✅ Installed</span></div>
+            <div class="text-gray-500">Trigger: before any <code class="bg-gray-100 px-1 rounded">docker</code> command</div>
+            <div class="text-gray-700 mt-1">→ Checks for <code class="bg-gray-100 px-1 rounded">.env</code> file — warns and stops if missing</div>
+          </div>
+        </div>
+      </div>
+    </div>`
+  },
+  {
+    id: 9,
+    title: "Development Milestones",
+    icon: "🗓️",
+    summary: "M0 (Setup) → M1 (Korea+AI) → M2 (Frontend) → M3 (US·Japan) → M4 (China·Social)",
+    content: (function() {
+      var BG  = {gray:'bg-gray-50',green:'bg-green-50',violet:'bg-violet-50',blue:'bg-blue-50',orange:'bg-orange-50'};
+      var DOT = {gray:'bg-gray-500',green:'bg-green-500',violet:'bg-violet-500',blue:'bg-blue-500',orange:'bg-orange-500'};
+      var TXT = {gray:'text-gray-700',green:'text-green-700',violet:'text-violet-700',blue:'text-blue-700',orange:'text-orange-700'};
+      var milestones = [
+        {m:'M0',label:'Environment Setup',days:'Day 1~2',c:'gray',items:['Create project directory structure','Write docker-compose.yml (db, redis, api, worker)','Initialize alembic + schema migrations','FastAPI basic app + health check','Hook installation (Done ✅)']},
+        {m:'M1',label:'Korea Collectors + AI Pipeline',days:'Day 3~10',c:'green',items:['Olive Young scraper (Playwright)','Naver Shopping API integration','Naver Blog API integration','Google Trends (pytrends) integration 🆕','Gemma 4 2B local setup + structured data extraction','Claude API extractor (social unstructured, with caching)','Claude API classifier (regular/surprise)','Celery collection task wiring','/products/search + /products/{id}/events endpoints']},
+        {m:'M2',label:'Frontend',days:'Day 11~16',c:'violet',items:['Vite + React + TypeScript + Tailwind init','SearchBar (multilingual autocomplete)','WaitBuyWidget (core "buy now / wait" widget)','PriceChart + best-price markers (Recharts)','Annual heatmap calendar','EventTimeline + EventCard (regular/surprise badges)','Ad layout design']},
+        {m:'M3',label:'US · Japan Expansion',days:'Day 17~21',c:'blue',items:['Sephora, Ulta scrapers','Amazon PA API integration','@cosme, Rakuten API integration','Multilingual product name matching (matcher.py)']},
+        {m:'M4',label:'China · Social + Monetization',days:'Day 22~30',c:'orange',items:['Tmall collector','Instagram / TikTok / Facebook API','Social post → event data pipeline','Google AdSense ad placement','Premium subscription payment (Portone or Stripe)','Push notifications (FCM)']}
+      ];
+      var rows = milestones.map(function(ms) {
+        var lis = ms.items.map(function(i) {
+          return '<li class="flex items-start gap-1.5 text-xs text-gray-600"><span class="mt-0.5 w-3.5 h-3.5 border border-gray-300 rounded-sm flex-shrink-0 bg-white"></span>' + i + '</li>';
+        }).join('');
+        return '<div class="relative">' +
+          '<div class="absolute -left-4 w-4 h-4 ' + DOT[ms.c] + ' rounded-full border-2 border-white shadow-sm top-1"></div>' +
+          '<div class="' + BG[ms.c] + ' rounded-xl p-4">' +
+            '<div class="flex items-center justify-between mb-2">' +
+              '<div class="flex items-center gap-2">' +
+                '<span class="font-bold ' + TXT[ms.c] + ' text-sm">' + ms.m + '</span>' +
+                '<span class="font-semibold text-gray-700 text-sm">' + ms.label + '</span>' +
+              '</div>' +
+              '<span class="text-xs text-gray-400">' + ms.days + '</span>' +
+            '</div>' +
+            '<ul class="space-y-1">' + lis + '</ul>' +
+          '</div></div>';
+      }).join('');
+      return '<div class="space-y-3 text-sm"><div class="relative pl-6 space-y-4">' +
+        '<div class="absolute left-2 top-2 bottom-2 w-0.5 bg-gray-200"></div>' +
+        rows + '</div></div>';
+    })()
+  }
+];
+
+const STORAGE_KEY = 'compa-plan-feedback-v2';
+function loadState() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); } catch { return {}; } }
+function saveState(s) { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); }
+let state = loadState();
+
+function renderSections() {
+  document.getElementById('sections-container').innerHTML = PLAN_SECTIONS.map(section => {
+    const s = state[section.id] || { status: 'pending', comment: '' };
+    return `
+    <div id="card-${section.id}" class="section-card status-${s.status} bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <details id="details-${section.id}">
+        <summary class="px-6 py-4 flex items-center justify-between cursor-pointer hover:bg-gray-50 transition">
+          <div class="flex items-center gap-3 flex-1 min-w-0">
+            <span class="text-xl flex-shrink-0">${section.icon}</span>
+            <div class="min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="text-xs text-gray-400 font-mono">#${section.id}</span>
+                <h2 class="font-bold text-gray-800 text-base">${section.title}</h2>
+                ${s.status !== 'pending' ? `<span class="status-badge-${section.id} flex-shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ${statusBadgeClass(s.status)}">${statusLabel(s.status)}</span>` : `<span class="status-badge-${section.id}"></span>`}
+              </div>
+              <p class="text-xs text-gray-400 mt-0.5 truncate">${section.summary}</p>
+              ${section.prevFeedback ? `<p class="text-xs text-orange-500 mt-0.5 truncate">Previous feedback: "${section.prevFeedback}"</p>` : ''}
+            </div>
+          </div>
+          <div class="flex items-center gap-2 flex-shrink-0 ml-4">
+            <div class="flex gap-1" onclick="event.stopPropagation()">
+              <button onclick="setStatus(${section.id}, 'approved')" class="btn-status text-xs px-2.5 py-1 rounded-lg border border-gray-200 hover:border-green-300 hover:bg-green-50 ${s.status === 'approved' ? 'active-approved' : 'text-gray-500'}" title="Approve">✅</button>
+              <button onclick="setStatus(${section.id}, 'change')" class="btn-status text-xs px-2.5 py-1 rounded-lg border border-gray-200 hover:border-orange-300 hover:bg-orange-50 ${s.status === 'change' ? 'active-change' : 'text-gray-500'}" title="Needs Revision">✏️</button>
+              <button onclick="setStatus(${section.id}, 'question')" class="btn-status text-xs px-2.5 py-1 rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50 ${s.status === 'question' ? 'active-question' : 'text-gray-500'}" title="Question">❓</button>
+            </div>
+            <svg class="chevron w-4 h-4 text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+          </div>
+        </summary>
+        <div class="px-6 pb-4 border-t border-gray-100">
+          <div class="pt-4">${section.content}</div>
+          <div class="mt-4 border-t border-gray-100 pt-4">
+            <label class="text-xs font-medium text-gray-600 mb-1.5 block">Comment / Feedback</label>
+            <div class="flex gap-2">
+              <textarea id="comment-${section.id}" rows="2"
+                class="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-2 text-gray-700 placeholder-gray-300 resize-none focus:outline-none focus:ring-2 focus:ring-rose-200 focus:border-rose-300 transition"
+                placeholder="Feel free to share opinions, questions, or ideas..."
+                onkeydown="if(event.key==='Enter'&&event.metaKey)saveComment(${section.id})"
+              >${s.comment || ''}</textarea>
+              <button onclick="saveComment(${section.id})" class="text-xs bg-gray-800 hover:bg-gray-700 text-white px-3 py-2 rounded-lg transition self-end whitespace-nowrap">Save</button>
+            </div>
+            <div id="saved-indicator-${section.id}" class="text-xs text-green-500 mt-1 h-4"></div>
+          </div>
+        </div>
+      </details>
+    </div>`;
+  }).join('');
+}
+
+function statusBadgeClass(s) { return { approved:'bg-green-100 text-green-700', change:'bg-orange-100 text-orange-700', question:'bg-blue-100 text-blue-700' }[s] || ''; }
+function statusLabel(s) { return { approved:'✅ Approved', change:'✏️ Needs Revision', question:'❓ Question', pending:'' }[s] || ''; }
+
+function setStatus(id, status) {
+  if (!state[id]) state[id] = { status: 'pending', comment: '' };
+  state[id].status = state[id].status === status ? 'pending' : status;
+  saveState(state);
+  const card = document.getElementById('card-' + id);
+  card.className = 'section-card status-' + state[id].status + ' bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden';
+  const badge = card.querySelector('.status-badge-' + id);
+  const ns = state[id].status;
+  if (ns !== 'pending') { badge.className = 'status-badge-' + id + ' flex-shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ' + statusBadgeClass(ns); badge.textContent = statusLabel(ns); }
+  else { badge.className = 'status-badge-' + id; badge.textContent = ''; }
+  document.getElementById('details-' + id).open = true;
+  updateProgress(); updateSummary();
+}
+
+function saveComment(id) {
+  if (!state[id]) state[id] = { status: 'pending', comment: '' };
+  state[id].comment = document.getElementById('comment-' + id).value;
+  saveState(state);
+  const ind = document.getElementById('saved-indicator-' + id);
+  ind.textContent = 'Saved ✓'; setTimeout(function() { ind.textContent = ''; }, 2000);
+  updateSummary();
+}
+
+function updateProgress() {
+  const total = PLAN_SECTIONS.length;
+  const counts = { approved:0, change:0, question:0 };
+  PLAN_SECTIONS.forEach(function(s) { const st = (state[s.id]||{}).status||'pending'; if(counts[st]!==undefined) counts[st]++; });
+  const pending = total - counts.approved - counts.change - counts.question;
+  document.getElementById('total-count').textContent = total;
+  document.getElementById('approved-count').textContent = counts.approved;
+  document.getElementById('progress-bar').style.width = (counts.approved/total*100) + '%';
+  document.getElementById('cnt-approved').textContent = counts.approved;
+  document.getElementById('cnt-change').textContent = counts.change;
+  document.getElementById('cnt-question').textContent = counts.question;
+  document.getElementById('cnt-pending').textContent = pending;
+}
+
+function updateSummary() {
+  const items = PLAN_SECTIONS.filter(function(s) { const st=(state[s.id]||{}).status||'pending'; return st==='change'||st==='question'; });
+  const panel = document.getElementById('summary-panel');
+  if (!items.length) { panel.classList.add('hidden'); return; }
+  panel.classList.remove('hidden');
+  document.getElementById('summary-content').innerHTML = items.map(function(s) {
+    const st = state[s.id]||{};
+    const isChange = st.status==='change';
+    return '<div class="px-6 py-4 flex items-start gap-3">' +
+      '<span class="text-base">' + s.icon + '</span>' +
+      '<div class="flex-1">' +
+        '<div class="flex items-center gap-2 mb-1"><span class="text-sm font-semibold text-gray-800">' + s.title + '</span><span class="text-xs px-2 py-0.5 rounded-full ' + (isChange?'bg-orange-100 text-orange-700':'bg-blue-100 text-blue-700') + '">' + (isChange?'✏️ Needs Revision':'❓ Question') + '</span></div>' +
+        (st.comment ? '<p class="text-xs text-gray-600 bg-gray-50 rounded-lg px-3 py-2">' + st.comment.replace(/\n/g,'<br/>') + '</p>' : '<p class="text-xs text-gray-400 italic">No comment</p>') +
+      '</div></div>';
+  }).join('');
+}
+
+function copyFeedback() {
+  const result = { exported_at: new Date().toISOString(), project: 'COMPA Master Plan v2',
+    sections: PLAN_SECTIONS.map(function(s) { const st=state[s.id]||{status:'pending',comment:''}; return {id:s.id,title:s.title,status:st.status,comment:st.comment||null}; })
+  };
+  navigator.clipboard.writeText(JSON.stringify(result, null, 2)).then(function() { showToast('Copied to clipboard ✅'); });
+}
+
+function submitToGitHub() {
+  const lines = PLAN_SECTIONS.map(function(s) {
+    const st = state[s.id] || { status:'pending', comment:'' };
+    const emoji = { approved:'✅', change:'✏️', question:'❓', pending:'⬜' }[st.status];
+    return '### ' + emoji + ' ' + s.id + '. ' + s.title + '\n- **Status**: ' + (statusLabel(st.status)||'Not reviewed') + '\n- **Comment**: ' + (st.comment||'(none)');
+  }).join('\n\n');
+  const body = '## COMPA Plan Feedback (v2)\n\n> Submitted: ' + new Date().toLocaleDateString('en-US') + '\n\n' + lines + '\n\n---\n*This issue was generated from the [COMPA Plan Feedback page](https://wsungahn.github.io/compa/plan-feedback/en/).*';
+  const url = 'https://github.com/wsungAhn/compa/issues/new?title=' + encodeURIComponent('📋 Plan Feedback — ' + new Date().toLocaleDateString('en-US')) + '&body=' + encodeURIComponent(body) + '&labels=feedback';
+  window.open(url, '_blank');
+  showToast('GitHub issue page opened. Sign in and click Submit 🐙');
+}
+
+function resetAll() {
+  if (!confirm('Reset all feedback?')) return;
+  state = {}; saveState(state); renderSections(); updateProgress(); updateSummary(); showToast('Reset complete');
+}
+
+function showToast(msg) {
+  const t = document.createElement('div');
+  t.className = 'toast px-4 py-3 rounded-xl shadow-lg text-sm font-medium bg-gray-900 text-white';
+  t.textContent = msg;
+  document.getElementById('toast-container').appendChild(t);
+  setTimeout(function() { t.remove(); }, 3500);
+}
+
+renderSections(); updateProgress(); updateSummary();
+</script>
+</body>
+</html>
