@@ -107,6 +107,27 @@
 
 </main>
 
+<!-- Share Modal -->
+<div id="share-modal" class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center hidden" onclick="if(event.target===this)closeShareModal()">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+    <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+      <h3 class="font-bold text-gray-800">피드백 공유하기</h3>
+      <button onclick="closeShareModal()" class="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+    </div>
+    <div class="px-6 py-4">
+      <p class="text-sm text-gray-500 mb-3">아래 텍스트를 복사해서 <strong class="text-gray-700">위챗</strong> 또는 <strong class="text-gray-700">텔레그램</strong>으로 전달해주세요.</p>
+      <div class="flex gap-2 mb-3">
+        <div class="flex items-center gap-1.5 px-3 py-1.5 bg-green-50 border border-green-200 rounded-lg text-xs text-green-700 font-medium">💚 WeChat</div>
+        <div class="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-700 font-medium">✈️ Telegram</div>
+      </div>
+      <pre id="share-text" class="bg-gray-50 rounded-xl p-3 text-xs text-gray-700 whitespace-pre-wrap max-h-56 overflow-y-auto border border-gray-200 leading-relaxed"></pre>
+    </div>
+    <div class="px-6 pb-5">
+      <button onclick="copyShareText()" class="w-full bg-gray-900 hover:bg-gray-700 text-white py-2.5 rounded-xl text-sm font-semibold transition">클립보드에 복사 📋</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast-container"></div>
 
 <script>
@@ -724,10 +745,29 @@ function updateSummary() {
 }
 
 function copyFeedback() {
-  const result = { exported_at: new Date().toISOString(), project: 'COMPA 마스터 플랜 v2',
-    sections: PLAN_SECTIONS.map(s => { const st=state[s.id]||{status:'pending',comment:''}; return {id:s.id,title:s.title,status:st.status,comment:st.comment||null}; })
-  };
-  navigator.clipboard.writeText(JSON.stringify(result, null, 2)).then(() => showToast('클립보드에 복사됐습니다 ✅'));
+  const lines = ['📋 COMPA 플랜 피드백 v2', '검토일: ' + new Date().toLocaleDateString('ko-KR'), '─'.repeat(30)];
+  PLAN_SECTIONS.forEach(function(s) {
+    const st = state[s.id] || { status:'pending', comment:'' };
+    const emoji = {approved:'✅', change:'✏️', question:'❓', pending:'⬜'}[st.status];
+    const label = {approved:'승인', change:'수정 필요', question:'질문', pending:'미검토'}[st.status];
+    lines.push(emoji + ' #' + s.id + ' ' + s.title + ' → ' + label);
+    if (st.comment) lines.push('   💬 ' + st.comment);
+  });
+  lines.push('─'.repeat(30));
+  lines.push('📱 위챗 / 텔레그램으로 전달해주세요');
+  document.getElementById('share-text').textContent = lines.join('\n');
+  document.getElementById('share-modal').classList.remove('hidden');
+}
+
+function closeShareModal() {
+  document.getElementById('share-modal').classList.add('hidden');
+}
+
+function copyShareText() {
+  navigator.clipboard.writeText(document.getElementById('share-text').textContent).then(function() {
+    showToast('복사됐어요! 위챗/텔레그램에 붙여넣기 해주세요 📱');
+    closeShareModal();
+  });
 }
 
 function submitToGitHub() {
