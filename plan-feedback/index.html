@@ -17,8 +17,7 @@
     .btn-status.active-approved { background: #22c55e; color: white; }
     .btn-status.active-change   { background: #f97316; color: white; }
     .btn-status.active-question { background: #3b82f6; color: white; }
-    pre { white-space: pre-wrap; word-break: break-all; }
-    .code-block { background: #1e1e2e; color: #cdd6f4; border-radius: 8px; padding: 12px 16px; font-family: 'Consolas', monospace; font-size: 13px; overflow-x: auto; }
+    .code-block { background: #1e1e2e; color: #cdd6f4; border-radius: 8px; padding: 12px 16px; font-family: 'Consolas', monospace; font-size: 12px; overflow-x: auto; line-height: 1.6; }
     .tag-regular { background: #dbeafe; color: #1d4ed8; }
     .tag-surprise { background: #ffedd5; color: #c2410c; }
     details > summary { cursor: pointer; user-select: none; }
@@ -26,10 +25,13 @@
     .chevron { transition: transform 0.2s; }
     details[open] .chevron { transform: rotate(180deg); }
     #progress-bar { transition: width 0.4s ease; }
-    .comment-saved { animation: fadeOut 2s forwards; }
-    @keyframes fadeOut { 0%{opacity:1} 70%{opacity:1} 100%{opacity:0} }
     .toast { position: fixed; bottom: 24px; right: 24px; z-index: 9999; animation: slideIn 0.3s ease; }
     @keyframes slideIn { from{transform:translateY(20px);opacity:0} to{transform:translateY(0);opacity:1} }
+    .role-chip { display: inline-flex; align-items: center; gap: 6px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 12px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { background: #f8fafc; padding: 8px 12px; text-align: left; color: #64748b; font-weight: 600; border-bottom: 1px solid #e2e8f0; }
+    td { padding: 8px 12px; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+    .feedback-badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 99px; font-weight: 600; }
   </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
@@ -40,16 +42,16 @@
     <div class="flex items-center gap-3">
       <div class="w-8 h-8 bg-rose-500 rounded-lg flex items-center justify-center text-white font-bold text-sm">C</div>
       <div>
-        <h1 class="text-gray-900 font-bold text-lg leading-tight">COMPA 마스터 플랜</h1>
-        <p class="text-gray-400 text-xs">화장품 할인 행사 추적 앱 · 플랜 피드백</p>
+        <h1 class="text-gray-900 font-bold text-lg leading-tight">COMPA 마스터 플랜 v2</h1>
+        <p class="text-gray-400 text-xs">화장품 할인 행사 추적 앱 · 피드백 반영본</p>
       </div>
     </div>
-    <div class="flex items-center gap-3">
+    <div class="flex items-center gap-2">
       <button onclick="resetAll()" class="text-xs text-gray-400 hover:text-gray-600 px-3 py-1.5 rounded border border-gray-200 hover:border-gray-300 transition">초기화</button>
-      <button onclick="exportFeedback()" class="text-xs bg-gray-900 text-white px-4 py-1.5 rounded-lg hover:bg-gray-700 transition font-medium">피드백 복사 📋</button>
+      <button onclick="copyFeedback()" class="text-xs border border-gray-300 text-gray-600 px-3 py-1.5 rounded-lg hover:bg-gray-50 transition">복사 📋</button>
+      <button onclick="submitToGitHub()" class="text-xs bg-gray-900 text-white px-4 py-1.5 rounded-lg hover:bg-gray-700 transition font-medium">GitHub 이슈로 전송 🐙</button>
     </div>
   </div>
-
   <!-- Progress bar -->
   <div class="max-w-5xl mx-auto px-6 pb-4">
     <div class="flex items-center justify-between mb-1.5">
@@ -72,13 +74,19 @@
 
   <!-- Context banner -->
   <div class="bg-rose-50 border border-rose-100 rounded-xl p-5">
-    <p class="text-sm text-rose-700 leading-relaxed">
-      화장품(기초/색조/기능성)을 대상으로 <strong>미국·중국·일본·한국</strong>의 주요 온라인 쇼핑몰과 소셜미디어에서 최근 <strong>3년치 할인 행사</strong> 데이터를 수집·분류하여 <strong>"기다릴지 vs 지금 살지"</strong>를 판단할 수 있는 웹 서비스 개발 플랜입니다.
-      각 섹션을 검토 후 상태를 표시하고 코멘트를 남겨주세요.
-    </p>
+    <div class="flex items-start gap-3">
+      <span class="text-2xl">🛍️</span>
+      <div>
+        <p class="text-sm text-rose-800 font-semibold mb-1">COMPA — 화장품 할인 행사 추적기</p>
+        <p class="text-sm text-rose-700 leading-relaxed">
+          제품명 하나만 입력하면 <strong>한국·미국·일본·중국</strong>의 지난 3년 할인 행사를 모두 보여주고,
+          <strong>"지금 살지 / 기다릴지"</strong>를 알려주는 서비스입니다.<br/>
+          각 섹션을 읽고 ✅ 승인 / ✏️ 수정 필요 / ❓ 질문 을 눌러 피드백을 남겨주세요.
+        </p>
+      </div>
+    </div>
   </div>
 
-  <!-- Sections -->
   <div id="sections-container" class="space-y-5"></div>
 
   <!-- Feedback Summary -->
@@ -92,48 +100,87 @@
 
 </main>
 
-<!-- Toast placeholder -->
 <div id="toast-container"></div>
 
 <script>
-// ─── 플랜 데이터 ───────────────────────────────────────────────
 const PLAN_SECTIONS = [
   {
     id: 1,
     title: "프로젝트 구조",
     icon: "🗂️",
-    summary: "전체 모노레포 구조. backend(FastAPI), frontend(React+Vite), plan-feedback, docker-compose 구성",
-    content: `<div class="space-y-3 text-sm text-gray-600">
-      <p>전체 디렉토리 구조는 다음과 같이 구성됩니다.</p>
-      <div class="code-block">compa/
-├── backend/
-│   ├── app/
-│   │   ├── api/           # products.py · events.py · admin.py
-│   │   ├── scrapers/
-│   │   │   ├── base.py
-│   │   │   ├── kr/        # oliveyoung · coupang · naver_shop
-│   │   │   ├── us/        # sephora · ulta · amazon_us
-│   │   │   ├── jp/        # cosme · rakuten
-│   │   │   └── cn/        # tmall · xiaohongshu
-│   │   ├── social/        # instagram · tiktok · facebook · naver_blog
-│   │   ├── ai/            # extractor · classifier · matcher
-│   │   ├── models/        # product · platform · sale_event · social_post
-│   │   ├── tasks/         # collect · classify (Celery)
-│   │   └── core/          # config · database · proxy
-│   ├── alembic/
-│   ├── tests/
-│   └── requirements.txt
-├── frontend/
-│   └── src/
-│       ├── components/    # SearchBar · EventTimeline · PriceChart · EventCard · WaitBuyWidget
-│       ├── pages/         # Home · ProductDetail
-│       └── api/client.ts
-├── plan-feedback/         # 이 페이지
-└── docker-compose.yml</div>
-      <div class="grid grid-cols-3 gap-3 mt-2">
-        <div class="bg-blue-50 rounded-lg p-3"><div class="text-blue-700 font-semibold text-xs mb-1">Backend</div><div class="text-xs text-blue-600">Python + FastAPI<br/>Celery + Redis<br/>PostgreSQL</div></div>
-        <div class="bg-violet-50 rounded-lg p-3"><div class="text-violet-700 font-semibold text-xs mb-1">Frontend</div><div class="text-xs text-violet-600">React + TypeScript<br/>Tailwind CSS<br/>Recharts</div></div>
-        <div class="bg-amber-50 rounded-lg p-3"><div class="text-amber-700 font-semibold text-xs mb-1">AI Layer</div><div class="text-xs text-amber-600">Claude API<br/>claude-sonnet-4-6<br/>프롬프트 캐싱</div></div>
+    summary: "전체 시스템 구성 요소와 각각의 역할",
+    prevFeedback: "각각의 역할에 관해서 설명도 해줘",
+    content: `<div class="space-y-4 text-sm text-gray-600">
+
+      <div class="bg-amber-50 border border-amber-200 rounded-xl p-4">
+        <p class="text-amber-800 font-semibold text-xs mb-1">📌 피드백 반영 — 각 부품 역할 설명 추가</p>
+        <p class="text-amber-700 text-xs">프로그래밍을 몰라도 이해할 수 있도록 쉽게 설명했습니다.</p>
+      </div>
+
+      <div class="grid grid-cols-1 gap-3">
+
+        <div class="border border-blue-200 rounded-xl overflow-hidden">
+          <div class="bg-blue-50 px-4 py-2.5 font-bold text-blue-800 text-sm">🖥️ 백엔드 (서버) — 앱의 두뇌</div>
+          <div class="divide-y divide-blue-50">
+            <div class="px-4 py-3 flex gap-3">
+              <span class="font-mono text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded h-fit whitespace-nowrap mt-0.5">FastAPI</span>
+              <div><p class="text-sm text-gray-700 font-medium">요청 처리 서버</p><p class="text-xs text-gray-500 mt-0.5">"설화수 에센스 할인 알려줘"라고 검색하면 이 서버가 받아서 DB에서 찾아주고, 결과를 화면으로 보내줍니다. 식당으로 치면 <strong>홀 직원</strong> 역할.</p></div>
+            </div>
+            <div class="px-4 py-3 flex gap-3">
+              <span class="font-mono text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded h-fit whitespace-nowrap mt-0.5">Celery</span>
+              <div><p class="text-sm text-gray-700 font-medium">자동 수집 일꾼</p><p class="text-xs text-gray-500 mt-0.5">새벽 3시에 자동으로 올리브영, Sephora 등을 돌아다니며 새 할인 정보를 수집합니다. 식당으로 치면 <strong>재료 조달 담당</strong>.</p></div>
+            </div>
+            <div class="px-4 py-3 flex gap-3">
+              <span class="font-mono text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded h-fit whitespace-nowrap mt-0.5">Redis</span>
+              <div><p class="text-sm text-gray-700 font-medium">빠른 메모판</p><p class="text-xs text-gray-500 mt-0.5">자주 검색하는 제품 결과를 RAM에 잠깐 저장해서 응답 속도를 높입니다. Celery의 작업 대기열도 여기서 관리. <strong>쪽지 보드</strong> 같은 것.</p></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="border border-green-200 rounded-xl overflow-hidden">
+          <div class="bg-green-50 px-4 py-2.5 font-bold text-green-800 text-sm">🗄️ 데이터베이스 — 3년치 창고</div>
+          <div class="px-4 py-3 flex gap-3">
+            <span class="font-mono text-xs bg-green-100 text-green-700 px-2 py-1 rounded h-fit whitespace-nowrap mt-0.5">PostgreSQL</span>
+            <div><p class="text-sm text-gray-700 font-medium">메인 데이터 저장소</p><p class="text-xs text-gray-500 mt-0.5">3년치 모든 할인 행사 데이터를 안전하게 보관하는 <strong>창고</strong>. 제품명, 가격, 날짜, 플랫폼, 행사 종류 등 수백만 건의 데이터가 여기 쌓입니다.</p></div>
+          </div>
+        </div>
+
+        <div class="border border-violet-200 rounded-xl overflow-hidden">
+          <div class="bg-violet-50 px-4 py-2.5 font-bold text-violet-800 text-sm">🖼️ 프론트엔드 (화면) — 사용자가 보는 부분</div>
+          <div class="divide-y divide-violet-50">
+            <div class="px-4 py-3 flex gap-3">
+              <span class="font-mono text-xs bg-violet-100 text-violet-700 px-2 py-1 rounded h-fit whitespace-nowrap mt-0.5">React</span>
+              <div><p class="text-sm text-gray-700 font-medium">화면을 그리는 도구</p><p class="text-xs text-gray-500 mt-0.5">검색창, 차트, 카드 등 사용자가 보는 모든 UI를 만듭니다. Instagram이나 쿠팡 앱도 비슷한 기술로 만들어진 화면입니다.</p></div>
+            </div>
+            <div class="px-4 py-3 flex gap-3">
+              <span class="font-mono text-xs bg-violet-100 text-violet-700 px-2 py-1 rounded h-fit whitespace-nowrap mt-0.5">Recharts</span>
+              <div><p class="text-sm text-gray-700 font-medium">차트 라이브러리</p><p class="text-xs text-gray-500 mt-0.5">3년간 가격 변동을 예쁜 선 그래프로 그려주는 도구. "언제 쌌는지"를 한눈에 볼 수 있게 합니다.</p></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="border border-amber-200 rounded-xl overflow-hidden">
+          <div class="bg-amber-50 px-4 py-2.5 font-bold text-amber-800 text-sm">🤖 AI 레이어 — 텍스트를 이해하는 두뇌</div>
+          <div class="divide-y divide-amber-50">
+            <div class="px-4 py-3 flex gap-3">
+              <span class="font-mono text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded h-fit whitespace-nowrap mt-0.5">Claude API</span>
+              <div><p class="text-sm text-gray-700 font-medium">소셜 텍스트 분석</p><p class="text-xs text-gray-500 mt-0.5">"어제 올리브영에서 설화수 에센스 47%할인이었다ㅠㅠ" 같은 인스타 문장을 읽고 → 제품명·할인율·날짜를 자동 추출합니다. 4개 국어(한/영/일/중) 동시 처리.</p></div>
+            </div>
+            <div class="px-4 py-3 flex gap-3">
+              <span class="font-mono text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded h-fit whitespace-nowrap mt-0.5">Gemma 4</span>
+              <div><p class="text-sm text-gray-700 font-medium">가벼운 보조 AI (로컬 실행)</p><p class="text-xs text-gray-500 mt-0.5">쇼핑몰 정가/할인가처럼 형식이 딱 정해진 데이터는 이 작은 AI로 처리해서 비용 절감. Claude는 복잡한 소셜 텍스트에만 사용. <strong>→ 하이브리드 전략</strong></p></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="border border-gray-200 rounded-xl overflow-hidden">
+          <div class="bg-gray-50 px-4 py-2.5 font-bold text-gray-700 text-sm">🐳 인프라 — 모든 것을 묶는 포장 박스</div>
+          <div class="px-4 py-3 flex gap-3">
+            <span class="font-mono text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded h-fit whitespace-nowrap mt-0.5">Docker</span>
+            <div><p class="text-sm text-gray-700 font-medium">환경 포장 도구</p><p class="text-xs text-gray-500 mt-0.5">서버, DB, 일꾼, 캐시 등 모든 부품을 하나의 패키지로 묶어서 어디서든 똑같이 실행되게 합니다. "내 컴퓨터에서만 됩니다" 문제를 없애줍니다.</p></div>
+          </div>
+        </div>
+
       </div>
     </div>`
   },
@@ -141,41 +188,43 @@ const PLAN_SECTIONS = [
     id: 2,
     title: "데이터베이스 스키마",
     icon: "🗄️",
-    summary: "products · platforms · sale_events · social_posts 4개 테이블. PostgreSQL 기반",
+    summary: "products · platforms · sale_events · social_posts 4개 테이블",
     content: `<div class="space-y-4 text-sm text-gray-600">
-      <div class="grid grid-cols-1 gap-3">
+      <div class="space-y-3">
         <div class="border border-gray-200 rounded-lg overflow-hidden">
-          <div class="bg-gray-50 px-4 py-2 font-semibold text-gray-700 text-xs uppercase tracking-wide">products</div>
-          <table class="w-full text-xs"><thead class="bg-gray-50 border-b border-gray-200"><tr><th class="px-4 py-2 text-left text-gray-500">컬럼</th><th class="px-4 py-2 text-left text-gray-500">타입</th><th class="px-4 py-2 text-left text-gray-500">설명</th></tr></thead>
-          <tbody class="divide-y divide-gray-100">
-            <tr><td class="px-4 py-2 font-mono text-purple-700">id</td><td class="px-4 py-2 text-gray-500">UUID PK</td><td class="px-4 py-2"></td></tr>
-            <tr><td class="px-4 py-2 font-mono text-purple-700">name_kr / name_en / name_jp / name_cn</td><td class="px-4 py-2 text-gray-500">VARCHAR</td><td class="px-4 py-2">4개국 언어별 제품명</td></tr>
-            <tr><td class="px-4 py-2 font-mono text-purple-700">brand</td><td class="px-4 py-2 text-gray-500">VARCHAR</td><td class="px-4 py-2">브랜드명</td></tr>
-            <tr><td class="px-4 py-2 font-mono text-purple-700">category</td><td class="px-4 py-2 text-gray-500">ENUM</td><td class="px-4 py-2">base / color / functional</td></tr>
+          <div class="bg-gray-50 px-4 py-2 font-semibold text-gray-700 text-xs uppercase tracking-wide">products — 제품 목록</div>
+          <table><thead><tr><th>컬럼</th><th>타입</th><th>설명</th></tr></thead>
+          <tbody>
+            <tr><td class="font-mono text-purple-700">id</td><td class="text-gray-400">UUID PK</td><td></td></tr>
+            <tr><td class="font-mono text-purple-700">name_kr / name_en / name_jp / name_cn</td><td class="text-gray-400">VARCHAR</td><td>4개국 언어별 제품명</td></tr>
+            <tr><td class="font-mono text-purple-700">brand</td><td class="text-gray-400">VARCHAR</td><td>브랜드명</td></tr>
+            <tr><td class="font-mono text-purple-700">category</td><td class="text-gray-400">ENUM</td><td>base / color / functional</td></tr>
           </tbody></table>
         </div>
-        <div class="border border-gray-200 rounded-lg overflow-hidden">
-          <div class="bg-gray-50 px-4 py-2 font-semibold text-gray-700 text-xs uppercase tracking-wide">sale_events <span class="text-rose-500">(핵심 테이블)</span></div>
-          <table class="w-full text-xs"><thead class="bg-gray-50 border-b border-gray-200"><tr><th class="px-4 py-2 text-left text-gray-500">컬럼</th><th class="px-4 py-2 text-left text-gray-500">타입</th><th class="px-4 py-2 text-left text-gray-500">설명</th></tr></thead>
-          <tbody class="divide-y divide-gray-100">
-            <tr><td class="px-4 py-2 font-mono text-purple-700">event_name</td><td class="px-4 py-2 text-gray-500">VARCHAR</td><td class="px-4 py-2">블랙프라이데이, 618, 올영세일 등</td></tr>
-            <tr><td class="px-4 py-2 font-mono text-purple-700">event_type</td><td class="px-4 py-2 text-gray-500">ENUM</td><td class="px-4 py-2"><span class="px-1.5 py-0.5 rounded tag-regular text-xs">regular</span> / <span class="px-1.5 py-0.5 rounded tag-surprise text-xs">surprise</span></td></tr>
-            <tr><td class="px-4 py-2 font-mono text-purple-700">original_price / sale_price / discount_rate</td><td class="px-4 py-2 text-gray-500">NUMERIC</td><td class="px-4 py-2">가격 정보</td></tr>
-            <tr><td class="px-4 py-2 font-mono text-purple-700">currency</td><td class="px-4 py-2 text-gray-500">CHAR(3)</td><td class="px-4 py-2">KRW / USD / JPY / CNY</td></tr>
-            <tr><td class="px-4 py-2 font-mono text-purple-700">reason</td><td class="px-4 py-2 text-gray-500">TEXT</td><td class="px-4 py-2">돌발 행사 이유 (기다릴지 판단에 활용)</td></tr>
-            <tr><td class="px-4 py-2 font-mono text-purple-700">confidence</td><td class="px-4 py-2 text-gray-500">FLOAT</td><td class="px-4 py-2">AI 추출 신뢰도 0~1 (0.7 미만 → 검토 필요)</td></tr>
+
+        <div class="border border-rose-200 rounded-lg overflow-hidden">
+          <div class="bg-rose-50 px-4 py-2 font-semibold text-rose-700 text-xs uppercase tracking-wide">sale_events — 핵심 테이블</div>
+          <table><thead><tr><th>컬럼</th><th>타입</th><th>설명</th></tr></thead>
+          <tbody>
+            <tr><td class="font-mono text-purple-700">event_name</td><td class="text-gray-400">VARCHAR</td><td>블랙프라이데이, 618, 올영세일 등</td></tr>
+            <tr><td class="font-mono text-purple-700">event_type</td><td class="text-gray-400">ENUM</td><td><span class="feedback-badge tag-regular">regular 정기</span> / <span class="feedback-badge tag-surprise">surprise 돌발</span></td></tr>
+            <tr><td class="font-mono text-purple-700">original_price / sale_price / discount_rate</td><td class="text-gray-400">NUMERIC</td><td>가격 정보</td></tr>
+            <tr><td class="font-mono text-purple-700">currency</td><td class="text-gray-400">CHAR(3)</td><td>KRW / USD / JPY / CNY</td></tr>
+            <tr><td class="font-mono text-purple-700">reason</td><td class="text-gray-400">TEXT</td><td>돌발 행사 이유 — 기다릴지 판단의 핵심 근거</td></tr>
+            <tr><td class="font-mono text-purple-700">confidence</td><td class="text-gray-400">FLOAT</td><td>AI 추출 신뢰도 0~1 (0.7 미만 → 수동 검토)</td></tr>
           </tbody></table>
         </div>
+
         <div class="grid grid-cols-2 gap-3">
           <div class="border border-gray-200 rounded-lg overflow-hidden">
-            <div class="bg-gray-50 px-4 py-2 font-semibold text-gray-700 text-xs uppercase tracking-wide">platforms</div>
+            <div class="bg-gray-50 px-4 py-2 font-semibold text-gray-700 text-xs">platforms</div>
             <div class="px-4 py-3 text-xs text-gray-500 space-y-1">
               <div>name · country (KR/US/JP/CN)</div>
               <div>scrape_method: scraping / official_api / unofficial_api</div>
             </div>
           </div>
           <div class="border border-gray-200 rounded-lg overflow-hidden">
-            <div class="bg-gray-50 px-4 py-2 font-semibold text-gray-700 text-xs uppercase tracking-wide">social_posts</div>
+            <div class="bg-gray-50 px-4 py-2 font-semibold text-gray-700 text-xs">social_posts</div>
             <div class="px-4 py-3 text-xs text-gray-500 space-y-1">
               <div>platform: instagram / tiktok / facebook / naver_blog</div>
               <div>processed (BOOLEAN) · sale_event_id (FK)</div>
@@ -189,38 +238,58 @@ const PLAN_SECTIONS = [
     id: 3,
     title: "데이터 수집 전략",
     icon: "🕸️",
-    summary: "3단계 Phase 수집 전략. 한국 MVP → 미국·일본 → 중국·소셜미디어",
+    summary: "3단계 Phase + Google Trends 추가. 한국 MVP → 미국·일본 → 중국·소셜",
+    prevFeedback: "구글에서 트렌드 검색하는 그것도 괜찮지 않아?",
     content: `<div class="space-y-4 text-sm text-gray-600">
+
+      <div class="bg-green-50 border border-green-200 rounded-xl p-4">
+        <p class="text-green-800 font-semibold text-xs mb-1">✅ 피드백 반영 — Google Trends 추가</p>
+        <p class="text-green-700 text-xs">특정 제품의 구글 검색량이 갑자기 올라가는 시점 = 할인 행사 임박 신호로 활용. <code class="bg-green-100 px-1 rounded">pytrends</code> 라이브러리로 무료 수집 가능.</p>
+      </div>
+
+      <div class="border border-blue-100 bg-blue-50 rounded-xl p-4">
+        <div class="flex items-center gap-2 mb-2"><span class="text-base">📈</span><span class="font-semibold text-blue-800 text-sm">Google Trends — 행사 예측 보조 신호</span><span class="feedback-badge bg-blue-200 text-blue-800 text-xs">새로 추가</span></div>
+        <ul class="text-xs text-blue-700 space-y-1.5">
+          <li>• <code class="bg-blue-100 px-1 rounded">pytrends</code> 라이브러리로 제품 검색량 3년치 수집</li>
+          <li>• 검색량 급등 시점과 실제 할인 행사 시점 비교 → 패턴 학습</li>
+          <li>• "이 제품 검색량이 작년 이맘때 2배 올랐고 그 직후 올영세일이 있었다" → <strong>예측 기능 강화</strong></li>
+          <li>• 수집 주기: 매주 1회 (무료 API 사용)</li>
+        </ul>
+      </div>
+
       <div class="space-y-3">
         <div class="border border-green-200 bg-green-50 rounded-xl p-4">
           <div class="flex items-center gap-2 mb-3"><span class="bg-green-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">Phase 1</span><span class="font-semibold text-green-800">한국 (MVP · 4주)</span></div>
-          <table class="w-full text-xs"><thead><tr class="text-green-700"><th class="text-left py-1">소스</th><th class="text-left py-1">방식</th><th class="text-left py-1">비고</th></tr></thead>
-          <tbody class="divide-y divide-green-100">
-            <tr><td class="py-1.5 font-medium">Olive Young</td><td class="py-1.5">Playwright 스크래핑</td><td class="py-1.5 text-gray-500">상품 페이지 + 쿠폰/행사 탭</td></tr>
-            <tr><td class="py-1.5 font-medium">네이버쇼핑</td><td class="py-1.5">공식 Search API</td><td class="py-1.5 text-gray-500">가격 히스토리 + 기획전</td></tr>
-            <tr><td class="py-1.5 font-medium">네이버 블로그</td><td class="py-1.5">공식 Search API</td><td class="py-1.5 text-gray-500">할인 언급 포스트 수집</td></tr>
-            <tr><td class="py-1.5 font-medium">쿠팡</td><td class="py-1.5">httpx + BeautifulSoup</td><td class="py-1.5 text-gray-500">가격 변동 감지</td></tr>
+          <table><thead><tr><th class="bg-transparent text-green-700">소스</th><th class="bg-transparent text-green-700">방식</th><th class="bg-transparent text-green-700">비고</th></tr></thead>
+          <tbody>
+            <tr><td class="font-medium">Olive Young</td><td>Playwright 스크래핑</td><td class="text-gray-500">상품 페이지 + 쿠폰/행사 탭</td></tr>
+            <tr><td class="font-medium">네이버쇼핑</td><td>공식 Search API</td><td class="text-gray-500">가격 히스토리 + 기획전</td></tr>
+            <tr><td class="font-medium">네이버 블로그</td><td>공식 Search API</td><td class="text-gray-500">할인 언급 포스트 수집</td></tr>
+            <tr><td class="font-medium">쿠팡</td><td>httpx + BeautifulSoup</td><td class="text-gray-500">가격 변동 감지</td></tr>
+            <tr><td class="font-medium text-blue-700">Google Trends 🆕</td><td>pytrends (무료)</td><td class="text-blue-600">검색량 급등 = 행사 예측</td></tr>
           </tbody></table>
         </div>
+
         <div class="border border-blue-200 bg-blue-50 rounded-xl p-4">
           <div class="flex items-center gap-2 mb-3"><span class="bg-blue-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">Phase 2</span><span class="font-semibold text-blue-800">미국·일본 (2주)</span></div>
-          <table class="w-full text-xs"><thead><tr class="text-blue-700"><th class="text-left py-1">소스</th><th class="text-left py-1">방식</th><th class="text-left py-1">비고</th></tr></thead>
-          <tbody class="divide-y divide-blue-100">
-            <tr><td class="py-1.5 font-medium">Sephora / Ulta</td><td class="py-1.5">Playwright</td><td class="py-1.5 text-gray-500">Sale 이벤트 페이지</td></tr>
-            <tr><td class="py-1.5 font-medium">Amazon US</td><td class="py-1.5">PA API</td><td class="py-1.5 text-gray-500">어필리에이트 계정 필요</td></tr>
-            <tr><td class="py-1.5 font-medium">@cosme</td><td class="py-1.5">httpx</td><td class="py-1.5 text-gray-500">特売 정보</td></tr>
-            <tr><td class="py-1.5 font-medium">라쿠텐</td><td class="py-1.5">공식 Ichiba API</td><td class="py-1.5 text-gray-500"></td></tr>
+          <table><thead><tr><th class="bg-transparent text-blue-700">소스</th><th class="bg-transparent text-blue-700">방식</th><th class="bg-transparent text-blue-700">비고</th></tr></thead>
+          <tbody>
+            <tr><td class="font-medium">Sephora / Ulta</td><td>Playwright</td><td class="text-gray-500">Sale 이벤트 페이지</td></tr>
+            <tr><td class="font-medium">Amazon US</td><td>PA API</td><td class="text-gray-500">어필리에이트 계정 필요</td></tr>
+            <tr><td class="font-medium">@cosme</td><td>httpx</td><td class="text-gray-500">特売 정보</td></tr>
+            <tr><td class="font-medium">라쿠텐</td><td>공식 Ichiba API</td><td class="text-gray-500"></td></tr>
           </tbody></table>
         </div>
+
         <div class="border border-orange-200 bg-orange-50 rounded-xl p-4">
           <div class="flex items-center gap-2 mb-3"><span class="bg-orange-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">Phase 3</span><span class="font-semibold text-orange-800">중국·소셜미디어 (3주)</span></div>
-          <table class="w-full text-xs"><thead><tr class="text-orange-700"><th class="text-left py-1">소스</th><th class="text-left py-1">방식</th><th class="text-left py-1">비고</th></tr></thead>
-          <tbody class="divide-y divide-orange-100">
-            <tr><td class="py-1.5 font-medium">Tmall</td><td class="py-1.5">비공식 API + Playwright</td><td class="py-1.5 text-gray-500">618·双11 이벤트</td></tr>
-            <tr><td class="py-1.5 font-medium">小红书</td><td class="py-1.5">Playwright (로그인 필요)</td><td class="py-1.5 text-red-500">⚠ 난이도 높음</td></tr>
-            <tr><td class="py-1.5 font-medium">Instagram</td><td class="py-1.5">Graph API</td><td class="py-1.5 text-gray-500">#skincaresale 해시태그</td></tr>
-            <tr><td class="py-1.5 font-medium">TikTok</td><td class="py-1.5">Research API</td><td class="py-1.5 text-gray-500">신청 필요</td></tr>
-            <tr><td class="py-1.5 font-medium">Facebook</td><td class="py-1.5">Graph API</td><td class="py-1.5 text-gray-500">브랜드 공식 페이지</td></tr>
+          <table><thead><tr><th class="bg-transparent text-orange-700">소스</th><th class="bg-transparent text-orange-700">방식</th><th class="bg-transparent text-orange-700">비고</th></tr></thead>
+          <tbody>
+            <tr><td class="font-medium">Tmall</td><td>비공식 API + Playwright</td><td class="text-gray-500">618·双11 이벤트</td></tr>
+            <tr><td class="font-medium">小红书</td><td>Playwright (로그인 필요)</td><td class="text-red-500">⚠ 난이도 높음</td></tr>
+            <tr><td class="font-medium">Instagram</td><td>Graph API</td><td class="text-gray-500">#skincaresale 해시태그</td></tr>
+            <tr><td class="font-medium">TikTok</td><td>Research API</td><td class="text-gray-500">신청 필요</td></tr>
+            <tr><td class="font-medium">Facebook</td><td>Graph API</td><td class="text-gray-500">브랜드 공식 페이지</td></tr>
           </tbody></table>
         </div>
       </div>
@@ -228,44 +297,59 @@ const PLAN_SECTIONS = [
   },
   {
     id: 4,
-    title: "AI 파이프라인 (Claude API)",
+    title: "AI 파이프라인 — 모델 전략",
     icon: "🤖",
-    summary: "extractor(구조화 추출) · classifier(정기/돌발 분류) · matcher(다국어 제품명 매칭). claude-sonnet-4-6 + 프롬프트 캐싱",
+    summary: "Gemma 4 (정형 데이터) + Claude (소셜 비정형) 하이브리드. 비용 최적화",
+    prevFeedback: "젬마4의 가장 작은 버전으로도 이정도는 할수 있는 거 아냐? 이런 작업에 클로드까지 필요해?",
     content: `<div class="space-y-4 text-sm text-gray-600">
-      <div class="grid grid-cols-1 gap-3">
-        <div class="border border-gray-200 rounded-xl p-4">
-          <div class="flex items-center gap-2 mb-2"><span class="text-lg">📥</span><span class="font-semibold text-gray-800">extractor.py — 텍스트 → 구조화 추출</span></div>
-          <p class="text-xs text-gray-500 mb-2">소셜포스트 또는 쇼핑몰 행사 텍스트를 입력받아 구조화된 행사 데이터로 변환</p>
-          <div class="code-block text-xs">입력: 소셜포스트 / 쇼핑몰 행사 텍스트 (다국어)
-출력: {
-  product_name, brand,
-  original_price, sale_price, discount_rate, currency,
-  start_date, end_date,
-  event_name, reason, confidence  // 0.7 미만 → needs_review
-}</div>
-          <div class="mt-2 flex gap-2 flex-wrap">
-            <span class="text-xs bg-violet-100 text-violet-700 px-2 py-0.5 rounded">claude-sonnet-4-6</span>
-            <span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">프롬프트 캐싱 적용</span>
-            <span class="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded">신뢰도 < 0.7 → 검토 플래그</span>
-          </div>
+
+      <div class="bg-amber-50 border border-amber-200 rounded-xl p-4">
+        <p class="text-amber-800 font-semibold text-xs mb-2">💡 피드백 반영 — AI 모델 전략 업데이트</p>
+        <p class="text-amber-700 text-xs">좋은 지적입니다. 모든 작업에 Claude를 쓸 필요는 없습니다. <strong>하이브리드 전략</strong>으로 비용을 크게 줄일 수 있습니다.</p>
+      </div>
+
+      <div class="border border-gray-200 rounded-xl overflow-hidden">
+        <div class="bg-gray-50 px-4 py-2 font-semibold text-gray-700 text-xs">모델 비교</div>
+        <table>
+          <thead><tr><th>항목</th><th>Gemma 4 2B (로컬)</th><th>Claude sonnet-4-6 (API)</th></tr></thead>
+          <tbody>
+            <tr><td class="font-medium">비용</td><td class="text-green-600 font-semibold">무료 (로컬 실행)</td><td class="text-orange-600">유료 (캐싱으로 절감)</td></tr>
+            <tr><td class="font-medium">한국어</td><td class="text-green-600">✅ 양호</td><td class="text-green-600">✅ 완벽</td></tr>
+            <tr><td class="font-medium">4개국어 동시 처리</td><td class="text-red-500">⚠ 불안정</td><td class="text-green-600">✅ 완벽</td></tr>
+            <tr><td class="font-medium">소셜 비정형 텍스트</td><td class="text-red-500">⚠ 어려움</td><td class="text-green-600">✅ 강점</td></tr>
+            <tr><td class="font-medium">속도</td><td class="text-orange-500">중간 (GPU 필요)</td><td class="text-green-600">빠름 (API)</td></tr>
+            <tr><td class="font-medium text-rose-600">담당 역할</td><td class="font-semibold text-blue-700">쇼핑몰 정형 데이터</td><td class="font-semibold text-violet-700">소셜미디어 비정형</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div class="border border-blue-200 bg-blue-50 rounded-xl p-4">
+          <div class="font-semibold text-blue-800 text-sm mb-2">Gemma 4 2B 담당</div>
+          <ul class="text-xs text-blue-700 space-y-1.5">
+            <li>• 올리브영 / Sephora 가격표 추출<br/><span class="text-gray-500">(형식이 규칙적 → 소형 모델로 충분)</span></li>
+            <li>• 쇼핑몰 행사 이름 분류</li>
+            <li>• 1차 필터링 (관련 없는 포스트 제거)</li>
+          </ul>
         </div>
-        <div class="border border-gray-200 rounded-xl p-4">
-          <div class="flex items-center gap-2 mb-2"><span class="text-lg">🏷️</span><span class="font-semibold text-gray-800">classifier.py — 정기 / 돌발 분류</span></div>
-          <p class="text-xs text-gray-500 mb-2">과거 3년 행사 패턴을 기반으로 현재 행사가 정기인지 돌발인지 판단</p>
-          <div class="grid grid-cols-2 gap-3">
-            <div class="bg-blue-50 rounded-lg p-3 text-xs">
-              <div class="font-semibold text-blue-700 mb-1">정기 판정 조건</div>
-              <ul class="space-y-1 text-blue-600"><li>• 같은 event_name이 2년 이상 동일 달 등장</li><li>• 알려진 정기행사 사전 매칭<br/><span class="text-gray-400">Black Friday, 618, 双11, 올영세일, 솔드아웃위크...</span></li></ul>
-            </div>
-            <div class="bg-orange-50 rounded-lg p-3 text-xs">
-              <div class="font-semibold text-orange-700 mb-1">돌발 시 추가 정보</div>
-              <ul class="space-y-1 text-orange-600"><li>• reason 필드에 이유 저장</li><li>• "재고소진", "신제품 출시 전 처분", "창립기념" 등</li><li>• 기다릴지 판단 근거로 표시</li></ul>
-            </div>
-          </div>
+        <div class="border border-violet-200 bg-violet-50 rounded-xl p-4">
+          <div class="font-semibold text-violet-800 text-sm mb-2">Claude sonnet-4-6 담당</div>
+          <ul class="text-xs text-violet-700 space-y-1.5">
+            <li>• 인스타/블로그 자유 텍스트 분석<br/><span class="text-gray-500">("어제 올영 47%였는데ㅠ" 같은 문장)</span></li>
+            <li>• 4개국어 혼용 텍스트</li>
+            <li>• 정기/돌발 최종 분류</li>
+            <li>• 프롬프트 캐싱으로 비용 ~60% 절감</li>
+          </ul>
         </div>
-        <div class="border border-gray-200 rounded-xl p-4">
-          <div class="flex items-center gap-2 mb-2"><span class="text-lg">🔗</span><span class="font-semibold text-gray-800">matcher.py — 다국어 제품명 매칭</span></div>
-          <p class="text-xs text-gray-500">사용자가 입력한 임의 언어 제품명을 DB의 product_id로 매핑. 브랜드명 + 제품 라인 + 용량 기준 퍼지 매칭</p>
+      </div>
+
+      <div class="bg-gray-50 rounded-xl p-4">
+        <div class="font-semibold text-gray-700 text-sm mb-2">처리 파이프라인</div>
+        <div class="text-xs text-gray-600 space-y-1">
+          <div class="flex items-center gap-2"><span class="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center flex-shrink-0 font-bold">1</span><span>수집된 텍스트 → <strong>Gemma</strong>로 1차 분류 (관련/무관)</span></div>
+          <div class="flex items-center gap-2"><span class="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center flex-shrink-0 font-bold">2</span><span>정형 데이터(쇼핑몰) → <strong>Gemma</strong>로 가격/날짜 추출</span></div>
+          <div class="flex items-center gap-2"><span class="w-6 h-6 bg-violet-500 text-white rounded-full flex items-center justify-center flex-shrink-0 font-bold">3</span><span>비정형 데이터(소셜) → <strong>Claude</strong>로 정밀 추출</span></div>
+          <div class="flex items-center gap-2"><span class="w-6 h-6 bg-rose-500 text-white rounded-full flex items-center justify-center flex-shrink-0 font-bold">4</span><span>최종 정기/돌발 분류 → <strong>Claude</strong> (패턴 분석)</span></div>
         </div>
       </div>
     </div>`
@@ -274,40 +358,37 @@ const PLAN_SECTIONS = [
     id: 5,
     title: "API 엔드포인트",
     icon: "🔌",
-    summary: "GET /products/search · GET /products/{id}/events · POST /admin/collect. JSON 응답 예시 포함",
-    content: `<div class="space-y-4 text-sm text-gray-600">
-      <div class="space-y-3">
-        <div class="border border-gray-200 rounded-xl overflow-hidden">
-          <div class="bg-gray-50 px-4 py-2 flex items-center gap-2"><span class="text-xs font-bold bg-green-500 text-white px-2 py-0.5 rounded">GET</span><span class="font-mono text-sm text-gray-700">/api/products/search?q={query}&lang={ko|en|ja|zh}</span></div>
-          <div class="px-4 py-3 text-xs text-gray-500">제품명으로 후보 목록 검색. 다국어 지원, 퍼지 매칭.</div>
-        </div>
-        <div class="border border-gray-200 rounded-xl overflow-hidden">
-          <div class="bg-gray-50 px-4 py-2 flex items-center gap-2"><span class="text-xs font-bold bg-green-500 text-white px-2 py-0.5 rounded">GET</span><span class="font-mono text-sm text-gray-700">/api/products/{id}/events?years=3&country=all</span></div>
-          <div class="px-4 py-3">
-            <p class="text-xs text-gray-500 mb-2">3년치 할인 행사 목록 + 기다릴지/지금 살지 추천 반환</p>
-            <div class="code-block text-xs">{
+    summary: "GET /products/search · GET /products/{id}/events · POST /admin/collect",
+    content: `<div class="space-y-3 text-sm text-gray-600">
+      <div class="border border-gray-200 rounded-xl overflow-hidden">
+        <div class="bg-gray-50 px-4 py-2 flex items-center gap-2"><span class="text-xs font-bold bg-green-500 text-white px-2 py-0.5 rounded">GET</span><span class="font-mono text-sm text-gray-700">/api/products/search?q={query}&lang={ko|en|ja|zh}</span></div>
+        <div class="px-4 py-3 text-xs text-gray-500">제품명으로 후보 목록 검색. 다국어 지원, 퍼지 매칭.</div>
+      </div>
+      <div class="border border-gray-200 rounded-xl overflow-hidden">
+        <div class="bg-gray-50 px-4 py-2 flex items-center gap-2"><span class="text-xs font-bold bg-green-500 text-white px-2 py-0.5 rounded">GET</span><span class="font-mono text-sm text-gray-700">/api/products/{id}/events?years=3&country=all</span></div>
+        <div class="px-4 py-3">
+          <p class="text-xs text-gray-500 mb-2">3년치 할인 행사 목록 + 기다릴지/지금 살지 추천 반환</p>
+          <div class="code-block">{
   "product": { "name_kr": "설화수 자음 에센스 75ml", ... },
   "events": [
     {
       "event_name": "블랙프라이데이",
-      "event_type": "regular",          // 정기
+      "event_type": "regular",
       "year": 2024,
       "period": "2024-11-22 ~ 2024-11-29",
       "platform": "Sephora (US)",
       "original_price": 85.00,
       "sale_price": 59.50,
       "discount_rate": 30,
-      "reason": null,
       "recurring_pattern": "매년 11월 넷째주"
     },
     {
       "event_name": "재고소진 특가",
-      "event_type": "surprise",         // 돌발
+      "event_type": "surprise",
       "year": 2023,
       "platform": "Olive Young (KR)",
       "discount_rate": 40,
-      "reason": "신제품 출시로 인한 구버전 재고 소진",
-      "recurring_pattern": null
+      "reason": "신제품 출시로 인한 구버전 재고 소진"
     }
   ],
   "recommendation": {
@@ -315,47 +396,75 @@ const PLAN_SECTIONS = [
     "reason": "블랙프라이데이(11월)까지 약 6개월, 예상 할인율 30%"
   }
 }</div>
-          </div>
-        </div>
-        <div class="border border-gray-200 rounded-xl overflow-hidden">
-          <div class="bg-gray-50 px-4 py-2 flex items-center gap-2"><span class="text-xs font-bold bg-orange-500 text-white px-2 py-0.5 rounded">POST</span><span class="font-mono text-sm text-gray-700">/api/admin/collect</span></div>
-          <div class="px-4 py-3 text-xs text-gray-500">내부 관리용. 특정 제품 즉시 수집 트리거.</div>
         </div>
       </div>
     </div>`
   },
   {
     id: 6,
-    title: "프론트엔드 핵심 화면",
+    title: "프론트엔드 UX & 시각화",
     icon: "🖥️",
-    summary: "검색 → 가격 히스토리 차트 → 행사 타임라인 → 기다릴지/지금 살지 위젯",
+    summary: "히트맵 캘린더 · 최저가 마커 · D-day 위젯 · 사용자 흐름 설계",
+    prevFeedback: "어떤식으로 시각화를 멋지게 할지가 관건일거 같아. 사용자경험을 어떻게 유도할지도.",
     content: `<div class="space-y-4 text-sm text-gray-600">
-      <div class="grid grid-cols-1 gap-3">
-        <div class="border border-gray-200 rounded-xl p-4">
-          <div class="font-semibold text-gray-800 mb-3">🏠 홈 화면</div>
-          <ul class="text-xs space-y-1.5 text-gray-600">
-            <li class="flex items-start gap-2"><span class="text-rose-400 mt-0.5">▸</span>제품명 검색창 — 다국어 자동완성 (ko/en/ja/zh)</li>
-            <li class="flex items-start gap-2"><span class="text-rose-400 mt-0.5">▸</span>최근 검색 제품 히스토리</li>
-          </ul>
+
+      <div class="bg-violet-50 border border-violet-200 rounded-xl p-4">
+        <p class="text-violet-800 font-semibold text-xs mb-1">🎨 피드백 반영 — UX 흐름 및 시각화 구체화</p>
+      </div>
+
+      <div class="border border-gray-200 rounded-xl p-4">
+        <div class="font-semibold text-gray-800 mb-3 text-sm">📱 사용자 경험 흐름</div>
+        <div class="flex flex-col gap-2 text-xs">
+          <div class="flex items-start gap-3 p-2.5 bg-gray-50 rounded-lg"><span class="w-6 h-6 bg-rose-500 text-white rounded-full flex items-center justify-center flex-shrink-0 font-bold text-xs">1</span><div><strong>"설화수 에센스"</strong> 검색 → 자동완성으로 정확한 제품 선택</div></div>
+          <div class="flex items-start gap-3 p-2.5 bg-gray-50 rounded-lg"><span class="w-6 h-6 bg-rose-500 text-white rounded-full flex items-center justify-center flex-shrink-0 font-bold text-xs">2</span><div>상단에 <strong>"지금 살지 / 기다릴지"</strong> 결론이 크고 굵게 먼저 보임 — 스크롤 없이 핵심 파악</div></div>
+          <div class="flex items-start gap-3 p-2.5 bg-gray-50 rounded-lg"><span class="w-6 h-6 bg-rose-500 text-white rounded-full flex items-center justify-center flex-shrink-0 font-bold text-xs">3</span><div>아래로 스크롤하며 차트·타임라인으로 근거 확인</div></div>
+          <div class="flex items-start gap-3 p-2.5 bg-gray-50 rounded-lg"><span class="w-6 h-6 bg-rose-500 text-white rounded-full flex items-center justify-center flex-shrink-0 font-bold text-xs">4</span><div>마음에 들면 <strong>"알림 설정"</strong> → 다음 행사 시작 시 푸시 알림</div></div>
         </div>
+      </div>
+
+      <div class="grid grid-cols-1 gap-3">
+        <div class="border border-rose-200 bg-rose-50 rounded-xl p-4">
+          <div class="font-semibold text-rose-800 mb-2 text-sm">🎯 핵심 위젯 — "지금 살지/기다릴지"</div>
+          <div class="grid grid-cols-3 gap-2 text-xs">
+            <div class="bg-white rounded-lg p-3 text-center"><div class="text-2xl font-bold text-rose-500">D-47</div><div class="text-gray-500 mt-1">다음 블랙프라이데이</div></div>
+            <div class="bg-white rounded-lg p-3 text-center"><div class="text-2xl font-bold text-green-500">-30%</div><div class="text-gray-500 mt-1">예상 할인율</div></div>
+            <div class="bg-white rounded-lg p-3 text-center"><div class="text-2xl font-bold text-blue-500">역최</div><div class="text-gray-500 mt-1">현재가 ≠ 최저가</div></div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div class="border border-gray-200 rounded-xl p-4">
+            <div class="font-semibold text-gray-800 mb-2 text-sm">📊 가격 히스토리 차트</div>
+            <ul class="text-xs text-gray-500 space-y-1">
+              <li>• 3년간 정가 vs 최저가 라인 차트</li>
+              <li>• 할인 행사 시점에 마커 + 퍼센트 표시</li>
+              <li>• 역대 최저가 구간 하이라이트</li>
+              <li>• 마우스 오버 시 행사명·이유 툴팁</li>
+            </ul>
+          </div>
+          <div class="border border-gray-200 rounded-xl p-4">
+            <div class="font-semibold text-gray-800 mb-2 text-sm">📅 연간 히트맵 캘린더</div>
+            <ul class="text-xs text-gray-500 space-y-1">
+              <li>• GitHub 잔디 스타일 달력</li>
+              <li>• 할인 깊이에 따라 색상 진하기 변화</li>
+              <li>• "이 달에 자주 할인한다" 패턴 시각화</li>
+              <li>• 클릭 시 해당 행사 목록 표시</li>
+            </ul>
+          </div>
+        </div>
+
         <div class="border border-gray-200 rounded-xl p-4">
-          <div class="font-semibold text-gray-800 mb-3">📊 제품 상세 화면 컴포넌트</div>
-          <div class="space-y-2 text-xs">
-            <div class="flex items-start gap-3 p-2 bg-gray-50 rounded-lg">
-              <span class="font-mono text-violet-700 whitespace-nowrap">PriceChart.tsx</span>
-              <span class="text-gray-500">Recharts LineChart — 3년간 정가 vs 할인가 시각화</span>
+          <div class="font-semibold text-gray-800 mb-2 text-sm">🏷️ 행사 타임라인 카드</div>
+          <div class="flex gap-2 text-xs">
+            <div class="flex-1 bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <div class="flex items-center gap-1 mb-1"><span class="feedback-badge tag-regular">정기</span><span class="font-semibold text-gray-700">블랙프라이데이 2024</span></div>
+              <div class="text-gray-500">Sephora (US) · -30%</div>
+              <div class="text-blue-600 mt-1">🔁 매년 11월 넷째주 반복</div>
             </div>
-            <div class="flex items-start gap-3 p-2 bg-gray-50 rounded-lg">
-              <span class="font-mono text-violet-700 whitespace-nowrap">EventTimeline.tsx</span>
-              <span class="text-gray-500">연도별 행사 목록. <span class="tag-regular px-1 rounded text-xs">정기 · 매년 11월</span> / <span class="tag-surprise px-1 rounded text-xs">돌발 · 재고소진</span> 배지</span>
-            </div>
-            <div class="flex items-start gap-3 p-2 bg-gray-50 rounded-lg">
-              <span class="font-mono text-violet-700 whitespace-nowrap">EventCard.tsx</span>
-              <span class="text-gray-500">개별 행사 카드 — 플랫폼, 할인율, 기간, 이유 표시</span>
-            </div>
-            <div class="flex items-start gap-3 p-2 bg-rose-50 rounded-lg border border-rose-100">
-              <span class="font-mono text-rose-700 whitespace-nowrap">WaitBuyWidget.tsx</span>
-              <span class="text-gray-600"><strong>핵심 위젯</strong> — 다음 정기행사 D-day 카운트다운, 현재가가 역대 최저가 대비 몇 % 수준인지 표시</span>
+            <div class="flex-1 bg-orange-50 border border-orange-200 rounded-lg p-3">
+              <div class="flex items-center gap-1 mb-1"><span class="feedback-badge tag-surprise">돌발</span><span class="font-semibold text-gray-700">재고소진 특가 2023</span></div>
+              <div class="text-gray-500">Olive Young (KR) · -40%</div>
+              <div class="text-orange-600 mt-1">💡 신제품 출시로 구버전 처분</div>
             </div>
           </div>
         </div>
@@ -364,35 +473,58 @@ const PLAN_SECTIONS = [
   },
   {
     id: 7,
-    title: "인프라 & 배포",
-    icon: "🐳",
-    summary: "Docker Compose 6개 서비스. api · worker · beat · db · redis · frontend. 환경변수 목록 포함",
+    title: "인프라, 배포 & 수익 모델",
+    icon: "💰",
+    summary: "Docker Compose 6개 서비스 + 광고·프리미엄 수익 구조",
+    prevFeedback: "광고를 넣을 자리를 만들어야할거 같아. 광고창에서 광고로 수익을 만들고 광고창을 없애는걸로 수익을 만드는거.",
     content: `<div class="space-y-4 text-sm text-gray-600">
-      <div class="border border-gray-200 rounded-xl overflow-hidden">
-        <div class="bg-gray-50 px-4 py-2 font-semibold text-gray-700 text-xs">docker-compose.yml 서비스</div>
-        <table class="w-full text-xs"><thead class="border-b border-gray-100"><tr><th class="px-4 py-2 text-left text-gray-500">서비스</th><th class="px-4 py-2 text-left text-gray-500">이미지</th><th class="px-4 py-2 text-left text-gray-500">역할</th></tr></thead>
-        <tbody class="divide-y divide-gray-50">
-          <tr><td class="px-4 py-2 font-mono text-blue-700">api</td><td class="px-4 py-2 text-gray-400">python:3.12</td><td class="px-4 py-2">FastAPI 앱</td></tr>
-          <tr><td class="px-4 py-2 font-mono text-blue-700">worker</td><td class="px-4 py-2 text-gray-400">python:3.12</td><td class="px-4 py-2">Celery 워커 (수집 태스크 처리)</td></tr>
-          <tr><td class="px-4 py-2 font-mono text-blue-700">beat</td><td class="px-4 py-2 text-gray-400">python:3.12</td><td class="px-4 py-2">Celery Beat (주기적 스케줄)</td></tr>
-          <tr><td class="px-4 py-2 font-mono text-green-700">db</td><td class="px-4 py-2 text-gray-400">postgres:16</td><td class="px-4 py-2">PostgreSQL 메인 DB</td></tr>
-          <tr><td class="px-4 py-2 font-mono text-red-700">redis</td><td class="px-4 py-2 text-gray-400">redis:7</td><td class="px-4 py-2">큐 + 캐시</td></tr>
-          <tr><td class="px-4 py-2 font-mono text-violet-700">frontend</td><td class="px-4 py-2 text-gray-400">node:20</td><td class="px-4 py-2">Vite dev server</td></tr>
-        </tbody></table>
+
+      <div class="bg-green-50 border border-green-200 rounded-xl p-4">
+        <p class="text-green-800 font-semibold text-xs mb-1">💡 피드백 반영 — 수익 모델 추가</p>
       </div>
+
+      <div class="border border-amber-200 bg-amber-50 rounded-xl p-4">
+        <div class="font-semibold text-amber-800 mb-3 text-sm">💰 수익 구조</div>
+        <div class="space-y-3">
+          <div class="bg-white rounded-lg p-3">
+            <div class="flex items-center gap-2 mb-1"><span class="text-base">📣</span><div class="font-semibold text-gray-800 text-sm">Tier 1 — 광고 (무료 사용자)</div></div>
+            <ul class="text-xs text-gray-600 space-y-1">
+              <li>• 검색 결과 <strong>하단</strong>에 광고 배너 (결과 영역과 명확히 분리)</li>
+              <li>• 관련 화장품 브랜드 타겟 광고 (Google AdSense)</li>
+              <li>• 바이럴 콘텐츠로 트래픽 증가 → 광고 수익 증가</li>
+            </ul>
+          </div>
+          <div class="bg-white rounded-lg p-3">
+            <div class="flex items-center gap-2 mb-1"><span class="text-base">⭐</span><div class="font-semibold text-gray-800 text-sm">Tier 2 — 프리미엄 (월 구독)</div></div>
+            <ul class="text-xs text-gray-600 space-y-1">
+              <li>• 광고 완전 제거</li>
+              <li>• 행사 시작 시 즉시 알림 (Push / 카카오톡)</li>
+              <li>• 가격 알림 설정 ("X원 이하로 떨어지면 알림")</li>
+              <li>• 전체 국가 동시 검색 (무료는 한국만)</li>
+            </ul>
+          </div>
+          <div class="bg-white rounded-lg p-3">
+            <div class="flex items-center gap-2 mb-1"><span class="text-base">🚀</span><div class="font-semibold text-gray-800 text-sm">Tier 3 — 바이럴 수익화</div></div>
+            <ul class="text-xs text-gray-600 space-y-1">
+              <li>• 앱 자체를 바이럴 콘텐츠로 → 인스타/블로그 리뷰 유도</li>
+              <li>• 제휴 링크 (올리브영·쿠팡 어필리에이트) → 클릭 수익</li>
+              <li>• 브랜드 공식 파트너십 (행사 정보 직접 제공 대가)</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
       <div class="border border-gray-200 rounded-xl overflow-hidden">
-        <div class="bg-gray-50 px-4 py-2 font-semibold text-gray-700 text-xs">환경변수 (.env)</div>
-        <div class="code-block text-xs m-3">DATABASE_URL=postgresql://user:pass@db:5432/compa
-REDIS_URL=redis://redis:6379
-ANTHROPIC_API_KEY=sk-ant-...
-NAVER_CLIENT_ID=...
-NAVER_CLIENT_SECRET=...
-AMAZON_ACCESS_KEY=...
-AMAZON_SECRET_KEY=...
-AMAZON_PARTNER_TAG=...
-INSTAGRAM_ACCESS_TOKEN=...
-TIKTOK_CLIENT_KEY=...
-PROXY_POOL_URL=...    # Rotating proxy 서비스 URL</div>
+        <div class="bg-gray-50 px-4 py-2 font-semibold text-gray-700 text-xs">docker-compose 서비스</div>
+        <table><thead><tr><th>서비스</th><th>이미지</th><th>역할</th></tr></thead>
+        <tbody>
+          <tr><td class="font-mono text-blue-700">api</td><td class="text-gray-400">python:3.12</td><td>FastAPI 앱</td></tr>
+          <tr><td class="font-mono text-blue-700">worker</td><td class="text-gray-400">python:3.12</td><td>Celery 수집 워커</td></tr>
+          <tr><td class="font-mono text-blue-700">beat</td><td class="text-gray-400">python:3.12</td><td>Celery Beat 스케줄러</td></tr>
+          <tr><td class="font-mono text-green-700">db</td><td class="text-gray-400">postgres:16</td><td>PostgreSQL</td></tr>
+          <tr><td class="font-mono text-red-700">redis</td><td class="text-gray-400">redis:7</td><td>큐 + 캐시</td></tr>
+          <tr><td class="font-mono text-violet-700">frontend</td><td class="text-gray-400">node:20</td><td>Vite dev server</td></tr>
+        </tbody></table>
       </div>
     </div>`
   },
@@ -400,38 +532,32 @@ PROXY_POOL_URL=...    # Rotating proxy 서비스 URL</div>
     id: 8,
     title: "Claude Code 설정 (스킬 & 훅)",
     icon: "⚙️",
-    summary: "claude-api 스킬 · update-config 스킬. PostToolUse 훅 3개 — 스크래퍼 저장 시 pytest, 모델 저장 시 alembic check, docker 실행 전 .env 확인",
+    summary: "훅 직접 설치 완료. scrapers 저장 시 pytest · models 저장 시 alembic check · docker 실행 전 .env 확인",
+    prevFeedback: "필요한게 있다면 다운받고 설치하고, 존재하는 것중에 없다면 직접 작성해.",
     content: `<div class="space-y-4 text-sm text-gray-600">
-      <div class="border border-gray-200 rounded-xl overflow-hidden">
-        <div class="bg-gray-50 px-4 py-2 font-semibold text-gray-700 text-xs">사용할 스킬</div>
-        <div class="divide-y divide-gray-50">
-          <div class="px-4 py-3 flex gap-3">
-            <span class="font-mono text-xs bg-violet-100 text-violet-700 px-2 py-1 rounded h-fit whitespace-nowrap">claude-api</span>
-            <span class="text-xs text-gray-500">Claude API 통합 코드 작성 — extractor.py, classifier.py, matcher.py 구현 시 사용. 프롬프트 캐싱 자동 적용.</span>
-          </div>
-          <div class="px-4 py-3 flex gap-3">
-            <span class="font-mono text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded h-fit whitespace-nowrap">update-config</span>
-            <span class="text-xs text-gray-500">아래 훅들을 settings.json에 설치할 때 사용.</span>
-          </div>
-        </div>
+
+      <div class="bg-green-50 border border-green-200 rounded-xl p-4">
+        <p class="text-green-800 font-semibold text-xs mb-1">✅ 피드백 반영 — 훅 실제 설치 완료</p>
+        <p class="text-green-700 text-xs">update-config 스킬을 통해 프로젝트 settings.json에 훅을 직접 설치했습니다.</p>
       </div>
+
       <div class="border border-gray-200 rounded-xl overflow-hidden">
-        <div class="bg-gray-50 px-4 py-2 font-semibold text-gray-700 text-xs">설치할 훅 (settings.json)</div>
+        <div class="bg-gray-50 px-4 py-2 font-semibold text-gray-700 text-xs">설치된 훅 목록</div>
         <div class="divide-y divide-gray-50 text-xs">
           <div class="px-4 py-3">
-            <div class="flex items-center gap-2 mb-1"><span class="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-mono">PostToolUse(Write)</span></div>
+            <div class="flex items-center gap-2 mb-1"><span class="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-mono">PostToolUse · Write</span><span class="bg-green-100 text-green-700 px-1.5 py-0.5 rounded">✅ 설치됨</span></div>
             <div class="text-gray-500">트리거: <code class="bg-gray-100 px-1 rounded">scrapers/</code> 하위 파일 저장</div>
             <div class="text-gray-700 mt-1">→ <code class="bg-gray-100 px-1 rounded">python -m pytest tests/scrapers/ -q</code> 자동 실행</div>
           </div>
           <div class="px-4 py-3">
-            <div class="flex items-center gap-2 mb-1"><span class="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-mono">PostToolUse(Write)</span></div>
+            <div class="flex items-center gap-2 mb-1"><span class="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-mono">PostToolUse · Write</span><span class="bg-green-100 text-green-700 px-1.5 py-0.5 rounded">✅ 설치됨</span></div>
             <div class="text-gray-500">트리거: <code class="bg-gray-100 px-1 rounded">models/</code> 하위 파일 저장</div>
-            <div class="text-gray-700 mt-1">→ <code class="bg-gray-100 px-1 rounded">alembic check</code> 로 미적용 마이그레이션 경고</div>
+            <div class="text-gray-700 mt-1">→ <code class="bg-gray-100 px-1 rounded">alembic check</code> 미적용 마이그레이션 경고</div>
           </div>
           <div class="px-4 py-3">
-            <div class="flex items-center gap-2 mb-1"><span class="bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-mono">PreToolUse(Bash)</span></div>
+            <div class="flex items-center gap-2 mb-1"><span class="bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-mono">PreToolUse · Bash</span><span class="bg-green-100 text-green-700 px-1.5 py-0.5 rounded">✅ 설치됨</span></div>
             <div class="text-gray-500">트리거: <code class="bg-gray-100 px-1 rounded">docker</code> 명령 실행 전</div>
-            <div class="text-gray-700 mt-1">→ <code class="bg-gray-100 px-1 rounded">.env</code> 파일 존재 여부 확인 후 없으면 경고</div>
+            <div class="text-gray-700 mt-1">→ <code class="bg-gray-100 px-1 rounded">.env</code> 파일 존재 확인 후 없으면 경고 후 중단</div>
           </div>
         </div>
       </div>
@@ -441,97 +567,88 @@ PROXY_POOL_URL=...    # Rotating proxy 서비스 URL</div>
     id: 9,
     title: "개발 단계별 마일스톤",
     icon: "🗓️",
-    summary: "M0(환경 세팅 Day1~2) → M1(한국 수집기+AI Day3~10) → M2(프론트엔드 Day11~16) → M3(미국·일본 Day17~21) → M4(중국·소셜 Day22~30)",
-    content: `<div class="space-y-3 text-sm">
-      <div class="relative pl-6 space-y-4">
-        <div class="absolute left-2 top-2 bottom-2 w-0.5 bg-gray-200"></div>
-        ${[
-          { m: 'M0', label: '환경 세팅', days: 'Day 1~2', color: 'gray', items: ['프로젝트 디렉토리 구조 생성', 'docker-compose.yml 작성 (db, redis, api, worker)', 'alembic 초기화 + 스키마 마이그레이션', 'FastAPI 기본 앱 + health check', 'update-config 스킬로 훅 설치'] },
-          { m: 'M1', label: '한국 수집기 + AI 파이프라인', days: 'Day 3~10', color: 'green', items: ['Olive Young 스크래퍼 (Playwright)', '네이버쇼핑 API 연동', '네이버 블로그 API 연동', 'Claude API extractor 구현 (프롬프트 캐싱)', 'Claude API classifier 구현', 'Celery 수집 태스크 연결', '/api/products/search + /api/products/{id}/events 엔드포인트'] },
-          { m: 'M2', label: '프론트엔드', days: 'Day 11~16', color: 'violet', items: ['Vite + React + TypeScript + Tailwind 초기화', 'SearchBar 컴포넌트', 'PriceChart (Recharts)', 'EventTimeline + EventCard', 'WaitBuyWidget'] },
-          { m: 'M3', label: '미국·일본 확장', days: 'Day 17~21', color: 'blue', items: ['Sephora, Ulta 스크래퍼', 'Amazon PA API 연동', '@cosme, 라쿠텐 API 연동', '다국어 제품명 매칭 (matcher.py)'] },
-          { m: 'M4', label: '중국·소셜미디어', days: 'Day 22~30', color: 'orange', items: ['Tmall 수집기', 'Instagram Graph API', 'TikTok Research API', '소셜 포스트 → 행사 데이터 추출 파이프라인'] },
-        ].map(({ m, label, days, color, items }) => {
-          const colors = { gray: 'bg-gray-500', green: 'bg-green-500', violet: 'bg-violet-500', blue: 'bg-blue-500', orange: 'bg-orange-500' };
-          const textColors = { gray: 'text-gray-700', green: 'text-green-700', violet: 'text-violet-700', blue: 'text-blue-700', orange: 'text-orange-700' };
-          const bgColors = { gray: 'bg-gray-50', green: 'bg-green-50', violet: 'bg-violet-50', blue: 'bg-blue-50', orange: 'bg-orange-50' };
-          return `<div class="relative">
-            <div class="absolute -left-4 w-4 h-4 ${colors[color]} rounded-full border-2 border-white shadow-sm top-1"></div>
-            <div class="${bgColors[color]} rounded-xl p-4">
-              <div class="flex items-center justify-between mb-2">
-                <div class="flex items-center gap-2"><span class="font-bold ${textColors[color]} text-sm">${m}</span><span class="font-semibold text-gray-700 text-sm">${label}</span></div>
-                <span class="text-xs text-gray-400">${days}</span>
-              </div>
-              <ul class="space-y-1">${items.map(i => `<li class="flex items-start gap-1.5 text-xs text-gray-600"><span class="mt-0.5 w-3.5 h-3.5 border border-gray-300 rounded-sm flex-shrink-0 bg-white"></span>${i}</li>`).join('')}</ul>
-            </div>
-          </div>`;
-        }).join('')}
-      </div>
-    </div>`
+    summary: "M0(환경세팅) → M1(한국+AI) → M2(프론트) → M3(미국·일본) → M4(중국·소셜)",
+    content: (function() {
+      var BG  = {gray:'bg-gray-50',green:'bg-green-50',violet:'bg-violet-50',blue:'bg-blue-50',orange:'bg-orange-50'};
+      var DOT = {gray:'bg-gray-500',green:'bg-green-500',violet:'bg-violet-500',blue:'bg-blue-500',orange:'bg-orange-500'};
+      var TXT = {gray:'text-gray-700',green:'text-green-700',violet:'text-violet-700',blue:'text-blue-700',orange:'text-orange-700'};
+      var milestones = [
+        {m:'M0',label:'환경 세팅',days:'Day 1~2',c:'gray',items:['프로젝트 디렉토리 구조 생성','docker-compose.yml 작성','alembic 초기화 + 스키마 마이그레이션','FastAPI 기본 앱 + health check','훅 설치 (완료 ✅)']},
+        {m:'M1',label:'한국 수집기 + AI 파이프라인',days:'Day 3~10',c:'green',items:['Olive Young 스크래퍼 (Playwright)','네이버쇼핑 API 연동','네이버 블로그 API 연동','Google Trends (pytrends) 연동 🆕','Gemma 4 2B 로컬 설치 + 정형 데이터 추출','Claude API extractor (소셜 비정형, 캐싱 적용)','Claude API classifier (정기/돌발 분류)','Celery 수집 태스크 연결','API 엔드포인트 구현']},
+        {m:'M2',label:'프론트엔드',days:'Day 11~16',c:'violet',items:['Vite + React + TypeScript + Tailwind 초기화','SearchBar (다국어 자동완성)','WaitBuyWidget (지금살지/기다릴지 핵심 위젯)','PriceChart + 최저가 마커 (Recharts)','연간 히트맵 캘린더','EventTimeline + EventCard (정기/돌발 배지)','광고 영역 레이아웃 설계']},
+        {m:'M3',label:'미국·일본 확장',days:'Day 17~21',c:'blue',items:['Sephora, Ulta 스크래퍼','Amazon PA API 연동','@cosme, 라쿠텐 API 연동','다국어 제품명 매칭 (matcher.py)']},
+        {m:'M4',label:'중국·소셜미디어 + 수익화',days:'Day 22~30',c:'orange',items:['Tmall 수집기','Instagram / TikTok / Facebook API','소셜 포스트 → 행사 데이터 파이프라인','Google AdSense 광고 영역 적용','프리미엄 구독 결제 (포트원 또는 Stripe)','푸시 알림 (FCM)']}
+      ];
+      var rows = milestones.map(function(ms) {
+        var lis = ms.items.map(function(i) {
+          return '<li class="flex items-start gap-1.5 text-xs text-gray-600"><span class="mt-0.5 w-3.5 h-3.5 border border-gray-300 rounded-sm flex-shrink-0 bg-white"></span>' + i + '</li>';
+        }).join('');
+        return '<div class="relative">' +
+          '<div class="absolute -left-4 w-4 h-4 ' + DOT[ms.c] + ' rounded-full border-2 border-white shadow-sm top-1"></div>' +
+          '<div class="' + BG[ms.c] + ' rounded-xl p-4">' +
+            '<div class="flex items-center justify-between mb-2">' +
+              '<div class="flex items-center gap-2">' +
+                '<span class="font-bold ' + TXT[ms.c] + ' text-sm">' + ms.m + '</span>' +
+                '<span class="font-semibold text-gray-700 text-sm">' + ms.label + '</span>' +
+              '</div>' +
+              '<span class="text-xs text-gray-400">' + ms.days + '</span>' +
+            '</div>' +
+            '<ul class="space-y-1">' + lis + '</ul>' +
+          '</div></div>';
+      }).join('');
+      return '<div class="space-y-3 text-sm"><div class="relative pl-6 space-y-4">' +
+        '<div class="absolute left-2 top-2 bottom-2 w-0.5 bg-gray-200"></div>' +
+        rows + '</div></div>';
+    })()
   }
 ];
 
-// ─── 상태 관리 ───────────────────────────────────────────────
-const STORAGE_KEY = 'compa-plan-feedback-v1';
-
-function loadState() {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
-  } catch { return {}; }
-}
-
-function saveState(state) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-}
-
+// ─── 상태 ───────────────────────────────────
+const STORAGE_KEY = 'compa-plan-feedback-v2';
+function loadState() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); } catch { return {}; } }
+function saveState(s) { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); }
 let state = loadState();
 
-// ─── 렌더링 ───────────────────────────────────────────────
+// ─── 렌더링 ─────────────────────────────────
 function renderSections() {
-  const container = document.getElementById('sections-container');
-  container.innerHTML = PLAN_SECTIONS.map(section => {
+  document.getElementById('sections-container').innerHTML = PLAN_SECTIONS.map(section => {
     const s = state[section.id] || { status: 'pending', comment: '' };
     return `
     <div id="card-${section.id}" class="section-card status-${s.status} bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-      <!-- Card Header -->
-      <details id="details-${section.id}" ${s.status !== 'pending' ? 'open' : ''}>
-        <summary class="px-6 py-4 flex items-center justify-between cursor-pointer hover:bg-gray-50 transition select-none">
+      <details id="details-${section.id}">
+        <summary class="px-6 py-4 flex items-center justify-between cursor-pointer hover:bg-gray-50 transition">
           <div class="flex items-center gap-3 flex-1 min-w-0">
             <span class="text-xl flex-shrink-0">${section.icon}</span>
             <div class="min-w-0">
-              <div class="flex items-center gap-2">
+              <div class="flex items-center gap-2 flex-wrap">
                 <span class="text-xs text-gray-400 font-mono">#${section.id}</span>
                 <h2 class="font-bold text-gray-800 text-base">${section.title}</h2>
                 ${s.status !== 'pending' ? `<span class="status-badge-${section.id} flex-shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ${statusBadgeClass(s.status)}">${statusLabel(s.status)}</span>` : `<span class="status-badge-${section.id}"></span>`}
               </div>
               <p class="text-xs text-gray-400 mt-0.5 truncate">${section.summary}</p>
+              ${section.prevFeedback ? `<p class="text-xs text-orange-500 mt-0.5 truncate">이전 피드백: "${section.prevFeedback}"</p>` : ''}
             </div>
           </div>
           <div class="flex items-center gap-2 flex-shrink-0 ml-4">
-            <!-- Status buttons -->
             <div class="flex gap-1" onclick="event.stopPropagation()">
               <button onclick="setStatus(${section.id}, 'approved')" class="btn-status text-xs px-2.5 py-1 rounded-lg border border-gray-200 hover:border-green-300 hover:bg-green-50 ${s.status === 'approved' ? 'active-approved' : 'text-gray-500'}" title="승인">✅</button>
               <button onclick="setStatus(${section.id}, 'change')" class="btn-status text-xs px-2.5 py-1 rounded-lg border border-gray-200 hover:border-orange-300 hover:bg-orange-50 ${s.status === 'change' ? 'active-change' : 'text-gray-500'}" title="수정 필요">✏️</button>
               <button onclick="setStatus(${section.id}, 'question')" class="btn-status text-xs px-2.5 py-1 rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50 ${s.status === 'question' ? 'active-question' : 'text-gray-500'}" title="질문">❓</button>
             </div>
-            <svg class="chevron w-4 h-4 text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+            <svg class="chevron w-4 h-4 text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
           </div>
         </summary>
-
-        <!-- Content -->
         <div class="px-6 pb-4 border-t border-gray-100">
           <div class="pt-4">${section.content}</div>
-
-          <!-- Comment area -->
           <div class="mt-4 border-t border-gray-100 pt-4">
             <label class="text-xs font-medium text-gray-600 mb-1.5 block">코멘트 / 피드백</label>
             <div class="flex gap-2">
               <textarea id="comment-${section.id}" rows="2"
                 class="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-2 text-gray-700 placeholder-gray-300 resize-none focus:outline-none focus:ring-2 focus:ring-rose-200 focus:border-rose-300 transition"
-                placeholder="수정 사항, 질문, 추가 아이디어 등을 입력하세요..."
+                placeholder="추가 의견, 질문, 아이디어 등을 자유롭게 적어주세요..."
                 onkeydown="if(event.key==='Enter'&&event.metaKey)saveComment(${section.id})"
               >${s.comment || ''}</textarea>
-              <button onclick="saveComment(${section.id})" class="text-xs bg-gray-800 hover:bg-gray-700 text-white px-3 py-2 rounded-lg transition self-end whitespace-nowrap">저장<br/><span class="text-gray-400 text-[10px]">⌘↵</span></button>
+              <button onclick="saveComment(${section.id})" class="text-xs bg-gray-800 hover:bg-gray-700 text-white px-3 py-2 rounded-lg transition self-end whitespace-nowrap">저장</button>
             </div>
             <div id="saved-indicator-${section.id}" class="text-xs text-green-500 mt-1 h-4"></div>
           </div>
@@ -541,144 +658,97 @@ function renderSections() {
   }).join('');
 }
 
-function statusBadgeClass(status) {
-  return { approved: 'bg-green-100 text-green-700', change: 'bg-orange-100 text-orange-700', question: 'bg-blue-100 text-blue-700', pending: '' }[status] || '';
-}
-function statusLabel(status) {
-  return { approved: '✅ 승인', change: '✏️ 수정 필요', question: '❓ 질문', pending: '' }[status] || '';
-}
+function statusBadgeClass(s) { return { approved:'bg-green-100 text-green-700', change:'bg-orange-100 text-orange-700', question:'bg-blue-100 text-blue-700' }[s] || ''; }
+function statusLabel(s) { return { approved:'✅ 승인', change:'✏️ 수정 필요', question:'❓ 질문', pending:'' }[s] || ''; }
 
-// ─── 상태 업데이트 ───────────────────────────────────────────
 function setStatus(id, status) {
   if (!state[id]) state[id] = { status: 'pending', comment: '' };
-  const prev = state[id].status;
-  state[id].status = (prev === status) ? 'pending' : status; // 토글
+  state[id].status = state[id].status === status ? 'pending' : status;
   saveState(state);
-
   const card = document.getElementById(`card-${id}`);
   card.className = `section-card status-${state[id].status} bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden`;
-
   const badge = card.querySelector(`.status-badge-${id}`);
-  const newStatus = state[id].status;
-  if (newStatus !== 'pending') {
-    badge.className = `status-badge-${id} flex-shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ${statusBadgeClass(newStatus)}`;
-    badge.textContent = statusLabel(newStatus);
-  } else {
-    badge.className = `status-badge-${id}`;
-    badge.textContent = '';
-  }
-
-  updateProgress();
-  updateSummary();
+  const ns = state[id].status;
+  if (ns !== 'pending') { badge.className = `status-badge-${id} flex-shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ${statusBadgeClass(ns)}`; badge.textContent = statusLabel(ns); }
+  else { badge.className = `status-badge-${id}`; badge.textContent = ''; }
   document.getElementById(`details-${id}`).open = true;
+  updateProgress(); updateSummary();
 }
 
 function saveComment(id) {
   if (!state[id]) state[id] = { status: 'pending', comment: '' };
   state[id].comment = document.getElementById(`comment-${id}`).value;
   saveState(state);
-
-  const indicator = document.getElementById(`saved-indicator-${id}`);
-  indicator.textContent = '저장되었습니다';
-  indicator.className = 'text-xs text-green-500 mt-1 h-4';
-  setTimeout(() => { indicator.textContent = ''; }, 2000);
-
+  const ind = document.getElementById(`saved-indicator-${id}`);
+  ind.textContent = '저장됨 ✓'; setTimeout(() => { ind.textContent = ''; }, 2000);
   updateSummary();
 }
 
-// ─── 진행률 업데이트 ────────────────────────────────────────
 function updateProgress() {
   const total = PLAN_SECTIONS.length;
-  const counts = { approved: 0, change: 0, question: 0, pending: 0 };
-  PLAN_SECTIONS.forEach(s => {
-    const st = (state[s.id] || {}).status || 'pending';
-    counts[st] = (counts[st] || 0) + 1;
-  });
-  counts.pending = total - counts.approved - counts.change - counts.question;
-
+  const counts = { approved:0, change:0, question:0 };
+  PLAN_SECTIONS.forEach(s => { const st = (state[s.id]||{}).status||'pending'; if(counts[st]!==undefined) counts[st]++; });
+  const pending = total - counts.approved - counts.change - counts.question;
   document.getElementById('total-count').textContent = total;
   document.getElementById('approved-count').textContent = counts.approved;
-  document.getElementById('progress-bar').style.width = `${(counts.approved / total) * 100}%`;
+  document.getElementById('progress-bar').style.width = `${(counts.approved/total)*100}%`;
   document.getElementById('cnt-approved').textContent = counts.approved;
   document.getElementById('cnt-change').textContent = counts.change;
   document.getElementById('cnt-question').textContent = counts.question;
-  document.getElementById('cnt-pending').textContent = counts.pending;
+  document.getElementById('cnt-pending').textContent = pending;
 }
 
-// ─── 요약 패널 ──────────────────────────────────────────────
 function updateSummary() {
-  const items = PLAN_SECTIONS.filter(s => {
-    const st = (state[s.id] || {}).status || 'pending';
-    return st === 'change' || st === 'question';
-  });
-
+  const items = PLAN_SECTIONS.filter(s => { const st=(state[s.id]||{}).status||'pending'; return st==='change'||st==='question'; });
   const panel = document.getElementById('summary-panel');
-  const content = document.getElementById('summary-content');
-
-  if (items.length === 0) {
-    panel.classList.add('hidden');
-    return;
-  }
-
+  if (!items.length) { panel.classList.add('hidden'); return; }
   panel.classList.remove('hidden');
-  content.innerHTML = items.map(s => {
-    const st = state[s.id] || {};
-    const isChange = st.status === 'change';
-    return `
-    <div class="px-6 py-4">
-      <div class="flex items-start gap-3">
-        <span class="text-base">${s.icon}</span>
-        <div class="flex-1">
-          <div class="flex items-center gap-2 mb-1">
-            <span class="text-sm font-semibold text-gray-800">${s.title}</span>
-            <span class="text-xs px-2 py-0.5 rounded-full ${isChange ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}">${isChange ? '✏️ 수정 필요' : '❓ 질문'}</span>
-          </div>
-          ${st.comment ? `<p class="text-xs text-gray-600 bg-gray-50 rounded-lg px-3 py-2">${st.comment.replace(/\n/g, '<br/>')}</p>` : `<p class="text-xs text-gray-400 italic">코멘트 없음</p>`}
-        </div>
+  document.getElementById('summary-content').innerHTML = items.map(s => {
+    const st = state[s.id]||{};
+    const isChange = st.status==='change';
+    return `<div class="px-6 py-4 flex items-start gap-3">
+      <span class="text-base">${s.icon}</span>
+      <div class="flex-1">
+        <div class="flex items-center gap-2 mb-1"><span class="text-sm font-semibold text-gray-800">${s.title}</span><span class="text-xs px-2 py-0.5 rounded-full ${isChange?'bg-orange-100 text-orange-700':'bg-blue-100 text-blue-700'}">${isChange?'✏️ 수정 필요':'❓ 질문'}</span></div>
+        ${st.comment ? `<p class="text-xs text-gray-600 bg-gray-50 rounded-lg px-3 py-2">${st.comment.replace(/\n/g,'<br/>')}</p>` : '<p class="text-xs text-gray-400 italic">코멘트 없음</p>'}
       </div>
     </div>`;
   }).join('');
 }
 
-// ─── 내보내기 ───────────────────────────────────────────────
-function exportFeedback() {
-  const result = {
-    exported_at: new Date().toISOString(),
-    project: 'COMPA 마스터 플랜',
-    sections: PLAN_SECTIONS.map(s => {
-      const st = state[s.id] || { status: 'pending', comment: '' };
-      return { id: s.id, title: s.title, status: st.status, comment: st.comment || null };
-    })
+function copyFeedback() {
+  const result = { exported_at: new Date().toISOString(), project: 'COMPA 마스터 플랜 v2',
+    sections: PLAN_SECTIONS.map(s => { const st=state[s.id]||{status:'pending',comment:''}; return {id:s.id,title:s.title,status:st.status,comment:st.comment||null}; })
   };
-  navigator.clipboard.writeText(JSON.stringify(result, null, 2)).then(() => {
-    showToast('피드백이 클립보드에 복사되었습니다 ✅');
-  }).catch(() => {
-    showToast('복사 실패 — 브라우저 권한을 확인해주세요 ⚠️', true);
-  });
+  navigator.clipboard.writeText(JSON.stringify(result, null, 2)).then(() => showToast('클립보드에 복사됐습니다 ✅'));
+}
+
+function submitToGitHub() {
+  const lines = PLAN_SECTIONS.map(s => {
+    const st = state[s.id] || { status:'pending', comment:'' };
+    const emoji = { approved:'✅', change:'✏️', question:'❓', pending:'⬜' }[st.status];
+    return `### ${emoji} ${s.id}. ${s.title}\n- **상태**: ${statusLabel(st.status)||'미검토'}\n- **코멘트**: ${st.comment||'(없음)'}`;
+  }).join('\n\n');
+  const body = `## COMPA 플랜 피드백 (v2)\n\n> 제출일: ${new Date().toLocaleDateString('ko-KR')}\n\n${lines}\n\n---\n*이 이슈는 [COMPA 플랜 피드백 페이지](https://wsungahn.github.io/compa/plan-feedback/)에서 자동 생성됐습니다.*`;
+  const url = `https://github.com/wsungAhn/compa/issues/new?title=${encodeURIComponent('📋 플랜 피드백 — ' + new Date().toLocaleDateString('ko-KR'))}&body=${encodeURIComponent(body)}&labels=feedback`;
+  window.open(url, '_blank');
+  showToast('GitHub 이슈 페이지가 열렸습니다. 로그인 후 Submit 눌러주세요 🐙');
 }
 
 function resetAll() {
   if (!confirm('모든 피드백을 초기화할까요?')) return;
-  state = {};
-  saveState(state);
-  renderSections();
-  updateProgress();
-  updateSummary();
-  showToast('초기화되었습니다');
+  state = {}; saveState(state); renderSections(); updateProgress(); updateSummary(); showToast('초기화됐습니다');
 }
 
-function showToast(msg, isError = false) {
-  const toast = document.createElement('div');
-  toast.className = `toast px-4 py-3 rounded-xl shadow-lg text-sm font-medium ${isError ? 'bg-red-600 text-white' : 'bg-gray-900 text-white'}`;
-  toast.textContent = msg;
-  document.getElementById('toast-container').appendChild(toast);
-  setTimeout(() => toast.remove(), 3000);
+function showToast(msg) {
+  const t = document.createElement('div');
+  t.className = 'toast px-4 py-3 rounded-xl shadow-lg text-sm font-medium bg-gray-900 text-white';
+  t.textContent = msg;
+  document.getElementById('toast-container').appendChild(t);
+  setTimeout(() => t.remove(), 3500);
 }
 
-// ─── 초기화 ─────────────────────────────────────────────────
-renderSections();
-updateProgress();
-updateSummary();
+renderSections(); updateProgress(); updateSummary();
 </script>
 </body>
 </html>
