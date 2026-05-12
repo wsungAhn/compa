@@ -9,10 +9,12 @@ from app.models.sale_event import SaleEvent
 from app.scrapers.base import ScrapedEvent
 from app.scrapers.kr.naver_shop import NaverShopScraper
 from app.scrapers.kr.oliveyoung import OliveYoungScraper
+from app.scrapers.us.sephora import SephoraScraper
 
 SCRAPERS = {
     "올리브영": OliveYoungScraper,
     "네이버쇼핑": NaverShopScraper,
+    "Sephora": SephoraScraper,
 }
 
 CACHE_TTL_HOURS = 24
