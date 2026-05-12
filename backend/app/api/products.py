@@ -1,7 +1,7 @@
 from datetime import date, timedelta
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,6 +10,7 @@ from app.core.database import get_db
 from app.models.platform import Platform
 from app.models.product import Product
 from app.models.sale_event import SaleEvent
+from app.scrapers.collector import collect_on_demand
 
 router = APIRouter(prefix="/api/products", tags=["products"])
 
@@ -18,17 +19,25 @@ router = APIRouter(prefix="/api/products", tags=["products"])
 async def search_products(
     q: str = Query(..., min_length=1),
     lang: str = Query("ko", pattern="^(ko|en|ja|zh)$"),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
     db: AsyncSession = Depends(get_db),
 ) -> list[ProductSummary]:
     col_map = {"ko": Product.name_kr, "en": Product.name_en, "ja": Product.name_jp, "zh": Product.name_cn}
     col = col_map[lang]
 
+    # DB에서 먼저 조회
     result = await db.execute(
         select(Product)
         .where(col.ilike(f"%{q}%"), Product.deleted_at.is_(None))
         .limit(20)
     )
-    products = result.scalars().all()
+    products = list(result.scalars().all())
+
+    if not products:
+        # DB에 없으면 온디맨드 수집 (한국어 검색만)
+        if lang == "ko":
+            products = await collect_on_demand(db, q)
+
     return [ProductSummary.model_validate(p, from_attributes=True) for p in products]
 
 
