@@ -53,8 +53,8 @@ class NaverShopScraper(BaseScraper):
                     ScrapedEvent(
                         product_name=clean_title,
                         brand=item.brand,
-                        sale_price=float(item.lprice) if item.lprice else None,
-                        original_price=float(item.hprice) if item.hprice else None,
+                        sale_price=float(item.lprice) if item.lprice > 0 else None,
+                        original_price=float(item.hprice) if item.hprice > 0 else None,
                         currency="KRW",
                         event_name="네이버쇼핑 최저가",
                         source_url=item.product_url,
@@ -82,8 +82,8 @@ class NaverShopScraper(BaseScraper):
             NaverShopItem(
                 title=item.get("title", ""),
                 brand=item.get("brand") or None,
-                lprice=int(item.get("lprice", 0)),
-                hprice=int(item.get("hprice", 0)),
+                lprice=int(item.get("lprice") or 0),
+                hprice=int(item.get("hprice") or 0),
                 mall_name=item.get("mallName", ""),
                 product_id=item.get("productId", ""),
                 product_url=item.get("link", ""),
