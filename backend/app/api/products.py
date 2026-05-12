@@ -128,7 +128,7 @@ async def get_product_events(
         .where(
             SaleEvent.product_id == product_id,
             SaleEvent.deleted_at.is_(None),
-            SaleEvent.start_date >= since,
+            (SaleEvent.start_date >= since) | SaleEvent.start_date.is_(None),
         )
     )
     if country != "all":
