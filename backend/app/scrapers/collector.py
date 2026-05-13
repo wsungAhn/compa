@@ -7,14 +7,20 @@ from app.models.platform import Platform
 from app.models.product import Product
 from app.models.sale_event import SaleEvent
 from app.scrapers.base import ScrapedEvent
+from app.scrapers.jp.rakuten import RakutenScraper
+from app.scrapers.kr.coupang import CoupangScraper
 from app.scrapers.kr.naver_shop import NaverShopScraper
 from app.scrapers.kr.oliveyoung import OliveYoungScraper
+from app.scrapers.us.amazon import AmazonScraper
 from app.scrapers.us.sephora import SephoraScraper
 
 SCRAPERS = {
-    "올리브영": OliveYoungScraper,
     "네이버쇼핑": NaverShopScraper,
+    "쿠팡": CoupangScraper,
+    "올리브영": OliveYoungScraper,
     "Sephora": SephoraScraper,
+    "Amazon US": AmazonScraper,
+    "Rakuten": RakutenScraper,
 }
 
 CACHE_TTL_HOURS = 24
@@ -99,7 +105,10 @@ async def collect_on_demand(db: AsyncSession, query: str) -> list[Product]:
             continue
 
         scraper = ScraperClass()
-        scraped_events = await scraper.scrape(query)
+        try:
+            scraped_events = await scraper.scrape(query)
+        except Exception:
+            continue
 
         # 제품명별로 그룹핑
         by_product: dict[str, list[ScrapedEvent]] = {}

@@ -36,7 +36,11 @@ class OliveYoungScraper(BaseScraper):
         events: list[ScrapedEvent] = []
         try:
             async with async_playwright() as pw:
-                browser = await pw.chromium.launch(headless=True)
+                browser = await pw.chromium.launch(
+                    headless=True,
+                    executable_path="/usr/bin/google-chrome-stable",
+                    args=["--no-sandbox", "--disable-dev-shm-usage"],
+                )
                 context = await browser.new_context(
                     user_agent=(
                         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
