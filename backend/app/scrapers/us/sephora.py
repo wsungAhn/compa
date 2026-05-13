@@ -67,7 +67,6 @@ class SephoraScraper(BaseScraper):
 
             for product in api_data.get("products", [])[:10]:
                 try:
-                    name = product.get("displayName", query)
                     brand = product.get("brandName")
                     sku = product.get("currentSku", {})
                     list_price = sku.get("listPrice", "")
@@ -78,7 +77,7 @@ class SephoraScraper(BaseScraper):
                     source_url = f"https://www.sephora.com{product_url}" if product_url else url
                     events.append(
                         ScrapedEvent(
-                            product_name=name,
+                            product_name=query,
                             brand=brand,
                             sale_price=sale_price,
                             currency="USD",
