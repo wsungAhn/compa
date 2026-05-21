@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     amazon_partner_tag: str = ""
     instagram_access_token: str = ""
     tiktok_client_key: str = ""
+    rakuten_app_id: str = ""
     proxy_pool_url: str = ""
 
 

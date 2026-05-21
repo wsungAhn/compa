@@ -1,112 +1,98 @@
-"""Rakuten Japan scraper — Playwright 기반 (API 없이)."""
-import re
+"""Rakuten Japan scraper — Rakuten Ichiba Item Search API 기반."""
+from datetime import date
 
-from playwright.async_api import async_playwright
+import httpx
 
+from app.core.config import settings
 from app.scrapers.base import BaseScraper, ScrapedEvent
-
-SEARCH_URL = "https://search.rakuten.co.jp/search/mall/{query}/?l-id=s_search&f=1&p=1&s=6"
-
-_PRICE_RE = re.compile(r"([\d,]+)\s*円")
-
-
-def _parse_jpy(text: str) -> float | None:
-    m = _PRICE_RE.search(text.replace(",", ""))
-    if m:
-        try:
-            return float(m.group(1).replace(",", ""))
-        except ValueError:
-            return None
-    return None
 
 
 class RakutenScraper(BaseScraper):
+    """Rakuten Ichiba Item Search API를 사용한 스크래퍼."""
+
     PLATFORM_NAME = "Rakuten"
     COUNTRY = "JP"
-    RATE_LIMIT_SEC = 1.5
+    RATE_LIMIT_SEC = 0.5
 
     async def scrape(self, query: str) -> list[ScrapedEvent]:
+        """
+        제품명으로 Rakuten Ichiba 검색.
+
+        Args:
+            query: 검색 키워드
+
+        Returns:
+            ScrapedEvent 리스트 (최대 10개)
+        """
         events: list[ScrapedEvent] = []
+
+        # API 키가 없으면 빈 리스트 반환
+        if not settings.rakuten_app_id:
+            return events
+
         try:
-            async with async_playwright() as pw:
-                browser = await pw.chromium.launch(headless=True)
-                context = await browser.new_context(
-                    user_agent=(
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                        "AppleWebKit/537.36 (KHTML, like Gecko) "
-                        "Chrome/124.0.0.0 Safari/537.36"
-                    ),
-                    locale="ja-JP",
-                    extra_http_headers={"Accept-Language": "ja-JP,ja;q=0.9"},
-                )
-                page = await context.new_page()
-                await self._wait_rate_limit()
+            await self._wait_rate_limit()
 
-                url = SEARCH_URL.format(query=query.replace(" ", "+"))
-                await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-                await page.wait_for_timeout(2000)
+            endpoint = "https://app.rakuten.co.jp/services/api/IchibaItem/Search/20170706"
+            params = {
+                "applicationId": settings.rakuten_app_id,
+                "keyword": query,
+                "format": "json",
+                "hits": 10,
+                "sort": "+itemPrice",
+            }
 
-                cards = await page.query_selector_all(".searchresultitem")
-                if not cards:
-                    cards = await page.query_selector_all('[data-testid="item-container"]')
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(endpoint, params=params)
+                response.raise_for_status()
 
-                for card in cards[:8]:
-                    try:
-                        name_el = await card.query_selector(".content.title a")
-                        if not name_el:
-                            name_el = await card.query_selector("h2 a, .item_name a")
-                        name = (await name_el.inner_text()).strip() if name_el else query
+            data = response.json()
 
-                        # 현재가
-                        price_el = await card.query_selector(".important")
-                        if not price_el:
-                            price_el = await card.query_selector(".price")
-                        price_text = (await price_el.inner_text()) if price_el else ""
-                        sale_price = _parse_jpy(price_text)
+            # Items 배열 파싱
+            items = data.get("Items", [])
+            for item_wrapper in items:
+                try:
+                    item = item_wrapper.get("Item", {})
 
-                        # 정가 (있는 경우)
-                        original_el = await card.query_selector(".before")
-                        original_text = (await original_el.inner_text()) if original_el else ""
-                        original_price = _parse_jpy(original_text)
+                    product_name = item.get("itemName", query)
+                    sale_price_jpy = item.get("itemPrice")
+                    source_url = item.get("itemUrl", "")
 
-                        discount_rate: float | None = None
-                        if sale_price and original_price and original_price > sale_price:
-                            discount_rate = round((1 - sale_price / original_price) * 100, 1)
+                    # itemPrice는 정수 → float 변환
+                    sale_price = float(sale_price_jpy) if sale_price_jpy else None
 
-                        # 할인율 배지
-                        off_el = await card.query_selector(".off")
-                        off_text = (await off_el.inner_text()).strip() if off_el else ""
-                        if not discount_rate and off_text:
-                            m = re.search(r"(\d+)%", off_text)
-                            if m:
-                                discount_rate = float(m.group(1))
+                    raw_text = item.get("itemCaption", "")
 
-                        link_el = await card.query_selector("a")
-                        source_url = await link_el.get_attribute("href") if link_el else url
-
-                        raw_text = await card.inner_text()
-
-                        if sale_price:
-                            events.append(ScrapedEvent(
-                                product_name=name,
+                    if sale_price:
+                        events.append(
+                            ScrapedEvent(
+                                product_name=product_name,
                                 brand=None,
-                                original_price=original_price,
+                                original_price=None,
                                 sale_price=sale_price,
-                                discount_rate=discount_rate,
+                                discount_rate=None,
                                 currency="JPY",
-                                event_name="楽天セール" if discount_rate else "楽天 現在価格",
-                                source_url=source_url or url,
-                                confidence=0.85,
+                                start_date=date.today(),
+                                end_date=None,
+                                event_name="Rakuten 현재가",
+                                reason=None,
+                                source_url=source_url,
+                                confidence=0.95,
                                 raw_text=raw_text,
-                            ))
-                    except Exception:
-                        continue
+                            )
+                        )
+                except (KeyError, ValueError, TypeError):
+                    # 개별 아이템 파싱 실패 시 계속 진행
+                    continue
 
-                await browser.close()
         except Exception as exc:
-            events.append(ScrapedEvent(
-                product_name=query,
-                confidence=0.0,
-                raw_text=str(exc),
-            ))
+            # 전체 API 호출 실패 시
+            events.append(
+                ScrapedEvent(
+                    product_name=query,
+                    confidence=0.0,
+                    raw_text=str(exc),
+                )
+            )
+
         return events
