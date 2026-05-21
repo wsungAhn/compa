@@ -12,12 +12,21 @@ Base URL: `http://localhost:8000`
 
 ## GET /api/products/search
 
-제품 검색. DB 조회 후 누락된 플랫폼은 실시간 수집 트리거.
+제품 검색. DB 조회 → 번역 재조회 → (collect=true일 때만) 실시간 수집.
 
 | 파라미터 | 타입 | 필수 | 설명 |
 |----------|------|------|------|
-| q | string | ✅ | 검색어 (언어 무관) |
-| lang | string | - | ko/en/ja/zh (기본 ko) |
+| q | string | ✅ | 검색어 (언어 무관 — 자동 번역 후 DB 재탐색) |
+| collect | bool | - | true일 때 실시간 스크래퍼 수집 트리거 (기본 false) |
+
+**검색 흐름:**
+1. 원본 쿼리로 DB 탐색 (`name_kr / name_en / name_jp / name_cn` OR 검색)
+2. 결과 없으면 `deep-translator`로 영어 번역 후 재탐색
+3. 그래도 없고 `collect=true`이면 스크래퍼 실시간 수집 (30~40초)
+4. 결과 있으면 즉시 반환 + 백그라운드 캐시 갱신
+
+> **프론트엔드 규칙:** 타이핑 debounce → `collect=false` (DB only), Enter키 → `collect=true`
+> DB 오염 방지: 최소 쿼리 길이 `_MIN_COLLECT_LEN = 4`
 
 ```json
 [

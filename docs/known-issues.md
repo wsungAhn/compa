@@ -1,5 +1,22 @@
 # 알려진 기술 제약 및 해결 방향
 
+## 개발 환경 시작
+
+### Docker 데몬 자동 시작 안 됨 (해결 완료)
+WSL 재부팅 시 Docker CE 데몬이 자동으로 시작되지 않아 DB 연결 실패.
+
+**증상:** uvicorn 시작 시 `ConnectionRefusedError: Connect call failed ('127.0.0.1', 5432)`
+
+**해결:** `D:\dev\compa\start.bat`에 `sudo service docker start` 포함.
+passwordless sudo 설정:
+```bash
+echo "compa ALL=(ALL) NOPASSWD: /usr/sbin/service docker start" | sudo tee /etc/sudoers.d/docker-start
+```
+
+**정상 시작 순서:** Docker 데몬 → DB/Redis 컨테이너 → uvicorn (DB 준비 대기 후) → Vite
+
+---
+
 ## 환경
 
 ### Playwright + Ubuntu 26.04
