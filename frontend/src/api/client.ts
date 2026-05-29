@@ -63,8 +63,22 @@ export interface ComparisonOut {
   cheapest_saving_pct: number | null
 }
 
+export interface SearchResponse {
+  products: Product[]
+  job_id: string | null
+  collecting: boolean
+}
+
+export interface JobStatus {
+  status: 'pending' | 'started' | 'done' | 'failed'
+  products: Product[]
+}
+
 export const searchProducts = (q: string, collect = false) =>
-  api.get<Product[]>('/products/search', { params: { q, lang: 'ko', collect } }).then(r => r.data)
+  api.get<SearchResponse>('/products/search', { params: { q, lang: 'ko', collect } }).then(r => r.data)
+
+export const getJobStatus = (taskId: string) =>
+  api.get<JobStatus>(`/jobs/${taskId}`).then(r => r.data)
 
 export const getProductEvents = (id: string) =>
   api.get<ProductEvents>(`/products/${id}/events`).then(r => r.data)

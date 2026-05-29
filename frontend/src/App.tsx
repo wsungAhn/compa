@@ -13,6 +13,7 @@ export default function App() {
   const [data, setData] = useState<ProductEvents | null>(null)
   const [comparison, setComparison] = useState<ComparisonOut | null>(null)
   const [loading, setLoading] = useState(false)
+  const [collecting, setCollecting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const { sites, preferred, moveUp, moveDown, addSite, removeSite, availableToAdd } = useSitePrefs()
@@ -65,7 +66,7 @@ export default function App() {
           <p className="text-gray-500 text-sm">화장품 이름을 검색하면 할인 이력을 분석해드려요</p>
           <div className="w-full flex items-center gap-2">
             <div className="flex-1">
-              <SearchBar onSelect={handleSelect} />
+              <SearchBar onSelect={handleSelect} onCollecting={setCollecting} />
             </div>
           </div>
           {preferred && (
@@ -74,6 +75,14 @@ export default function App() {
             </p>
           )}
         </div>
+
+        {/* 백그라운드 수집 중 */}
+        {collecting && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center gap-2">
+            <span className="animate-spin">🔄</span>
+            <span className="text-sm text-amber-700">백그라운드 수집 중... 잠시 후 결과가 업데이트됩니다</span>
+          </div>
+        )}
 
         {/* 로딩 */}
         {loading && (
@@ -100,11 +109,11 @@ export default function App() {
               </div>
             )}
 
-            {/* 가격 비교 */}
-            {comparison && <PriceComparison data={comparison} />}
-
             {/* 핵심 추천 위젯 */}
             {data && <WaitBuyWidget recommendation={data.recommendation} />}
+
+            {/* 가격 비교 */}
+            {comparison && <PriceComparison data={comparison} />}
 
             {/* 할인 행사 목록 - 사이트별 그리드 */}
             {data && data.events.length > 0 && (

@@ -29,6 +29,8 @@ class SaleEventOut(BaseModel):
     reason: str | None
     source_url: str | None
     confidence: float | None
+    scraped_name: str | None = None
+    is_bundle: bool = False
 
 
 class Recommendation(BaseModel):
@@ -43,3 +45,9 @@ class ProductEventsOut(BaseModel):
     product: ProductSummary
     events: list[SaleEventOut]
     recommendation: Recommendation
+
+
+class SearchResponse(BaseModel):
+    products: list[ProductSummary]
+    job_id: str | None = None
+    collecting: bool = False

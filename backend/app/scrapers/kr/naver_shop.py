@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 
 import httpx
+from deep_translator import GoogleTranslator
 
 from app.core.config import settings
 from app.scrapers.base import BaseScraper, ScrapedEvent
@@ -46,8 +47,40 @@ class NaverShopScraper(BaseScraper):
     async def scrape(self, query: str) -> list[ScrapedEvent]:
         events: list[ScrapedEvent] = []
         try:
-            items = await self._search_products(query)
-            for item in items[:10]:
+            # 한국어 + 영어 병렬 검색 (해외 상품 커버리지 향상)
+            queries = [query]
+            if not any(ord(c) > 127 for c in query):
+                # 이미 영어면 단일 쿼리
+                pass
+            else:
+                # 한국어면 한+영 병렬
+                try:
+                    en_query = GoogleTranslator(source="auto", target="en").translate(query)
+                    if en_query and en_query.lower() != query.lower():
+                        queries = [query, en_query]
+                except Exception:
+                    pass
+
+            if len(queries) > 1:
+                results = await asyncio.gather(
+                    self._search_products(queries[0]),
+                    self._search_products(queries[1]),
+                    return_exceptions=True,
+                )
+                seen_ids: set[str] = set()
+                all_items: list[NaverShopItem] = []
+                for r in results:
+                    if isinstance(r, Exception):
+                        continue
+                    for item in r:
+                        if item.product_id not in seen_ids:
+                            seen_ids.add(item.product_id)
+                            all_items.append(item)
+                items = all_items[:20]
+            else:
+                items = await self._search_products(query)
+
+            for item in items[:15]:
                 clean_title = item.title.replace("<b>", "").replace("</b>", "")
                 events.append(
                     ScrapedEvent(
