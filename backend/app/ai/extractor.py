@@ -1,9 +1,10 @@
-"""소셜 비정형 텍스트 → 구조화 데이터 추출 (Claude API, 프리미엄 전용)."""
+"""소셜 비정형 텍스트 → 구조화 데이터 추출 (Claude API / Ollama 로컬)."""
 from datetime import date
 
-import anthropic
+from anthropic import AsyncAnthropic
 from pydantic import BaseModel
 
+from app.ai.local_client import local_chat
 from app.core.config import settings
 
 # 시스템 프롬프트 — 1024토큰 이상이므로 캐싱 적용
@@ -74,56 +75,79 @@ class ExtractedEvent(BaseModel):
 
 class SocialExtractor:
     def __init__(self) -> None:
-        self._client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+        if not settings.use_local_ai:
+            self._client = AsyncAnthropic(api_key=settings.anthropic_api_key)
 
     async def extract_batch(self, posts: list[str]) -> list[ExtractedEvent]:
         """소셜 포스트 최대 20개 배치 처리."""
         if not posts:
             return []
 
+        import json
+        import re
+
+        from app.ai.translator import translate_for_llm
+
         batch = posts[:20]
-        numbered = "\n\n".join(f"[{i+1}] {p}" for i, p in enumerate(batch))
+
+        # ja/zh 텍스트를 영어로 번역 (로컬 AI 전용)
+        if settings.use_local_ai:
+            translated_batch = [translate_for_llm(p) for p in batch]
+        else:
+            translated_batch = batch
+
+        numbered = "\n\n".join(f"[{i+1}] {p}" for i, p in enumerate(translated_batch))
         user_message = f"Extract all cosmetics discount events from these {len(batch)} posts:\n\n{numbered}"
 
-        import json
-
-        response = self._client.messages.create(
-            model=settings.anthropic_model,
-            max_tokens=4096,
-            system=[
-                {
-                    "type": "text",
-                    "text": _SYSTEM_PROMPT,
-                    "cache_control": {"type": "ephemeral"},
-                }
-            ],
-            messages=[{"role": "user", "content": user_message}],
-        )
-
-        raw = response.content[0].text.strip()
-
         try:
-            data = json.loads(raw)
-            if not isinstance(data, list):
-                data = [data]
-        except json.JSONDecodeError:
-            # JSON 블록 안에 있을 경우 추출
-            import re
-            m = re.search(r"\[.*\]", raw, re.DOTALL)
-            data = json.loads(m.group()) if m else []
+            if settings.use_local_ai:
+                # Ollama 로컬 모델 사용
+                raw = await local_chat(_SYSTEM_PROMPT, user_message)
+            else:
+                # Claude API 사용
+                response = await self._client.messages.create(
+                    model=settings.anthropic_model,
+                    max_tokens=4096,
+                    system=[
+                        {
+                            "type": "text",
+                            "text": _SYSTEM_PROMPT,
+                            "cache_control": {"type": "ephemeral"},
+                        }
+                    ],
+                    messages=[{"role": "user", "content": user_message}],
+                )
 
-        results: list[ExtractedEvent] = []
-        for item in data:
+                raw = response.content[0].text.strip()
+
+            # 공통 JSON 파싱 로직
             try:
-                # 날짜 문자열 → date 변환
-                for field in ("start_date", "end_date"):
-                    if isinstance(item.get(field), str):
-                        try:
-                            item[field] = date.fromisoformat(item[field])
-                        except ValueError:
-                            item[field] = None
-                results.append(ExtractedEvent(**item))
-            except Exception:
-                continue
+                data = json.loads(raw)
+                if not isinstance(data, list):
+                    data = [data]
+            except json.JSONDecodeError:
+                # JSON 블록 안에 있을 경우 추출
+                m = re.search(r"\[.*\]", raw, re.DOTALL)
+                data = json.loads(m.group()) if m else []
 
-        return results
+            results: list[ExtractedEvent] = []
+            for item in data:
+                try:
+                    # 날짜 문자열 → date 변환
+                    for field in ("start_date", "end_date"):
+                        if isinstance(item.get(field), str):
+                            try:
+                                item[field] = date.fromisoformat(item[field])
+                            except ValueError:
+                                item[field] = None
+                    results.append(ExtractedEvent(**item))
+                except Exception:
+                    continue
+
+            return results
+
+        except Exception as e:
+            # 오류 시 빈 배열 반환 (예외 전파 금지)
+            import logging
+            logging.getLogger(__name__).error(f"Extract batch failed: {e}")
+            return []

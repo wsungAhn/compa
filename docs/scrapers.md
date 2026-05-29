@@ -5,11 +5,16 @@
 | 플랫폼 | 국가 | 방식 | 상태 | 쿼리 언어 |
 |--------|------|------|------|----------|
 | 네이버쇼핑 | KR | httpx + Naver Search API | ✅ 정상 | 한국어 |
-| 올리브영 | KR | Playwright (Chrome) | ⚠️ 403 차단 | 한국어 |
-| 쿠팡 | KR | httpx + BeautifulSoup | ⚠️ 403 차단 | 한국어 |
+| 올리브영 | KR | Playwright (Chrome) | ⏭️ SKIP (403 차단) | 한국어 |
 | Sephora | US | Playwright (Chrome) | ✅ 정상 | 영어 |
-| Amazon US | US | httpx + BeautifulSoup | ⚠️ 503 차단 | 영어 |
+| Ulta | US | Playwright (Chrome) | ✅ 구현 완료 | 영어 |
+| Amazon US | US | PA API 5.0 + Playwright fallback | ✅ 구현 완료 (PA API 키 필요) | 영어 |
 | Rakuten | JP | httpx + Rakuten API | ✅ 정상 | 일본어 |
+| @cosme | JP | Playwright (Chrome) | ✅ 구현 완료 | 일본어 |
+| Tmall | CN | Playwright (Chrome) | ✅ 구현 완료 | 중국어 |
+| 小红书 | CN | Playwright (Chrome) | ✅ 구현 완료 | 중국어 |
+| Instagram | GLOBAL | Instagram Graph API | ✅ 구현 완료 (토큰 필요) | - |
+| TikTok | GLOBAL | TikTok Research API | ✅ 구현 완료 (키 필요) | - |
 
 ## 다국어 쿼리 번역
 

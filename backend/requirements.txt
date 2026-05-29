@@ -13,3 +13,5 @@ playwright==1.47.0
 beautifulsoup4==4.12.3
 anthropic==0.40.0
 python-dotenv==1.0.1
+deep-translator>=1.11.4
+slowapi>=0.1.9
