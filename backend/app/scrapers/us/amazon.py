@@ -71,7 +71,8 @@ class AmazonScraper(BaseScraper):
                         discount_rate = round((1 - sale_price / original_price) * 100, 1)
 
                     link_el = item.select_one("h2 a")
-                    href = link_el.get("href", "") if link_el else ""
+                    href_attr = link_el.get("href", "") if link_el else ""
+                    href = href_attr if isinstance(href_attr, str) else ""
                     source_url = f"https://www.amazon.com{href}" if href.startswith("/") else url
 
                     events.append(

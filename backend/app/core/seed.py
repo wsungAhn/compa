@@ -21,5 +21,5 @@ async def seed_platforms(db: AsyncSession) -> None:
     for p in PLATFORMS:
         exists = await db.execute(select(Platform).where(Platform.name == p["name"]))
         if not exists.scalar_one_or_none():
-            db.add(Platform(**p))  # type: ignore[arg-type]
+            db.add(Platform(**p))
     await db.commit()

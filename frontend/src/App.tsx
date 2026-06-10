@@ -3,6 +3,8 @@ import { SearchBar } from './components/SearchBar'
 import { WaitBuyWidget } from './components/WaitBuyWidget'
 import { EventCard } from './components/EventCard'
 import { PriceComparison } from './components/PriceComparison'
+import { PriceChart } from './components/PriceChart'
+import { EventTimeline } from './components/EventTimeline'
 import { SiteManager } from './components/SiteManager'
 import { useSitePrefs } from './hooks/useSitePrefs'
 import { getProductEvents, getComparison } from './api/client'
@@ -102,6 +104,10 @@ export default function App() {
             {comparison && <PriceComparison data={comparison} />}
 
             {data && <WaitBuyWidget recommendation={data.recommendation} />}
+
+            {data && <PriceChart events={data.events} />}
+
+            {data && <EventTimeline events={data.events} />}
 
             {data && (
               <div>

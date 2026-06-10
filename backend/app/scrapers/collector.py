@@ -1,12 +1,14 @@
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.classifier import classify_rule_based
 from app.models.platform import Platform
 from app.models.product import Product
 from app.models.sale_event import SaleEvent
-from app.scrapers.base import ScrapedEvent
+from app.scrapers.base import BaseScraper, ScrapedEvent
 from app.scrapers.jp.rakuten import RakutenScraper
 from app.scrapers.kr.coupang import CoupangScraper
 from app.scrapers.kr.naver_shop import NaverShopScraper
@@ -14,7 +16,7 @@ from app.scrapers.kr.oliveyoung import OliveYoungScraper
 from app.scrapers.us.amazon import AmazonScraper
 from app.scrapers.us.sephora import SephoraScraper
 
-SCRAPERS = {
+SCRAPERS: dict[str, Callable[[], BaseScraper]] = {
     "네이버쇼핑": NaverShopScraper,
     "쿠팡": CoupangScraper,
     "올리브영": OliveYoungScraper,
@@ -53,6 +55,14 @@ async def _get_platform(db: AsyncSession, name: str) -> Platform | None:
     return result.scalar_one_or_none()
 
 
+def _classify_event_type(s: ScrapedEvent) -> str | None:
+    """이벤트명과 사유로 빠른 분류를 시도하고, 결과가 있으면 event_type 반환."""
+    result = classify_rule_based(s.event_name, s.reason, s.start_date)
+    if result:
+        return result.event_type
+    return None
+
+
 async def _save_events(
     db: AsyncSession,
     product: Product,
@@ -62,10 +72,12 @@ async def _save_events(
     for s in scraped:
         if s.confidence == 0.0:
             continue
+        event_type = _classify_event_type(s)
         event = SaleEvent(
             product_id=product.id,
             platform_id=platform.id,
             event_name=s.event_name,
+            event_type=event_type,
             start_date=s.start_date,
             end_date=s.end_date,
             original_price=s.original_price,

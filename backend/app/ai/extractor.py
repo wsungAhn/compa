@@ -1,4 +1,6 @@
 """소셜 비정형 텍스트 → 구조화 데이터 추출 (Claude API, 프리미엄 전용)."""
+import json
+import re
 from datetime import date
 
 import anthropic
@@ -74,7 +76,7 @@ class ExtractedEvent(BaseModel):
 
 class SocialExtractor:
     def __init__(self) -> None:
-        self._client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+        self._client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
 
     async def extract_batch(self, posts: list[str]) -> list[ExtractedEvent]:
         """소셜 포스트 최대 20개 배치 처리."""
@@ -85,22 +87,24 @@ class SocialExtractor:
         numbered = "\n\n".join(f"[{i+1}] {p}" for i, p in enumerate(batch))
         user_message = f"Extract all cosmetics discount events from these {len(batch)} posts:\n\n{numbered}"
 
-        import json
-
-        response = self._client.messages.create(
+        response = await self._client.messages.create(
             model=settings.anthropic_model,
             max_tokens=4096,
             system=[
                 {
                     "type": "text",
                     "text": _SYSTEM_PROMPT,
-                    "cache_control": {"type": "ephemeral"},
+                    "cache_control": {"type": "ephemeral"},  # type: ignore[typeddict-unknown-key]
                 }
             ],
             messages=[{"role": "user", "content": user_message}],
         )
 
-        raw = response.content[0].text.strip()
+        raw = ""
+        for block in response.content:
+            if isinstance(block, anthropic.types.TextBlock):
+                raw = block.text.strip()
+                break
 
         try:
             data = json.loads(raw)
@@ -108,7 +112,6 @@ class SocialExtractor:
                 data = [data]
         except json.JSONDecodeError:
             # JSON 블록 안에 있을 경우 추출
-            import re
             m = re.search(r"\[.*\]", raw, re.DOTALL)
             data = json.loads(m.group()) if m else []
 

@@ -79,12 +79,16 @@ def _build_recommendation(events: list[SaleEvent]) -> Recommendation:
         if e.event_type == "regular" and e.start_date and e.start_date > today
     ]
     if upcoming:
-        next_event = min(upcoming, key=lambda e: e.start_date)  # type: ignore[arg-type]
-        days_until = (next_event.start_date - today).days  # type: ignore[operator]
+        next_event = min(upcoming, key=lambda e: e.start_date or date.max)
+        days_until = ((next_event.start_date or date.max) - today).days
         avg_discount = None
-        same_name = [e for e in events if e.event_name == next_event.event_name and e.discount_rate]
-        if same_name:
-            avg_discount = sum(float(e.discount_rate) for e in same_name) / len(same_name)  # type: ignore[arg-type]
+        rates = [
+            float(e.discount_rate)
+            for e in events
+            if e.event_name == next_event.event_name and e.discount_rate is not None
+        ]
+        if rates:
+            avg_discount = sum(rates) / len(rates)
 
         if days_until <= 60:
             return Recommendation(

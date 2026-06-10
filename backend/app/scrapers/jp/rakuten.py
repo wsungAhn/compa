@@ -19,7 +19,7 @@ class RakutenScraper(BaseScraper):
             return events
         try:
             await self._wait_rate_limit()
-            params = {
+            params: dict[str, str | int] = {
                 "applicationId": settings.rakuten_app_id,
                 "keyword": query,
                 "format": "json",
