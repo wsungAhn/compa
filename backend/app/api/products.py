@@ -5,8 +5,8 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.schemas import ProductEventsOut, ProductSummary, Recommendation, SaleEventOut
-from app.core.database import get_db
+from app.api.schemas import ProductEventsOut, ProductSummary, Recommendation, SaleEventOut, SearchOut
+from app.core.database import AsyncSessionLocal, get_db
 from app.models.platform import Platform
 from app.models.product import Product
 from app.models.sale_event import SaleEvent
@@ -14,14 +14,37 @@ from app.scrapers.collector import collect_on_demand
 
 router = APIRouter(prefix="/api/products", tags=["products"])
 
+# Track in-flight collection queries to avoid duplicate concurrent collections
+_collecting_queries: set[str] = set()
 
-@router.get("/search", response_model=list[ProductSummary])
+
+def _should_schedule(query: str) -> bool:
+    """Check if we should schedule a new collection for this query (not already in-flight)."""
+    if query in _collecting_queries:
+        return False
+    _collecting_queries.add(query)
+    return True
+
+
+async def _collect_in_background(query: str) -> None:
+    """Collect products in the background, with own DB session."""
+    try:
+        async with AsyncSessionLocal() as db:
+            await collect_on_demand(db, query)
+    except Exception:
+        # Swallow exceptions
+        pass
+    finally:
+        _collecting_queries.discard(query)
+
+
+@router.get("/search", response_model=SearchOut)
 async def search_products(
     q: str = Query(..., min_length=1),
     lang: str = Query("ko", pattern="^(ko|en|ja|zh)$"),
     background_tasks: BackgroundTasks = BackgroundTasks(),
     db: AsyncSession = Depends(get_db),
-) -> list[ProductSummary]:
+) -> SearchOut:
     col_map = {"ko": Product.name_kr, "en": Product.name_en, "ja": Product.name_jp, "zh": Product.name_cn}
     col = col_map[lang]
 
@@ -33,12 +56,20 @@ async def search_products(
     )
     products = list(result.scalars().all())
 
-    if not products:
-        # DB에 없으면 온디맨드 수집 (한국어 검색만)
-        if lang == "ko":
-            products = await collect_on_demand(db, q)
+    if products:
+        # Found in DB, return immediately with collecting=False
+        return SearchOut(
+            products=[ProductSummary.model_validate(p, from_attributes=True) for p in products],
+            collecting=False,
+        )
 
-    return [ProductSummary.model_validate(p, from_attributes=True) for p in products]
+    # Not found in DB, schedule background collection if Korean and not already in-flight
+    collecting = False
+    if lang == "ko" and _should_schedule(q):
+        background_tasks.add_task(_collect_in_background, q)
+        collecting = True
+
+    return SearchOut(products=[], collecting=collecting)
 
 
 def _build_recommendation(events: list[SaleEvent]) -> Recommendation:

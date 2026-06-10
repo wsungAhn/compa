@@ -63,8 +63,13 @@ export interface ComparisonOut {
   cheapest_saving_pct: number | null
 }
 
+export interface SearchOut {
+  products: Product[]
+  collecting: boolean
+}
+
 export const searchProducts = (q: string) =>
-  api.get<Product[]>('/products/search', { params: { q, lang: 'ko' } }).then(r => r.data)
+  api.get<SearchOut>('/products/search', { params: { q, lang: 'ko' } }).then(r => r.data)
 
 export const getProductEvents = (id: string) =>
   api.get<ProductEvents>(`/products/${id}/events`).then(r => r.data)

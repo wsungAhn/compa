@@ -94,7 +94,7 @@ async def _save_events(
     await db.commit()
 
 
-async def collect_on_demand(db: AsyncSession, query: str) -> list[Product]:
+async def collect_on_demand(db: AsyncSession, query: str, force: bool = False) -> list[Product]:
     """쿼리에 해당하는 제품을 스크래핑해서 DB에 저장 후 Product 목록 반환."""
     # 기존 제품 확인
     result = await db.execute(
@@ -105,8 +105,8 @@ async def collect_on_demand(db: AsyncSession, query: str) -> list[Product]:
     )
     existing = list(result.scalars().all())
 
-    # 캐시가 유효하면 바로 반환
-    if existing and await _is_fresh(db, existing[0]):
+    # 캐시가 유효하면 바로 반환 (force=True일 때는 스킵)
+    if not force and existing and await _is_fresh(db, existing[0]):
         return existing
 
     # 스크래핑 실행

@@ -39,6 +39,11 @@ class Recommendation(BaseModel):
     expected_discount: float | None = None
 
 
+class SearchOut(BaseModel):
+    products: list[ProductSummary]
+    collecting: bool = False
+
+
 class ProductEventsOut(BaseModel):
     product: ProductSummary
     events: list[SaleEventOut]
