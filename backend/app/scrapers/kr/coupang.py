@@ -23,6 +23,60 @@ def _parse_price(text: str) -> float | None:
     return None
 
 
+def parse_search_html(html: str, url: str) -> list[ScrapedEvent]:
+    """Parse Coupang search HTML and extract product events.
+
+    Args:
+        html: HTML content from search page
+        url: Source URL for the search
+
+    Returns:
+        List of ScrapedEvent objects extracted from the HTML
+    """
+    events: list[ScrapedEvent] = []
+    soup = BeautifulSoup(html, "html.parser")
+
+    items = soup.select("div.search-product")
+    if not items:
+        items = soup.select("li.search-item")
+
+    for item in items[:5]:
+        try:
+            name_el = item.select_one(".name") or item.select_one("a.product-name")
+            product_name = name_el.get_text(strip=True) if name_el else ""
+
+            price_el = item.select_one(".price-value") or item.select_one("strong.price")
+            sale_price = _parse_price(price_el.get_text(strip=True) if price_el else "")
+
+            original_el = item.select_one("del") or item.select_one(".base-price")
+            original_price = _parse_price(original_el.get_text(strip=True) if original_el else "")
+
+            discount_rate: float | None = None
+            if original_price and sale_price and original_price > 0:
+                discount_rate = round((1 - sale_price / original_price) * 100, 1)
+
+            raw_text = item.get_text(strip=True)
+
+            if sale_price and original_price and sale_price < original_price:
+                events.append(
+                    ScrapedEvent(
+                        product_name=product_name,
+                        original_price=original_price,
+                        sale_price=sale_price,
+                        discount_rate=discount_rate,
+                        currency="KRW",
+                        event_name="쿠팡 할인",
+                        source_url=url,
+                        confidence=0.85,
+                        raw_text=raw_text,
+                    )
+                )
+        except Exception:
+            pass
+
+    return events
+
+
 class CoupangScraper(BaseScraper):
     PLATFORM_NAME = "쿠팡"
     COUNTRY = "KR"
@@ -48,45 +102,7 @@ class CoupangScraper(BaseScraper):
                 response.raise_for_status()
                 html = response.text
 
-            soup = BeautifulSoup(html, "html.parser")
-
-            items = soup.select("div.search-product")
-            if not items:
-                items = soup.select("li.search-item")
-
-            for item in items[:5]:
-                try:
-                    name_el = item.select_one(".name") or item.select_one("a.product-name")
-                    product_name = name_el.get_text(strip=True) if name_el else query
-
-                    price_el = item.select_one(".price-value") or item.select_one("strong.price")
-                    sale_price = _parse_price(price_el.get_text(strip=True) if price_el else "")
-
-                    original_el = item.select_one("del") or item.select_one(".base-price")
-                    original_price = _parse_price(original_el.get_text(strip=True) if original_el else "")
-
-                    discount_rate: float | None = None
-                    if original_price and sale_price and original_price > 0:
-                        discount_rate = round((1 - sale_price / original_price) * 100, 1)
-
-                    raw_text = item.get_text(strip=True)
-
-                    if sale_price and original_price and sale_price < original_price:
-                        events.append(
-                            ScrapedEvent(
-                                product_name=product_name,
-                                original_price=original_price,
-                                sale_price=sale_price,
-                                discount_rate=discount_rate,
-                                currency="KRW",
-                                event_name="쿠팡 할인",
-                                source_url=url,
-                                confidence=0.85,
-                                raw_text=raw_text,
-                            )
-                        )
-                except Exception:
-                    pass
+            events = parse_search_html(html, url)
 
         except Exception as exc:
             events.append(
