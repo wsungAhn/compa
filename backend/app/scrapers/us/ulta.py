@@ -3,6 +3,7 @@ import re
 import httpx
 from bs4 import BeautifulSoup
 
+from app.core.proxy import httpx_proxy
 from app.scrapers.base import BaseScraper, ScrapedEvent
 
 _SEARCH_URL = "https://www.ulta.com/shop/search?search={query}"
@@ -121,7 +122,12 @@ class UltaScraper(BaseScraper):
                 "Accept-Language": "en-US,en;q=0.9",
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             }
-            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+
+            proxy = httpx_proxy()
+
+            async with httpx.AsyncClient(
+                timeout=30.0, follow_redirects=True, proxy=proxy
+            ) as client:
                 resp = await client.get(url, headers=headers)
                 resp.raise_for_status()
                 html = resp.text

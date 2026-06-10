@@ -3,6 +3,7 @@ from datetime import date, datetime
 
 from playwright.async_api import async_playwright
 
+from app.core.proxy import playwright_proxy
 from app.scrapers.base import BaseScraper, ScrapedEvent
 
 SEARCH_URL = "https://www.oliveyoung.co.kr/store/search/getSearchMain.do?query={query}"
@@ -36,11 +37,16 @@ class OliveYoungScraper(BaseScraper):
         events: list[ScrapedEvent] = []
         try:
             async with async_playwright() as pw:
-                browser = await pw.chromium.launch(
-                    headless=True,
-                    executable_path="/usr/bin/google-chrome-stable",
-                    args=["--no-sandbox", "--disable-dev-shm-usage"],
-                )
+                launch_kwargs: dict[str, object] = {
+                    "headless": True,
+                    "executable_path": "/usr/bin/google-chrome-stable",
+                    "args": ["--no-sandbox", "--disable-dev-shm-usage"],
+                }
+                proxy_config = playwright_proxy()
+                if proxy_config:
+                    launch_kwargs["proxy"] = proxy_config
+
+                browser = await pw.chromium.launch(**launch_kwargs)  # type: ignore[arg-type]
                 context = await browser.new_context(
                     user_agent=(
                         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "

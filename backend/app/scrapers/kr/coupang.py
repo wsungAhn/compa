@@ -3,6 +3,7 @@ import re
 import httpx
 from bs4 import BeautifulSoup
 
+from app.core.proxy import httpx_proxy
 from app.scrapers.base import BaseScraper, ScrapedEvent
 
 SEARCH_URL = "https://www.coupang.com/np/search?q={query}&channel=user&from=pc"
@@ -97,7 +98,9 @@ class CoupangScraper(BaseScraper):
                 "Accept-Language": "ko-KR,ko;q=0.9",
             }
 
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            proxy = httpx_proxy()
+
+            async with httpx.AsyncClient(timeout=30.0, proxy=proxy) as client:
                 response = await client.get(url, headers=headers)
                 response.raise_for_status()
                 html = response.text
