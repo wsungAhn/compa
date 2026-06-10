@@ -10,6 +10,8 @@ from app.models.platform import Platform
 from app.models.product import Product
 from app.models.sale_event import SaleEvent
 from app.scrapers.base import BaseScraper, ScrapedEvent
+from app.scrapers.cn.tmall import TmallScraper
+from app.scrapers.cn.xiaohongshu import XiaohongshuScraper
 from app.scrapers.jp.cosme import CosmeScraper
 from app.scrapers.jp.rakuten import RakutenScraper
 from app.scrapers.kr.coupang import CoupangScraper
@@ -28,6 +30,8 @@ SCRAPERS: dict[str, Callable[[], BaseScraper]] = {
     "Amazon US": AmazonScraper,
     "@cosme": CosmeScraper,
     "Rakuten": RakutenScraper,
+    "Tmall": TmallScraper,
+    "小红书": XiaohongshuScraper,
 }
 
 CACHE_TTL_HOURS = 24
