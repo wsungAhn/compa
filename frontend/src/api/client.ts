@@ -52,6 +52,7 @@ export interface PlatformPrice {
   currency: string | null
   event_name: string | null
   source_url: string | null
+  converted_price: number | null
   saving_vs_preferred: number | null
 }
 

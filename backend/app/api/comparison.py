@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.fx import convert
 from app.models.platform import Platform
 from app.models.product import Product
 from app.models.sale_event import SaleEvent
@@ -22,6 +23,7 @@ class PlatformPrice(BaseModel):
     currency: str | None
     event_name: str | None
     source_url: str | None
+    converted_price: float | None  # sale_price converted to preferred platform's currency
     saving_vs_preferred: float | None  # 양수 = preferred가 더 비쌈 (이쪽이 저렴)
 
 
@@ -82,10 +84,25 @@ async def get_price_comparison(
         if event:
             platform_prices.append((p, event))
 
-    def to_platform_price(p: Platform, e: SaleEvent, preferred_price: float | None) -> PlatformPrice:
+    def to_platform_price(
+        p: Platform,
+        e: SaleEvent,
+        preferred_currency: str | None,
+        preferred_converted_price: float | None,
+    ) -> PlatformPrice:
+        # Convert sale_price to preferred currency if applicable
+        converted_price: float | None = None
+        if e.sale_price and e.currency and preferred_currency:
+            if e.currency == preferred_currency:
+                converted_price = float(e.sale_price)
+            else:
+                converted_price = convert(float(e.sale_price), e.currency, preferred_currency)
+
+        # Calculate saving using converted prices
         saving: float | None = None
-        if preferred_price and e.sale_price:
-            saving = round(float(preferred_price) - float(e.sale_price), 2)
+        if preferred_converted_price and converted_price:
+            saving = round(preferred_converted_price - converted_price, 2)
+
         return PlatformPrice(
             platform_name=p.name,
             platform_country=p.country,
@@ -95,41 +112,57 @@ async def get_price_comparison(
             currency=e.currency,
             event_name=e.event_name,
             source_url=e.source_url,
+            converted_price=converted_price,
             saving_vs_preferred=saving,
         )
 
-    # 선호 플랫폼 분리
+    # 선호 플랫폼 분리 및 preferred_currency 결정
     preferred_pp: PlatformPrice | None = None
-    preferred_price: float | None = None
+    preferred_currency: str | None = None
+    preferred_converted_price: float | None = None
     alternatives: list[PlatformPrice] = []
 
     for p, e in platform_prices:
         if p.name == preferred:
-            preferred_price = float(e.sale_price) if e.sale_price else None
-            preferred_pp = to_platform_price(p, e, None)
+            preferred_currency = e.currency
+            preferred_converted_price = float(e.sale_price) if e.sale_price else None
+            preferred_pp = to_platform_price(p, e, preferred_currency, None)
 
-    # saving 계산 포함 alternatives 생성 (선호 제외)
+    # saving 계산 포함 alternatives 생성 (선호 제외, 모든 통화 포함)
     for p, e in platform_prices:
         if p.name != preferred:
-            alternatives.append(to_platform_price(p, e, preferred_price))
+            alternatives.append(
+                to_platform_price(p, e, preferred_currency, preferred_converted_price)
+            )
 
-    # 가격 기준 정렬 (저렴한 순) — 같은 통화권만 비교
-    same_currency = [a for a in alternatives if a.currency == (preferred_pp.currency if preferred_pp else None)]
-    same_currency.sort(key=lambda x: x.sale_price or float("inf"))
+    # 전체 대안을 converted_price 기준으로 정렬 (저렴한 순), None 값은 마지막
+    alternatives.sort(
+        key=lambda x: (x.converted_price is None, x.converted_price or float("inf"))
+    )
 
-    other_currency = [a for a in alternatives if a not in same_currency]
-    sorted_alternatives = same_currency + other_currency
-
-    # 최저가 플랫폼
-    cheapest: PlatformPrice | None = same_currency[0] if same_currency else None
+    # 최저가 플랫폼 — converted_price 기반
+    cheapest: PlatformPrice | None = None
     cheapest_saving_pct: float | None = None
-    if cheapest and preferred_price and cheapest.sale_price and preferred_price > 0:
-        cheapest_saving_pct = round((preferred_price - cheapest.sale_price) / preferred_price * 100, 1)
+    if alternatives:
+        cheapest = alternatives[0]
+
+    if (
+        cheapest
+        and preferred_converted_price
+        and cheapest.converted_price
+        and preferred_converted_price > 0
+    ):
+        cheapest_saving_pct = round(
+            (preferred_converted_price - cheapest.converted_price)
+            / preferred_converted_price
+            * 100,
+            1,
+        )
 
     return ComparisonOut(
         product_name=product.name_kr or product.name_en or "",
         preferred=preferred_pp,
-        alternatives=sorted_alternatives,
+        alternatives=alternatives,
         cheapest_platform=cheapest.platform_name if cheapest and (cheapest.saving_vs_preferred or 0) > 0 else None,
         cheapest_saving_pct=cheapest_saving_pct if cheapest_saving_pct and cheapest_saving_pct > 0 else None,
     )

@@ -77,12 +77,19 @@ export function PriceComparison({ data }: Props) {
                   <div className="flex items-center gap-2">
                     {(alt.saving_vs_preferred ?? 0) > 0 && (
                       <span className="text-xs text-emerald-600 font-semibold">
-                        -{CURRENCY_SYMBOL[alt.currency ?? 'KRW']}{alt.saving_vs_preferred?.toLocaleString()} 저렴
+                        -{CURRENCY_SYMBOL[preferred?.currency ?? 'KRW']}{alt.saving_vs_preferred?.toLocaleString()} 저렴
                       </span>
                     )}
-                    <span className={`text-sm font-bold ${(alt.saving_vs_preferred ?? 0) > 0 ? 'text-emerald-700' : 'text-gray-700'}`}>
-                      {formatPrice(alt.sale_price, alt.currency) ?? '—'}
-                    </span>
+                    <div className="flex flex-col items-end">
+                      <span className={`text-sm font-bold ${(alt.saving_vs_preferred ?? 0) > 0 ? 'text-emerald-700' : 'text-gray-700'}`}>
+                        {formatPrice(alt.sale_price, alt.currency) ?? '—'}
+                      </span>
+                      {alt.converted_price && alt.currency && alt.currency !== (preferred?.currency ?? 'KRW') && (
+                        <span className="text-xs text-gray-400">
+                          ≈ {formatPrice(alt.converted_price, preferred?.currency ?? 'KRW')}
+                        </span>
+                      )}
+                    </div>
                   </div>
                   {alt.discount_rate && (
                     <span className="text-xs text-rose-400">-{alt.discount_rate}%</span>

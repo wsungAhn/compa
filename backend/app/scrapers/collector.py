@@ -10,19 +10,23 @@ from app.models.platform import Platform
 from app.models.product import Product
 from app.models.sale_event import SaleEvent
 from app.scrapers.base import BaseScraper, ScrapedEvent
+from app.scrapers.jp.cosme import CosmeScraper
 from app.scrapers.jp.rakuten import RakutenScraper
 from app.scrapers.kr.coupang import CoupangScraper
 from app.scrapers.kr.naver_shop import NaverShopScraper
 from app.scrapers.kr.oliveyoung import OliveYoungScraper
 from app.scrapers.us.amazon import AmazonScraper
 from app.scrapers.us.sephora import SephoraScraper
+from app.scrapers.us.ulta import UltaScraper
 
 SCRAPERS: dict[str, Callable[[], BaseScraper]] = {
     "네이버쇼핑": NaverShopScraper,
     "쿠팡": CoupangScraper,
     "올리브영": OliveYoungScraper,
     "Sephora": SephoraScraper,
+    "Ulta": UltaScraper,
     "Amazon US": AmazonScraper,
+    "@cosme": CosmeScraper,
     "Rakuten": RakutenScraper,
 }
 
@@ -54,6 +58,55 @@ def _classify_event_type(s: ScrapedEvent) -> str | None:
     return None
 
 
+def _event_signature(s: ScrapedEvent) -> tuple[str | None, float | None, float | None, object]:
+    """
+    Extract event signature for deduplication.
+
+    Returns tuple of (event_name, sale_price, original_price, start_date).
+    """
+    return (s.event_name, s.sale_price, s.original_price, s.start_date)
+
+
+async def _is_duplicate(
+    db: AsyncSession,
+    product: Product,
+    platform: Platform,
+    s: ScrapedEvent,
+) -> bool:
+    """
+    Check if a "same" event already exists within the last 7 days.
+
+    Same event: same product_id, platform_id, event_name, sale_price, original_price, start_date,
+    with deleted_at IS NULL, created within last 7 days.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+    event_name, sale_price, original_price, start_date = _event_signature(s)
+
+    # Build where clause with conditional None handling
+    conditions = [
+        SaleEvent.product_id == product.id,
+        SaleEvent.platform_id == platform.id,
+        SaleEvent.event_name == event_name,
+        SaleEvent.start_date == start_date,
+        SaleEvent.deleted_at.is_(None),
+        SaleEvent.created_at >= cutoff,
+    ]
+
+    # Handle nullable price fields: compare with SQL equality (SQLAlchemy handles NUMERIC casting)
+    if sale_price is None:
+        conditions.append(SaleEvent.sale_price.is_(None))
+    else:
+        conditions.append(SaleEvent.sale_price == sale_price)
+
+    if original_price is None:
+        conditions.append(SaleEvent.original_price.is_(None))
+    else:
+        conditions.append(SaleEvent.original_price == original_price)
+
+    result = await db.execute(select(SaleEvent).where(*conditions).limit(1))
+    return result.scalar_one_or_none() is not None
+
+
 async def _save_events(
     db: AsyncSession,
     product: Product,
@@ -63,6 +116,11 @@ async def _save_events(
     for s in scraped:
         if s.confidence == 0.0:
             continue
+
+        # Check for duplicate before inserting
+        if await _is_duplicate(db, product, platform, s):
+            continue
+
         event_type = _classify_event_type(s)
         event = SaleEvent(
             product_id=product.id,
