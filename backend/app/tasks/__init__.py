@@ -12,7 +12,12 @@ celery.conf.update(
     result_backend=settings.redis_url,
     timezone="Asia/Seoul",
     enable_utc=True,
-    include=["app.tasks.collect", "app.tasks.classify"],
+    include=[
+        "app.tasks.collect",
+        "app.tasks.classify",
+        "app.tasks.social_collect",
+        "app.tasks.social_extract",
+    ],
     beat_schedule={
         "collect-all-daily": {
             "task": "app.tasks.collect.collect_all_products",
@@ -21,6 +26,14 @@ celery.conf.update(
         "classify-pending-hourly": {
             "task": "app.tasks.classify.classify_pending",
             "schedule": crontab(minute=15),
+        },
+        "social-collect-6h": {
+            "task": "app.tasks.social_collect.collect_social_for_products",
+            "schedule": crontab(hour="*/6", minute=30),
+        },
+        "social-extract-hourly": {
+            "task": "app.tasks.social_extract.extract_social_posts",
+            "schedule": crontab(minute=45),
         },
     },
 )

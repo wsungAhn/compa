@@ -13,7 +13,11 @@ PLATFORMS = [
     {"name": "@cosme", "country": "JP", "url": "https://www.cosme.net", "scrape_method": "scraping"},
     {"name": "Rakuten", "country": "JP", "url": "https://www.rakuten.co.jp", "scrape_method": "official_api"},
     {"name": "Tmall", "country": "CN", "url": "https://www.tmall.com", "scrape_method": "unofficial_api"},
-    {"name": "小红书", "country": "CN", "url": "https://www.xiaohongshu.com", "scrape_method": "scraping"},
+    {"name": "小红书", "country": "CN", "url": "https://www.xiaohongshu.com", "scrape_method": "official_api"},
+    {"name": "Instagram", "country": "US", "url": "https://www.instagram.com", "scrape_method": "official_api"},
+    {"name": "TikTok", "country": "US", "url": "https://www.tiktok.com", "scrape_method": "official_api"},
+    {"name": "Facebook", "country": "US", "url": "https://www.facebook.com", "scrape_method": "official_api"},
+    {"name": "네이버블로그", "country": "KR", "url": "https://blog.naver.com", "scrape_method": "official_api"},
 ]
 
 
