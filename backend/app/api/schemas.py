@@ -48,3 +48,4 @@ class ProductEventsOut(BaseModel):
     product: ProductSummary
     events: list[SaleEventOut]
     recommendation: Recommendation
+    premium: bool = False

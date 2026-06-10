@@ -14,8 +14,11 @@ class Settings(BaseSettings):
     amazon_secret_key: str = ""
     amazon_partner_tag: str = ""
     rakuten_app_id: str = ""
+    rakuten_affiliate_id: str = ""
+    coupang_partner_id: str = ""
     instagram_access_token: str = ""
     tiktok_client_key: str = ""
+    premium_api_keys: str = ""
     proxy_pool_url: str = ""
 
 

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { SearchBar } from './components/SearchBar'
 import { WaitBuyWidget } from './components/WaitBuyWidget'
 import { EventCard } from './components/EventCard'
@@ -6,8 +6,11 @@ import { PriceComparison } from './components/PriceComparison'
 import { PriceChart } from './components/PriceChart'
 import { EventTimeline } from './components/EventTimeline'
 import { SiteManager } from './components/SiteManager'
+import { AdSlot } from './components/AdSlot'
+import { PremiumBanner } from './components/PremiumBanner'
 import { useSitePrefs } from './hooks/useSitePrefs'
-import { getProductEvents, getComparison } from './api/client'
+import { usePremium } from './hooks/usePremium'
+import { getProductEvents, getComparison, setPremiumHeader } from './api/client'
 import type { Product, ProductEvents, ComparisonOut } from './api/client'
 
 export default function App() {
@@ -18,11 +21,14 @@ export default function App() {
   const [error, setError] = useState<string | null>(null)
 
   const { sites, preferred, moveUp, moveDown, addSite, removeSite, availableToAdd } = useSitePrefs()
+  const { premiumKey, setPremiumKey } = usePremium()
 
-  async function handleSelect(product: Product) {
-    setSelected(product)
-    setData(null)
-    setComparison(null)
+  // Initialize premium header on app start and when key changes
+  useEffect(() => {
+    setPremiumHeader(premiumKey)
+  }, [premiumKey])
+
+  async function fetchProductData(product: Product) {
     setError(null)
     setLoading(true)
     try {
@@ -42,6 +48,19 @@ export default function App() {
       if (comparisonResult.ok) setComparison(comparisonResult.value)
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function handleSelect(product: Product) {
+    setSelected(product)
+    setData(null)
+    setComparison(null)
+    await fetchProductData(product)
+  }
+
+  async function handlePremiumActivated() {
+    if (selected) {
+      await fetchProductData(selected)
     }
   }
 
@@ -101,6 +120,24 @@ export default function App() {
               </div>
             )}
 
+            {data && !data.premium && (
+              <PremiumBanner
+                premium={false}
+                onActivated={handlePremiumActivated}
+                onKeyChange={setPremiumKey}
+              />
+            )}
+
+            {data && data.premium && (
+              <div className='flex justify-end'>
+                <PremiumBanner
+                  premium={true}
+                  onActivated={handlePremiumActivated}
+                  onKeyChange={setPremiumKey}
+                />
+              </div>
+            )}
+
             {comparison && <PriceComparison data={comparison} />}
 
             {data && <WaitBuyWidget recommendation={data.recommendation} />}
@@ -123,13 +160,24 @@ export default function App() {
                 )}
               </div>
             )}
+
+            {data && !data.premium && (
+              <div className='mt-6'>
+                <AdSlot slot='results-bottom' />
+              </div>
+            )}
           </div>
         )}
 
         {!selected && !loading && (
-          <div className='text-center py-16 text-gray-300'>
-            <div className='text-6xl mb-4'>🔍</div>
-            <p className='text-sm'>검색어를 입력해 할인 정보를 확인하세요</p>
+          <div className='space-y-8'>
+            <div className='text-center py-16 text-gray-300'>
+              <div className='text-6xl mb-4'>🔍</div>
+              <p className='text-sm'>검색어를 입력해 할인 정보를 확인하세요</p>
+            </div>
+            <div>
+              <AdSlot slot='home' />
+            </div>
           </div>
         )}
       </main>

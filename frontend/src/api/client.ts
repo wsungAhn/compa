@@ -2,6 +2,14 @@ import axios from 'axios'
 
 const api = axios.create({ baseURL: '/api' })
 
+export function setPremiumHeader(key: string | null) {
+  if (key) {
+    api.defaults.headers.common['X-Premium-Key'] = key
+  } else {
+    delete api.defaults.headers.common['X-Premium-Key']
+  }
+}
+
 export interface Product {
   id: string
   name_kr: string | null
@@ -41,6 +49,7 @@ export interface ProductEvents {
   product: Product
   events: SaleEvent[]
   recommendation: Recommendation
+  premium: boolean
 }
 
 export interface PlatformPrice {

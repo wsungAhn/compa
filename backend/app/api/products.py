@@ -5,8 +5,11 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.pipeline import SOCIAL_PLATFORM_NAME
 from app.api.schemas import ProductEventsOut, ProductSummary, Recommendation, SaleEventOut, SearchOut
+from app.core.affiliate import to_affiliate_url
 from app.core.database import AsyncSessionLocal, get_db
+from app.core.premium import premium_dep
 from app.models.platform import Platform
 from app.models.product import Product
 from app.models.sale_event import SaleEvent
@@ -148,6 +151,7 @@ async def get_product_events(
     years: int = Query(3, ge=1, le=5),
     country: str = Query("all"),
     db: AsyncSession = Depends(get_db),
+    premium: bool = Depends(premium_dep),
 ) -> ProductEventsOut:
     product_result = await db.execute(
         select(Product).where(Product.id == product_id, Product.deleted_at.is_(None))
@@ -156,7 +160,10 @@ async def get_product_events(
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
 
-    since = date.today() - timedelta(days=365 * years)
+    # Force effective years to 1 for free tier
+    effective_years = 1 if not premium else years
+
+    since = date.today() - timedelta(days=365 * effective_years)
     stmt = (
         select(SaleEvent, Platform)
         .join(Platform, SaleEvent.platform_id == Platform.id)
@@ -168,6 +175,11 @@ async def get_product_events(
     )
     if country != "all":
         stmt = stmt.where(Platform.country == country.upper())
+
+    # Exclude social platform events for free tier
+    if not premium:
+        social_platform_names = set(SOCIAL_PLATFORM_NAME.values())
+        stmt = stmt.where(Platform.name.notin_(social_platform_names))
 
     result = await db.execute(stmt.order_by(SaleEvent.start_date.desc()))
     rows = result.all()
@@ -186,7 +198,7 @@ async def get_product_events(
             discount_rate=float(e.discount_rate) if e.discount_rate else None,
             currency=e.currency,
             reason=e.reason,
-            source_url=e.source_url,
+            source_url=to_affiliate_url(e.source_url, p.name),
             confidence=e.confidence,
         )
         for e, p in rows
@@ -198,4 +210,5 @@ async def get_product_events(
         product=ProductSummary.model_validate(product, from_attributes=True),
         events=events_out,
         recommendation=recommendation,
+        premium=premium,
     )

@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.affiliate import to_affiliate_url
 from app.core.database import get_db
 from app.core.fx import convert
 from app.models.platform import Platform
@@ -111,7 +112,7 @@ async def get_price_comparison(
             discount_rate=float(e.discount_rate) if e.discount_rate else None,
             currency=e.currency,
             event_name=e.event_name,
-            source_url=e.source_url,
+            source_url=to_affiliate_url(e.source_url, p.name),
             converted_price=converted_price,
             saving_vs_preferred=saving,
         )
