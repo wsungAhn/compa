@@ -156,5 +156,5 @@ celery -A app.tasks worker --loglevel=info
 - [x] M0: 환경 세팅 (docker-compose, alembic, FastAPI 기본앱, Celery worker/beat)
 - [x] M1: 한국 수집기 + AI 파이프라인 (분류기 수집 연동, 다국가 매처, 정기 수집 태스크)
 - [x] M2: 프론트엔드 (검색·추천위젯·가격차트·타임라인·가격비교·수집중 폴링)
-- [ ] M3: 미국·일본 확장 (Sephora·Ulta·Amazon·Rakuten·@cosme 구현 완료 — PA-API 전환 진행 중)
+- [x] M3: 미국·일본 확장 (Sephora·Ulta·Amazon PA-API·Rakuten·@cosme + 프록시 풀)
 - [ ] M4: 중국·소셜 + 수익화
