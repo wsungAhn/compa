@@ -25,7 +25,9 @@ function load(): SitePref[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (raw) return JSON.parse(raw) as SitePref[]
-  } catch {}
+  } catch {
+    // 저장된 설정이 손상된 경우 기본값으로 폴백
+  }
   return SUPPORTED_SITES.filter(s => DEFAULT_ACTIVE.includes(s.id))
 }
 
