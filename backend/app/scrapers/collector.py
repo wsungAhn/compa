@@ -1,10 +1,11 @@
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.classifier import classify_rule_based
+from app.ai.matcher import get_or_create_product
 from app.models.platform import Platform
 from app.models.product import Product
 from app.models.sale_event import SaleEvent
@@ -38,16 +39,6 @@ async def _is_fresh(db: AsyncSession, product: Product) -> bool:
     return result.scalar_one_or_none() is not None
 
 
-async def _get_or_create_product(db: AsyncSession, name: str, brand: str | None) -> Product:
-    result = await db.execute(
-        select(Product).where(Product.name_kr == name, Product.deleted_at.is_(None))
-    )
-    product = result.scalar_one_or_none()
-    if not product:
-        product = Product(name_kr=name, name_en=name, brand=brand)
-        db.add(product)
-        await db.flush()
-    return product
 
 
 async def _get_platform(db: AsyncSession, name: str) -> Platform | None:
@@ -96,10 +87,15 @@ async def _save_events(
 
 async def collect_on_demand(db: AsyncSession, query: str, force: bool = False) -> list[Product]:
     """쿼리에 해당하는 제품을 스크래핑해서 DB에 저장 후 Product 목록 반환."""
-    # 기존 제품 확인
+    # 기존 제품 확인 — 4개국 name 컬럼 모두 검색
     result = await db.execute(
         select(Product).where(
-            Product.name_kr.ilike(f"%{query}%"),
+            or_(
+                Product.name_kr.ilike(f"%{query}%"),
+                Product.name_en.ilike(f"%{query}%"),
+                Product.name_jp.ilike(f"%{query}%"),
+                Product.name_cn.ilike(f"%{query}%"),
+            ),
             Product.deleted_at.is_(None),
         )
     )
@@ -130,7 +126,7 @@ async def collect_on_demand(db: AsyncSession, query: str, force: bool = False) -
 
         for product_name, events in by_product.items():
             brand = events[0].brand if events else None
-            product = await _get_or_create_product(db, product_name, brand)
+            product = await get_or_create_product(db, product_name, brand, platform.country)
             await _save_events(db, product, platform, events)
             if product not in new_products:
                 new_products.append(product)
