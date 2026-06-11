@@ -1,7 +1,8 @@
 # 베타 배포 준비 작업 명세 (코덱스 위임용)
 
 > 목적: 완성된 기능을 외부 베타 테스터에게 웹앱으로 공개하기 전 필수 준비 작업.
-> 작업 순서: T1 → T2 → T3 (T1·T2는 독립적이라 병렬 가능, T3는 마이그레이션 포함이라 마지막 권장).
+> 작업 순서: T1 → T2 → T3 → **T4(공홈 스크래퍼, 우선)** → T5(콜드스타트 워밍업).
+> T1·T2는 독립적이라 병렬 가능, T3는 마이그레이션 포함. T5는 T2·T4 완료 후 실행해야 의미가 있다.
 > 모든 작업은 CLAUDE.md 규칙을 따른다: 타입 힌트 필수(`mypy --strict` 통과), async I/O, `requests` 금지,
 > 환경변수는 `core/config.py`의 `Settings`로만 접근, 스키마 변경은 반드시 Alembic migration.
 
@@ -130,6 +131,89 @@ CLAUDE.md 규칙대로 PK UUID·created_at 필수 준수.
 **수용 기준**: 마이그레이션 파일 생성 확인, feedback API 검증·rate-limit 테스트
 (httpx AsyncClient + FastAPI TestClient 또는 스키마 단위 테스트), search 로깅이
 실패해도 검색이 정상 동작하는 테스트, 프론트 빌드·lint 통과.
+
+---
+
+## T4. 화장품 공홈(브랜드 공식몰) 스크래퍼 — 우선 과제
+
+**문제**: 현재 수집원은 전부 리테일 플랫폼(올리브영·쿠팡 등)과 소셜이다.
+브랜드 공식몰의 **자사몰 단독 세일**(멤버스 위크, 공식몰 단독 특가 등)이 전혀 잡히지 않는다.
+
+**전략**: 브랜드별 스크래퍼 난립 대신 ① 설정 주도 프레임워크 + ② 최대 레버리지 사이트 1곳(아모레몰) 구현.
+아모레몰(amoremall.com)은 설화수·라네즈·헤라·이니스프리·에뛰드·마몽드 등 아모레퍼시픽 계열
+30여 개 브랜드의 공식 세일이 한 사이트에 모여 있어 단일 구현으로 커버리지가 가장 크다.
+
+### 4-1. 공홈 스크래퍼 프레임워크
+
+`backend/app/scrapers/kr/brand_base.py` (새 파일):
+- `@dataclass class BrandSiteConfig`: platform_name, search_url_template, 셀렉터 묶음
+  (item / name / brand / sale_price / original_price / promo_badge), currency, uses_playwright: bool.
+- `class ConfigDrivenBrandScraper(BaseScraper)`: config를 받아 동작하는 공용 구현.
+  - `uses_playwright=True`면 기존 oliveyoung.py의 Playwright 패턴(프록시 포함), 아니면 httpx+BS4 패턴.
+  - 파싱은 순수 함수 `parse_brand_html(html: str, config: BrandSiteConfig, url: str) -> list[ScrapedEvent]`로 분리 (픽스처 테스트 대상).
+  - 셀렉터는 각 항목당 다중 후보(쉼표 구분) 허용 — 기존 ulta.py의 방어적 패턴 준수.
+  - 실패 시 confidence=0 + raw_text 보존, 예외 전파 금지.
+
+→ 이후 브랜드 추가 = config 등록 + 픽스처 테스트 1개. 코드 수정 최소화.
+
+### 4-2. 아모레몰 구현 (1호)
+
+`backend/app/scrapers/kr/amoremall.py`:
+- `AmoremallScraper` — PLATFORM_NAME "아모레몰", COUNTRY "KR", RATE_LIMIT_SEC 2.0,
+  `uses_playwright=True` (SPA — JS 렌더링 필요. `domcontentloaded` + 2~3초 대기 후 파싱).
+- 검색: `https://www.amoremall.com/kr/ko/search?query={query}` (배포 후 실페이지 기준으로
+  셀렉터 보정 필요 — 명세의 셀렉터는 초안이며 다중 후보로 방어).
+- 상품 카드에서 정가/할인가/할인율 추출 + **세일 배지·프로모션 문구**(예: "단독", "멤버스")가 있으면
+  `reason`에 보존 → 분류기의 돌발 키워드("단독", "앱전용")와 연동된다.
+- 기획전/이벤트 페이지(`/kr/ko/display/event` 류)가 접근 가능하면 oliveyoung.py의
+  `_scrape_sale_events` 패턴으로 행사명+기간 수집 (start/end date 파싱, confidence 0.6).
+
+### 4-3. 등록·설정
+
+- `backend/app/core/seed.py` PLATFORMS에 추가:
+  `{"name": "아모레몰", "country": "KR", "url": "https://www.amoremall.com", "scrape_method": "scraping"}`
+- `collector.py` SCRAPERS에 `"아모레몰": AmoremallScraper` 등록.
+- T2의 `ENABLED_SCRAPERS` 기본값에 "아모레몰" 포함:
+  `ENABLED_SCRAPERS=네이버쇼핑,Rakuten,아모레몰`
+- `.env.example` 갱신.
+
+### 4-4. 테스트
+
+`backend/tests/scrapers/test_amoremall.py` + `test_brand_base.py`:
+- parse_brand_html 픽스처 테스트 (할인 상품 / 정가만 / 빈 HTML / 셀렉터 폴백 동작)
+- 프로모션 문구 → reason 보존 검증
+- config 다중 셀렉터 폴백 단위 테스트
+
+**수용 기준**: 공통 검증 기준 + 위 테스트. 라이브 검증은 배포 후 실페이지에서 진행
+(셀렉터가 틀려도 zero-confidence + raw_text로 남아 디버깅 가능해야 함 — 이게 합격 조건).
+
+**후속 확장 (이번 범위 외)**: LG생활건강 계열·클리오·미샤 등은 T3의 search_logs로
+베타 유저가 많이 찾는 브랜드 상위부터 config 추가. 해외 공홈(sulwhasoo.com/us 등)은 그 다음.
+
+---
+
+## T5. 콜드스타트 워밍업 배치 (T2·T4 완료 후 실행)
+
+**문제**: products/sale_events 테이블이 비어 있어, 베타 오픈 직후 유저는 이력 없는
+현재가 스냅샷만 보게 된다. 오픈 전에 인기 제품을 미리 수집해둬야 한다.
+
+**변경 사항**:
+
+1. `backend/app/data/seed_queries_kr.txt` (새 파일): 인기 화장품 검색어 100~200개,
+   한 줄에 하나. 구성 가이드 — 스킨케어/메이크업/선케어/클렌징 균형, 브랜드+제품명 형태
+   (예: "설화수 윤조에센스", "라네즈 워터뱅크 크림", "헤라 블랙쿠션", "코스알엑스 스네일 에센스",
+   "넘버즈인 세럼", "토리든 다이브인 세럼" 등). 올리브영 어워즈·네이버 뷰티 랭킹 기준으로 선정.
+2. `backend/app/tasks/warmup.py`: Celery task `warmup_collect(start_index: int = 0) -> int`
+   — 파일을 읽어 각 검색어로 `collect_on_demand(db, query, force=False)` 순차 실행.
+   - **beat 등록 금지** (1회성 수동 실행: `celery -A app.tasks call app.tasks.warmup.warmup_collect`)
+   - 이미 수집된 쿼리는 `_is_fresh` 캐시로 자동 스킵 → 중단 후 재실행해도 안전(멱등).
+   - 쿼리당 try/except continue, 진행 로그(logging) 출력, 처리 건수 반환.
+   - `start_index`로 중단 지점부터 재개 가능.
+3. include에 `app.tasks.warmup` 등록 (`app/tasks/__init__.py`).
+
+**수용 기준**: 공통 검증 기준 + 파일 로더·인덱스 재개 로직 단위 테스트.
+실행 시점: 배포 환경에서 T2 토글로 활성 스크래퍼 확정 후 1회 실행, 이후 Celery 일일
+수집(`collect-all-daily`)이 자동으로 이력을 쌓는다.
 
 ---
 
