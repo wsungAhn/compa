@@ -1,11 +1,11 @@
-﻿import type { ComparisonOut } from '../api/client'
+import type { ComparisonOut } from '../api/client'
 
 interface Props {
   data: ComparisonOut
 }
 
 const CURRENCY_SYMBOL: Record<string, string> = {
-  KRW: 'W', USD: '$', JPY: 'Y', CNY: 'Y'
+  KRW: '₩', USD: '$', JPY: '¥', CNY: '¥'
 }
 
 function formatPrice(price: number | null, currency: string | null) {
@@ -80,9 +80,16 @@ export function PriceComparison({ data }: Props) {
                         -{CURRENCY_SYMBOL[alt.currency ?? 'KRW']}{alt.saving_vs_preferred?.toLocaleString()} 저렴
                       </span>
                     )}
-                    <span className={`text-sm font-bold ${(alt.saving_vs_preferred ?? 0) > 0 ? 'text-emerald-700' : 'text-gray-700'}`}>
-                      {formatPrice(alt.sale_price, alt.currency) ?? '—'}
-                    </span>
+                    <div className="flex flex-col items-end">
+                      <span className={`text-sm font-bold ${(alt.saving_vs_preferred ?? 0) > 0 ? 'text-emerald-700' : 'text-gray-700'}`}>
+                        {formatPrice(alt.sale_price, alt.currency) ?? '—'}
+                      </span>
+                      {alt.converted_price && alt.currency && alt.currency !== (preferred?.currency ?? 'KRW') && (
+                        <span className="text-xs text-gray-400">
+                          ≈ {formatPrice(alt.converted_price, preferred?.currency ?? 'KRW')}
+                        </span>
+                      )}
+                    </div>
                   </div>
                   {alt.discount_rate && (
                     <span className="text-xs text-rose-400">-{alt.discount_rate}%</span>

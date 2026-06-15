@@ -1,4 +1,5 @@
 """정기/돌발 행사 분류 (Claude API)."""
+import json
 from datetime import date
 
 import anthropic
@@ -52,9 +53,9 @@ def classify_rule_based(event_name: str | None, reason: str | None, start_date: 
 
 class EventClassifier:
     def __init__(self) -> None:
-        self._client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+        self._client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
 
-    def classify(
+    async def classify(
         self,
         event_name: str | None,
         reason: str | None,
@@ -87,16 +88,19 @@ Surprise = one-time, stock clearance, new product launch, app-exclusive, brand a
 Respond with JSON only:
 {{"event_type": "regular" or "surprise", "confidence": 0.0-1.0, "reasoning": "brief explanation"}}"""
 
-        import json
-
-        response = self._client.messages.create(
+        response = await self._client.messages.create(
             model=settings.anthropic_model,
             max_tokens=256,
             messages=[{"role": "user", "content": prompt}],
         )
 
         try:
-            data = json.loads(response.content[0].text.strip())
+            text_content = ""
+            for block in response.content:
+                if isinstance(block, anthropic.types.TextBlock):
+                    text_content = block.text
+                    break
+            data = json.loads(text_content.strip())
             return ClassificationResult(**data)
         except Exception:
             return ClassificationResult(event_type="surprise", confidence=0.5, reasoning="분류 실패, 기본값 적용")

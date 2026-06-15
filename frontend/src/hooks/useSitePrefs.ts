@@ -25,7 +25,9 @@ function load(): SitePref[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (raw) return JSON.parse(raw) as SitePref[]
-  } catch {}
+  } catch {
+    // localStorage 접근 불가(프라이빗 모드 등) → 기본값 사용
+  }
   return SUPPORTED_SITES.filter(s => DEFAULT_ACTIVE.includes(s.id))
 }
 

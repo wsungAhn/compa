@@ -2,6 +2,14 @@ import axios from 'axios'
 
 const api = axios.create({ baseURL: '/api' })
 
+export function setPremiumHeader(key: string | null) {
+  if (key) {
+    api.defaults.headers.common['X-Premium-Key'] = key
+  } else {
+    delete api.defaults.headers.common['X-Premium-Key']
+  }
+}
+
 export interface Product {
   id: string
   name_kr: string | null
@@ -41,6 +49,7 @@ export interface ProductEvents {
   product: Product
   events: SaleEvent[]
   recommendation: Recommendation
+  premium: boolean
 }
 
 export interface PlatformPrice {
@@ -52,6 +61,7 @@ export interface PlatformPrice {
   currency: string | null
   event_name: string | null
   source_url: string | null
+  converted_price: number | null
   saving_vs_preferred: number | null
 }
 
@@ -63,8 +73,22 @@ export interface ComparisonOut {
   cheapest_saving_pct: number | null
 }
 
-export const searchProducts = (q: string) =>
-  api.get<Product[]>('/products/search', { params: { q, lang: 'ko' } }).then(r => r.data)
+export interface SearchResponse {
+  products: Product[]
+  job_id: string | null
+  collecting: boolean
+}
+
+export interface JobStatus {
+  status: 'pending' | 'started' | 'done' | 'failed'
+  products: Product[]
+}
+
+export const searchProducts = (q: string, collect = false) =>
+  api.get<SearchResponse>('/products/search', { params: { q, lang: 'ko', collect } }).then(r => r.data)
+
+export const getJobStatus = (taskId: string) =>
+  api.get<JobStatus>(`/jobs/${taskId}`).then(r => r.data)
 
 export const getProductEvents = (id: string) =>
   api.get<ProductEvents>(`/products/${id}/events`).then(r => r.data)

@@ -13,7 +13,17 @@ PLATFORMS = [
     {"name": "@cosme", "country": "JP", "url": "https://www.cosme.net", "scrape_method": "scraping"},
     {"name": "Rakuten", "country": "JP", "url": "https://www.rakuten.co.jp", "scrape_method": "official_api"},
     {"name": "Tmall", "country": "CN", "url": "https://www.tmall.com", "scrape_method": "unofficial_api"},
-    {"name": "小红书", "country": "CN", "url": "https://www.xiaohongshu.com", "scrape_method": "scraping"},
+    {"name": "小红书", "country": "CN", "url": "https://www.xiaohongshu.com", "scrape_method": "official_api"},
+    {"name": "Instagram", "country": "US", "url": "https://www.instagram.com", "scrape_method": "official_api"},
+    {"name": "TikTok", "country": "US", "url": "https://www.tiktok.com", "scrape_method": "official_api"},
+    {"name": "Facebook", "country": "US", "url": "https://www.facebook.com", "scrape_method": "official_api"},
+    {"name": "네이버블로그", "country": "KR", "url": "https://blog.naver.com", "scrape_method": "official_api"},
+    {"name": "SK-II Official", "country": "US", "url": "https://www.sk-ii.com", "scrape_method": "scraping"},
+    {"name": "Shiseido Official", "country": "US", "url": "https://www.shiseido.com", "scrape_method": "scraping"},
+    {"name": "La Mer Official KR", "country": "KR", "url": "https://www.lamerkorea.com", "scrape_method": "scraping"},
+    {"name": "Chantecaille Official KR", "country": "KR", "url": "https://chantecaille.kr", "scrape_method": "scraping"},
+    {"name": "La Prairie Official", "country": "KR", "url": "https://www.laprairie.com", "scrape_method": "scraping"},
+    {"name": "Tatcha Official", "country": "US", "url": "https://tatcha.com", "scrape_method": "scraping"},
 ]
 
 
@@ -21,5 +31,5 @@ async def seed_platforms(db: AsyncSession) -> None:
     for p in PLATFORMS:
         exists = await db.execute(select(Platform).where(Platform.name == p["name"]))
         if not exists.scalar_one_or_none():
-            db.add(Platform(**p))  # type: ignore[arg-type]
+            db.add(Platform(**p))
     await db.commit()
