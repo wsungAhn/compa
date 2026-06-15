@@ -17,6 +17,7 @@ celery.conf.update(
         "app.tasks.classify",
         "app.tasks.social_collect",
         "app.tasks.social_extract",
+        "app.tasks.seed",
     ],
     beat_schedule={
         "collect-all-daily": {

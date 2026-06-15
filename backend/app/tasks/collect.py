@@ -36,3 +36,17 @@ async def _collect_all() -> int:
                 continue
 
         return count
+
+
+def run_collection_slow(query: str) -> int:
+    """Celery task: full platform collection for a query. Returns product count."""
+    return asyncio.run(_run_collection_slow(query))
+
+
+run_collection_slow = celery.task(run_collection_slow)
+
+
+async def _run_collection_slow(query: str) -> int:
+    async with AsyncSessionLocal() as db:
+        products = await collect_on_demand(db, query, force=True)
+        return len(products)

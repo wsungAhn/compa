@@ -19,6 +19,7 @@ class ScrapedEvent:
     source_url: str | None = None
     confidence: float = 1.0
     raw_text: str | None = None
+    event_type: str | None = None  # "regular" | "surprise" | None
 
 
 class BaseScraper(ABC):

@@ -1,11 +1,11 @@
-﻿import type { ComparisonOut } from '../api/client'
+import type { ComparisonOut } from '../api/client'
 
 interface Props {
   data: ComparisonOut
 }
 
 const CURRENCY_SYMBOL: Record<string, string> = {
-  KRW: 'W', USD: '$', JPY: 'Y', CNY: 'Y'
+  KRW: '₩', USD: '$', JPY: '¥', CNY: '¥'
 }
 
 function formatPrice(price: number | null, currency: string | null) {
@@ -77,7 +77,7 @@ export function PriceComparison({ data }: Props) {
                   <div className="flex items-center gap-2">
                     {(alt.saving_vs_preferred ?? 0) > 0 && (
                       <span className="text-xs text-emerald-600 font-semibold">
-                        -{CURRENCY_SYMBOL[preferred?.currency ?? 'KRW']}{alt.saving_vs_preferred?.toLocaleString()} 저렴
+                        -{CURRENCY_SYMBOL[alt.currency ?? 'KRW']}{alt.saving_vs_preferred?.toLocaleString()} 저렴
                       </span>
                     )}
                     <div className="flex flex-col items-end">

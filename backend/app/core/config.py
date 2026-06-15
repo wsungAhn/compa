@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -20,6 +21,22 @@ class Settings(BaseSettings):
     tiktok_client_key: str = ""
     premium_api_keys: str = ""
     proxy_pool_url: str = ""
+    admin_secret: str | None = None
+    allowed_origins: list[str] = ["http://localhost:5173"]
+    # 로컬 AI (Ollama) 설정 — use_local_ai=True 시 Claude API 대신 Ollama 사용
+    ollama_url: str = "http://localhost:11434"
+    local_ai_model: str = "qwen2.5:14b"
+    use_local_ai: bool = False
+    # Firecrawl 스크래핑 서버
+    firecrawl_url: str = "http://localhost:8765"
+    firecrawl_extract_provider: str = "local"
+
+    @field_validator("allowed_origins", mode="before")
+    @classmethod
+    def parse_origins(cls, v: object) -> object:
+        if isinstance(v, str):
+            return [o.strip() for o in v.split(",") if o.strip()]
+        return v
 
 
 settings = Settings()

@@ -18,6 +18,12 @@ PLATFORMS = [
     {"name": "TikTok", "country": "US", "url": "https://www.tiktok.com", "scrape_method": "official_api"},
     {"name": "Facebook", "country": "US", "url": "https://www.facebook.com", "scrape_method": "official_api"},
     {"name": "네이버블로그", "country": "KR", "url": "https://blog.naver.com", "scrape_method": "official_api"},
+    {"name": "SK-II Official", "country": "US", "url": "https://www.sk-ii.com", "scrape_method": "scraping"},
+    {"name": "Shiseido Official", "country": "US", "url": "https://www.shiseido.com", "scrape_method": "scraping"},
+    {"name": "La Mer Official KR", "country": "KR", "url": "https://www.lamerkorea.com", "scrape_method": "scraping"},
+    {"name": "Chantecaille Official KR", "country": "KR", "url": "https://chantecaille.kr", "scrape_method": "scraping"},
+    {"name": "La Prairie Official", "country": "KR", "url": "https://www.laprairie.com", "scrape_method": "scraping"},
+    {"name": "Tatcha Official", "country": "US", "url": "https://tatcha.com", "scrape_method": "scraping"},
 ]
 
 
