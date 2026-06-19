@@ -17,10 +17,27 @@ from app.core.premium import premium_dep
 from app.models.platform import Platform
 from app.models.product import Product
 from app.models.sale_event import SaleEvent
+from app.models.search_log import SearchLog
 from app.scrapers.collector import collect_fast, collect_on_demand
 
 _MIN_COLLECT_LEN = 2
 _TRGM_THRESHOLD = 0.25  # similarity() 임계값 (0~1, 낮을수록 느슨한 매칭)
+
+
+async def _log_search(query: str, results_count: int, collecting: bool) -> None:
+    """Background task: log search query. Swallows all errors. No PII stored."""
+    try:
+        async with AsyncSessionLocal() as db:
+            log = SearchLog(
+                query=query,
+                lang="auto",
+                results_count=results_count,
+                collecting=collecting,
+            )
+            db.add(log)
+            await db.commit()
+    except Exception:
+        pass
 
 
 def _translate_query(q: str) -> str:
@@ -158,8 +175,10 @@ async def search_products(
         if fast_products:
             products = fast_products
 
+    result_products = [ProductSummary.model_validate(p, from_attributes=True) for p in products]
+    background_tasks.add_task(_log_search, q, len(result_products), collecting)
     return SearchResponse(
-        products=[ProductSummary.model_validate(p, from_attributes=True) for p in products],
+        products=result_products,
         job_id=job_id,
         collecting=collecting,
     )
