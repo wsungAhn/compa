@@ -50,6 +50,22 @@ SEED_BRANDS: list[str] = [
     "Glow Recipe", "Good Molecules", "Acwell",
     "e.l.f. Cosmetics", "NYX Professional Makeup",
     "Wet n Wild", "Milani", "Flower Beauty",
+
+    # ── 베타 타깃 — 브랜드+대표제품 검색어 (첫 검색 적중률 향상) ──
+    "설화수 윤조에센스", "설화수 퍼펙팅쿠션", "설화수 자정크림",
+    "헤라 블랙쿠션", "헤라 센슈얼 누드 글로스",
+    "이니스프리 그린티씨드세럼", "이니스프리 블랙티 유스 앰플",
+    "라네즈 워터슬리핑마스크", "라네즈 네오쿠션", "라네즈 립슬리핑마스크",
+    "닥터자르트 시카페어쿠션", "닥터자르트 세라마이딘크림",
+    "코스알엑스 달팽이크림", "코스알엑스 BHA블랙헤드파워리퀴드",
+    "조선미녀 쌀선크림", "조선미녀 맑은쌀선크림",
+    "토리든 다이브인세럼", "토리든 다이브인마스크",
+    "롬앤 쥬시래스팅틴트", "클리오 킬커버쿠션",
+    "SK-II 페이셜트리트먼트에센스",
+    "에스티로더 갈색병", "랑콤 제니피크세럼",
+    "The Ordinary 나이아신아마이드", "CeraVe 모이스처라이징크림",
+    "Tatcha The Water Cream", "Drunk Elephant C-Firma",
+    "Paula's Choice BHA",
 ]
 
 
@@ -60,8 +76,15 @@ async def seed_catalog(db: AsyncSession, brands: list[str] | None = None) -> int
         삽입된 신규 제품 수
     """
     from app.core.config import settings
+    from app.scrapers.collector import get_enabled_scrapers
+
     if not settings.naver_client_id or not settings.naver_client_secret:
         logger.warning("Naver API key not configured, skipping catalog seed")
+        return 0
+
+    # 네이버쇼핑이 enabled_scrapers에 없으면 시딩 스킵
+    if "네이버쇼핑" not in get_enabled_scrapers():
+        logger.warning("네이버쇼핑 scraper not enabled, skipping catalog seed")
         return 0
 
     from app.scrapers.kr.naver_shop import NaverShopScraper
