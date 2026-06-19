@@ -24,6 +24,7 @@ PLATFORMS = [
     {"name": "Chantecaille Official KR", "country": "KR", "url": "https://chantecaille.kr", "scrape_method": "scraping"},
     {"name": "La Prairie Official", "country": "KR", "url": "https://www.laprairie.com", "scrape_method": "scraping"},
     {"name": "Tatcha Official", "country": "US", "url": "https://tatcha.com", "scrape_method": "scraping"},
+    {"name": "아모레몰", "country": "KR", "url": "https://www.amoremall.com", "scrape_method": "scraping"},
 ]
 
 

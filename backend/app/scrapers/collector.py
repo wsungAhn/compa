@@ -18,6 +18,7 @@ from app.models.platform import Platform
 from app.models.product import Product
 from app.models.sale_event import SaleEvent
 from app.scrapers.base import BaseScraper, ScrapedEvent
+from app.scrapers.brands.amoremall import AmoremallScraper
 from app.scrapers.brands.chantecaille_kr import ChantecailleKRScraper
 from app.scrapers.brands.lamer_kr import LaMerKRScraper
 from app.scrapers.brands.laprairie import LaPrairieScraper
@@ -38,6 +39,7 @@ from app.scrapers.us.ulta import UltaScraper
 # (ScraperClass, search_lang) — country-aware translation
 SCRAPERS: dict[str, tuple[type[BaseScraper], str]] = {
     "올리브영":  (OliveYoungScraper, "ko"),
+    "아모레몰":  (AmoremallScraper,  "ko"),
     "네이버쇼핑": (NaverShopScraper, "ko"),
     "쿠팡":      (CoupangScraper,   "ko"),
     "Sephora":   (SephoraScraper,   "en"),
@@ -79,7 +81,7 @@ FAST_SCRAPERS: set[str] = {"네이버쇼핑"}
 
 # Browser 스크래퍼 목록 (semaphore 적용)
 _BROWSER_SCRAPERS: set[str] = {
-    "올리브영", "Sephora", "SK-II Official", "Shiseido Official",
+    "올리브영", "아모레몰", "Sephora", "SK-II Official", "Shiseido Official",
     "La Mer Official KR", "Chantecaille Official KR", "La Prairie Official", "Tatcha Official",
 }
 
