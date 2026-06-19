@@ -9,6 +9,7 @@ from slowapi.errors import RateLimitExceeded
 from sqlalchemy import select
 
 from app.api.comparison import router as comparison_router
+from app.api.feedback import router as feedback_router
 from app.api.jobs import router as jobs_router
 from app.api.products import router as products_router
 from app.core.config import settings
@@ -52,6 +53,7 @@ app.add_middleware(
 app.include_router(products_router)
 app.include_router(comparison_router)
 app.include_router(jobs_router)
+app.include_router(feedback_router)
 
 
 @app.get("/health")

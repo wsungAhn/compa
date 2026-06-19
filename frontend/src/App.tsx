@@ -7,6 +7,7 @@ import { EventTimeline } from './components/EventTimeline'
 import { PriceChart } from './components/PriceChart'
 import { SiteManager } from './components/SiteManager'
 import { AdSlot } from './components/AdSlot'
+import { FeedbackButton } from './components/FeedbackButton'
 import { PremiumBanner } from './components/PremiumBanner'
 import { useSitePrefs } from './hooks/useSitePrefs'
 import { usePremium } from './hooks/usePremium'
@@ -67,7 +68,8 @@ export default function App() {
           <span className="text-2xl">💄</span>
           <h1 className="text-lg font-bold text-gray-800">COMPA</h1>
           <span className="text-xs text-gray-400">지금 살지 · 기다릴지</span>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-2">
+            <FeedbackButton />
             <SiteManager
               sites={sites}
               availableToAdd={availableToAdd}

@@ -97,3 +97,18 @@ export const getComparison = (id: string, preferred: string, platforms?: string)
   api.get<ComparisonOut>(`/products/${id}/comparison`, {
     params: { preferred, ...(platforms ? { platforms } : {}) },
   }).then(r => r.data)
+
+const BASE_URL = ''
+
+export async function postFeedback(
+  message: string,
+  contact?: string,
+  page?: string
+): Promise<void> {
+  const res = await fetch(`${BASE_URL}/api/feedback`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message, contact, page }),
+  })
+  if (!res.ok) throw new Error(`feedback failed: ${res.status}`)
+}

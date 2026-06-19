@@ -18,6 +18,8 @@ import app.models.product
 import app.models.platform
 import app.models.sale_event
 import app.models.social_post
+import app.models.feedback
+import app.models.search_log
 
 target_metadata = Base.metadata
 
