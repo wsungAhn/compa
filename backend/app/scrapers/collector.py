@@ -4,6 +4,8 @@ import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
+from app.core.config import settings
+
 from deep_translator import GoogleTranslator
 from sqlalchemy import or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -52,6 +54,19 @@ SCRAPERS: dict[str, tuple[type[BaseScraper], str]] = {
     "Tmall":     (TmallScraper,     "zh"),
     "小红书":    (XiaohongshuScraper,"zh"),
 }
+
+def get_enabled_scrapers() -> dict[str, tuple[type[BaseScraper], str]]:
+    """settings.enabled_scrapers 기반 활성 스크래퍼 반환.
+
+    "all" → SCRAPERS 전체, 아니면 이름 정확 일치 부분집합.
+    미존재 이름은 무시 (예외 금지).
+    """
+    raw = settings.enabled_scrapers.strip()
+    if raw.lower() == "all":
+        return dict(SCRAPERS)
+    names = [n.strip() for n in raw.split(",") if n.strip()]
+    return {name: SCRAPERS[name] for name in names if name in SCRAPERS}
+
 
 CACHE_TTL_HOURS = 24
 _BUNDLE_KEYWORDS = {"세트", "set", "kit", "duo", "bundle", "기획", "스페셜"}
@@ -256,15 +271,16 @@ async def _collect_platform(
 
 
 async def collect_fast(db: AsyncSession, query: str) -> list[Product]:
-    """빠른 경로: FAST_SCRAPERS만 실행 (~1-2s, Naver REST API)."""
+    """빠른 경로: 활성 스크래퍼 중 FAST_SCRAPERS만 실행 (~1-2s, Naver REST API)."""
     # Get or create a product for this query using KR as default
     product = await get_or_create_product(db, query, None, "KR")
     await db.commit()
     await db.refresh(product)
 
+    enabled = get_enabled_scrapers()
     stale = [
         name for name in FAST_SCRAPERS
-        if name not in SKIP_SCRAPERS
+        if name not in SKIP_SCRAPERS and name in enabled
     ]
     if stale:
         platform_country = _get_platform_country(stale[0])
@@ -299,8 +315,9 @@ async def collect_on_demand(db: AsyncSession, query: str, force: bool = False) -
     await db.commit()
     await db.refresh(product)
 
+    enabled = get_enabled_scrapers()
     stale_platforms = [
-        name for name in SCRAPERS
+        name for name in enabled
         if name not in SKIP_SCRAPERS
     ]
 

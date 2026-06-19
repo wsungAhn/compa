@@ -55,5 +55,10 @@ app.include_router(jobs_router)
 
 
 @app.get("/health")
-async def health_check() -> dict[str, str]:
-    return {"status": "ok", "version": "0.1.0"}
+async def health_check() -> dict[str, object]:
+    from app.scrapers.collector import get_enabled_scrapers
+    return {
+        "status": "ok",
+        "version": "0.1.0",
+        "enabled_scrapers": list(get_enabled_scrapers().keys()),
+    }

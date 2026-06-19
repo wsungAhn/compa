@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     # Firecrawl 스크래핑 서버
     firecrawl_url: str = "http://localhost:8765"
     firecrawl_extract_provider: str = "local"
+    # 활성 스크래퍼 목록 (쉼표 구분, "all" 이면 전체)
+    enabled_scrapers: str = "네이버쇼핑,Rakuten"
 
     @field_validator("allowed_origins", mode="before")
     @classmethod
