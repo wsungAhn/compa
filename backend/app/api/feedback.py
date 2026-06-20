@@ -13,10 +13,16 @@ from app.models.feedback import Feedback
 router = APIRouter(tags=["feedback"])
 
 
+def _is_authorized_feedback_secret(secret: str) -> bool:
+    """admin_secret이 설정돼 있고 정확히 일치할 때만 True (미설정 시 항상 비활성)."""
+    configured = settings.admin_secret
+    return configured is not None and secret == configured
+
+
 class FeedbackIn(BaseModel):
     message: str = Field(..., min_length=1, max_length=2000)
-    contact: str | None = None
-    page: str | None = None
+    contact: str | None = Field(None, max_length=255)
+    page: str | None = Field(None, max_length=100)
 
 
 class FeedbackOut(BaseModel):
@@ -46,7 +52,7 @@ async def post_feedback(request: Request, body: FeedbackIn) -> dict[str, bool]:
 
 @router.get("/api/admin/feedback", response_model=list[FeedbackOut])
 async def get_admin_feedback(secret: str) -> list[FeedbackOut]:
-    if settings.admin_secret is None or secret != settings.admin_secret:
+    if not _is_authorized_feedback_secret(secret):
         raise HTTPException(status_code=404, detail="Not found")
     async with AsyncSessionLocal() as db:
         result = await db.execute(

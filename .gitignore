@@ -27,3 +27,6 @@ dist/
 .DS_Store
 Thumbs.db
 .env.new
+
+# Windows reserved device artifact
+nul
