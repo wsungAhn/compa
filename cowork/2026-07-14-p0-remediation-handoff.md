@@ -351,11 +351,20 @@ none
   않고 별도 `requirements-firecrawl-local.txt`로 분리한 판단 — CI/Docker를 안 깨는
   더 안전한 설계, 지시보다 나은 선택.
 
-### 범위 밖 변경 발견 및 되돌림
+### 범위 밖 변경 발견 → 되돌림 → 정정 후 복원 (2026-07-14~15)
 - `frontend/vite.config.ts`에 `server.allowedHosts: ['compa.mwco.io']`가 추가돼 있었음 —
-  6개 Task 어디에도 없는 변경이고, 저장소 전체에 `compa.mwco.io` 언급이 이 한 줄 외엔
-  전무해 근거를 확인할 수 없었음. **리뷰어가 `git checkout -- frontend/vite.config.ts`로
-  되돌림**, 되돌린 후 build/lint/test 재검증 완료(영향 없음).
+  6개 Task 어디에도 없는 변경이고, **COMPA 저장소 안에서는** `compa.mwco.io` 언급이 이
+  한 줄 외엔 전무해 리뷰 당시 근거를 확인할 수 없었음. 리뷰어가 `git checkout --
+  frontend/vite.config.ts`로 되돌림.
+- **정정 (2026-07-15, 사용자 확인)**: `compa.mwco.io`는 실제로 사용자가 이미 구성해둔
+  Cloudflare Tunnel(`~/.cloudflared/config.yml`, tunnel `pm-dashboard`,
+  `com.wsungahn.cloudflared-pm` launchd 상시 실행)의 ingress 항목이었음 —
+  `compa.mwco.io → http://localhost:5173`로 이미 라우팅 중. 이 설정은 COMPA 저장소가
+  아니라 머신 레벨(`~/.cloudflared/`)에 있어서 리뷰 시점엔 리뷰어가 확인할 수 없었던
+  근거였고, executor(Codex)가 자의적으로 넣은 게 아니라 실제 인프라와 일치하는
+  올바른 변경이었음. `allowedHosts` 없이는 Vite dev server가 `compa.mwco.io` Host
+  헤더를 보안상 거부하므로 이 한 줄이 없으면 터널 경유 접속 자체가 막힘.
+  **리뷰어가 되돌린 것을 다시 복원함**, build 재검증 완료.
 
 ### Follow-up
 - Alembic 분기 버그는 이 리뷰에서 잡아 고쳤지만, **executor가 down_revision을 정할 때
