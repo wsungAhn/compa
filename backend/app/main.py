@@ -59,8 +59,10 @@ app.include_router(feedback_router)
 @app.get("/health")
 async def health_check() -> dict[str, object]:
     from app.scrapers.collector import get_enabled_scrapers
+    from app.scrapers.firecrawl_client import get_firecrawl_status
     return {
         "status": "ok",
         "version": "0.1.0",
         "enabled_scrapers": list(get_enabled_scrapers().keys()),
+        "firecrawl": await get_firecrawl_status(),
     }

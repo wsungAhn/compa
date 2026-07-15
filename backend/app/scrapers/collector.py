@@ -219,30 +219,49 @@ def _get_platform_country(platform_name: str) -> str:
     return {"ko": "KR", "en": "US", "ja": "JP", "zh": "CN"}.get(lang, "KR")
 
 
+async def _products_with_events(db: AsyncSession, product_ids: set[uuid.UUID]) -> list[Product]:
+    """Return collected products that have at least one non-deleted event."""
+    if not product_ids:
+        return []
+
+    result = await db.execute(
+        select(Product)
+        .join(SaleEvent, SaleEvent.product_id == Product.id)
+        .where(
+            Product.id.in_(product_ids),
+            Product.deleted_at.is_(None),
+            SaleEvent.deleted_at.is_(None),
+        )
+        .distinct()
+    )
+    return list(result.scalars().all())
+
+
 async def _collect_platform(
     product_id: uuid.UUID,
     platform_name: str,
     query: str,
     platform_country: str,
     force: bool = False,
-) -> None:
+) -> set[uuid.UUID]:
     """단일 플랫폼 수집 (asyncio.gather 병렬 실행용)."""
+    collected_product_ids: set[uuid.UUID] = set()
     async with AsyncSessionLocal() as db:
         result = await db.execute(
             select(Product).where(Product.id == product_id, Product.deleted_at.is_(None))
         )
         product = result.scalar_one_or_none()
         if not product:
-            return
+            return collected_product_ids
 
         platform = await _get_platform(db, platform_name)
         if not platform:
-            return
+            return collected_product_ids
 
         if not force:
             fresh = await _fresh_platforms(db, product)
             if platform_name in fresh:
-                return
+                return collected_product_ids
 
         ScraperClass, target_lang = SCRAPERS[platform_name]
         translated_query = await asyncio.to_thread(_translate, query, target_lang)
@@ -267,9 +286,11 @@ async def _collect_platform(
                 brand = events[0].brand if events else None
                 prod = await get_or_create_product(db, product_name, brand, platform_country)
                 await _save_events(db, prod, platform, events)
+                collected_product_ids.add(prod.id)
 
         except Exception as exc:
             _logger.warning("Platform %s scrape failed: %s", platform_name, exc)
+    return collected_product_ids
 
 
 async def collect_fast(db: AsyncSession, query: str) -> list[Product]:
@@ -286,11 +307,13 @@ async def collect_fast(db: AsyncSession, query: str) -> list[Product]:
     ]
     if stale:
         platform_country = _get_platform_country(stale[0])
-        await asyncio.gather(*[
+        collected = await asyncio.gather(*[
             _collect_platform(product.id, name, query, platform_country)
             for name in stale
         ])
-    return [product]
+        product_ids = set().union(*collected)
+        return await _products_with_events(db, product_ids)
+    return []
 
 
 async def collect_on_demand(db: AsyncSession, query: str, force: bool = False) -> list[Product]:
@@ -323,9 +346,15 @@ async def collect_on_demand(db: AsyncSession, query: str, force: bool = False) -
         if name not in SKIP_SCRAPERS
     ]
 
-    await asyncio.gather(*[
+    collected = await asyncio.gather(*[
         _collect_platform(product.id, name, query, _get_platform_country(name), force=force)
         for name in stale_platforms
     ])
+    product_ids = set().union(*collected)
+    collected_products = await _products_with_events(db, product_ids)
 
-    return [product] if not existing else existing
+    if collected_products:
+        return collected_products
+
+    existing_ids = {p.id for p in existing}
+    return await _products_with_events(db, existing_ids)

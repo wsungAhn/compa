@@ -226,17 +226,18 @@ class TestProcessSocialPosts:
         mock_db.execute.return_value = mock_cursor_result
 
         with patch("app.ai.pipeline.settings") as mock_settings:
+            mock_settings.use_local_ai = False
             mock_settings.anthropic_api_key = ""
             result = await process_social_posts(mock_db, limit=20)
 
         assert result == 0
 
-    async def test_marks_posts_as_processed_even_without_events(self) -> None:
-        """Test that posts are marked processed even if no events extracted."""
+    async def test_local_ai_without_api_key_still_runs_extractor(self) -> None:
+        """Local AI mode must not be gated by anthropic_api_key."""
         from app.models.social_post import SocialPost
 
         mock_post = MagicMock(spec=SocialPost)
-        mock_post.content = "Some content"
+        mock_post.content = "설화수 세일"
         mock_post.processed = False
 
         mock_db = AsyncMock(spec=AsyncSession)
@@ -247,6 +248,38 @@ class TestProcessSocialPosts:
         mock_db.execute.return_value = mock_cursor_result
 
         with patch("app.ai.pipeline.settings") as mock_settings:
+            mock_settings.use_local_ai = True
+            mock_settings.anthropic_api_key = ""
+            with patch("app.ai.pipeline.SocialExtractor") as mock_extractor_class:
+                mock_extractor = AsyncMock()
+                mock_extractor.extract_batch = AsyncMock(return_value=[])
+                mock_extractor_class.return_value = mock_extractor
+
+                result = await process_social_posts(mock_db, limit=20)
+
+        assert result == 0
+        mock_extractor.extract_batch.assert_awaited_once_with(["설화수 세일"])
+
+    async def test_keeps_posts_retryable_without_events(self) -> None:
+        """No extracted events are retryable; old processed=True behavior lost data."""
+        from app.models.social_post import SocialPost
+
+        mock_post = MagicMock(spec=SocialPost)
+        mock_post.content = "Some content"
+        mock_post.processed = False
+        mock_post.failed = False
+        mock_post.retry_count = 0
+        mock_post.last_error = None
+
+        mock_db = AsyncMock(spec=AsyncSession)
+        mock_cursor_result = MagicMock()
+        mock_scalar_result = MagicMock()
+        mock_scalar_result.all.return_value = [mock_post]
+        mock_cursor_result.scalars.return_value = mock_scalar_result
+        mock_db.execute.return_value = mock_cursor_result
+
+        with patch("app.ai.pipeline.settings") as mock_settings:
+            mock_settings.use_local_ai = False
             mock_settings.anthropic_api_key = "test-key"
             with patch("app.ai.pipeline.SocialExtractor") as mock_extractor_class:
                 mock_extractor = AsyncMock()
@@ -255,8 +288,10 @@ class TestProcessSocialPosts:
 
                 result = await process_social_posts(mock_db, limit=20)
 
-        # Post should be marked as processed
-        assert mock_post.processed is True
+        assert mock_post.processed is False
+        assert mock_post.failed is False
+        assert mock_post.retry_count == 1
+        assert mock_post.last_error == "no extracted events"
         mock_db.commit.assert_called_once()
 
     async def test_handles_no_matching_platform(self) -> None:
@@ -267,6 +302,9 @@ class TestProcessSocialPosts:
         mock_post = MagicMock(spec=SocialPost)
         mock_post.content = "Some content"
         mock_post.processed = False
+        mock_post.failed = False
+        mock_post.retry_count = 0
+        mock_post.last_error = None
         mock_post.platform = "instagram"
         mock_post.post_url = "http://example.com"
 
@@ -291,6 +329,7 @@ class TestProcessSocialPosts:
         )
 
         with patch("app.ai.pipeline.settings") as mock_settings:
+            mock_settings.use_local_ai = False
             mock_settings.anthropic_api_key = "test-key"
             with patch("app.ai.pipeline.SocialExtractor") as mock_extractor_class:
                 mock_extractor = AsyncMock()
@@ -305,5 +344,54 @@ class TestProcessSocialPosts:
 
         # No events created if platform not found
         assert result == 0
-        # But post should still be marked as processed
+        assert mock_post.processed is False
+        assert mock_post.failed is False
+        assert mock_post.retry_count == 1
+        assert mock_post.last_error == "platform not found: Instagram"
+
+    async def test_unsupported_social_platform_is_permanent_failure(self) -> None:
+        """Unsupported platform values are non-retryable permanent failures."""
+        from app.ai.extractor import ExtractedEvent
+        from app.models.social_post import SocialPost
+
+        mock_post = MagicMock(spec=SocialPost)
+        mock_post.content = "Some content"
+        mock_post.processed = False
+        mock_post.failed = False
+        mock_post.retry_count = 0
+        mock_post.last_error = None
+        mock_post.platform = "unknown"
+        mock_post.post_url = "http://example.com"
+
+        mock_db = AsyncMock(spec=AsyncSession)
+        mock_cursor_result = MagicMock()
+        mock_scalar_result = MagicMock()
+        mock_scalar_result.all.return_value = [mock_post]
+        mock_cursor_result.scalars.return_value = mock_scalar_result
+        mock_db.execute.return_value = mock_cursor_result
+
+        extracted = ExtractedEvent(
+            product_name="Test Product",
+            currency="USD",
+            confidence=0.9,
+        )
+
+        with patch("app.ai.pipeline.settings") as mock_settings:
+            mock_settings.use_local_ai = False
+            mock_settings.anthropic_api_key = "test-key"
+            with patch("app.ai.pipeline.SocialExtractor") as mock_extractor_class:
+                mock_extractor = AsyncMock()
+                mock_extractor.extract_batch = AsyncMock(return_value=[extracted])
+                mock_extractor_class.return_value = mock_extractor
+                with patch("app.ai.pipeline.get_or_create_product") as mock_product:
+                    mock_product_obj = MagicMock()
+                    mock_product_obj.id = uuid.uuid4()
+                    mock_product.return_value = mock_product_obj
+
+                    result = await process_social_posts(mock_db, limit=20)
+
+        assert result == 0
         assert mock_post.processed is True
+        assert mock_post.failed is True
+        assert mock_post.retry_count == 0
+        assert mock_post.last_error == "unsupported social platform: unknown"

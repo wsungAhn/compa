@@ -21,7 +21,7 @@ jobs:
       - name: Run mypy type check
         run: cd backend && python -m mypy --strict app/
       - name: Run pytest
-        run: cd backend && python -m pytest tests/ -q
+        run: cd backend && python -m pytest tests/ -q --strict-markers -W error::pytest.PytestUnraisableExceptionWarning
 
   frontend:
     runs-on: ubuntu-latest

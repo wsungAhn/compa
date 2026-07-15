@@ -1,10 +1,11 @@
 # firecrawl-local SDK 래퍼 — AsyncFirecrawlClient 기반
 import logging
-from typing import Any
+
+import httpx
 
 try:
     from firecrawl_local import AsyncFirecrawlClient, FirecrawlError
-except ImportError:  # firecrawl-local SDK 미설치 환경 (CI 등) — 스크래핑 비활성
+except ImportError:  # firecrawl-local SDK 미설치 환경 (CI 등)
     AsyncFirecrawlClient = None
 
     class FirecrawlError(Exception):  # type: ignore[no-redef]
@@ -33,6 +34,33 @@ _EXTRACT_SCHEMA = {
 }
 
 
+async def get_firecrawl_status() -> dict[str, object]:
+    """Return SDK/server availability for /health."""
+    status: dict[str, object] = {
+        "sdk_installed": AsyncFirecrawlClient is not None,
+        "available": False,
+        "url": settings.firecrawl_url,
+        "version": None,
+        "error": None,
+    }
+    if AsyncFirecrawlClient is None:
+        status["error"] = "firecrawl-local SDK not installed"
+        return status
+
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            response = await client.get(f"{settings.firecrawl_url.rstrip('/')}/health")
+        response.raise_for_status()
+        data = response.json()
+        status["available"] = True
+        if isinstance(data, dict):
+            status["version"] = data.get("version")
+        return status
+    except Exception as exc:
+        status["error"] = f"{type(exc).__name__}: {exc}"
+        return status
+
+
 async def firecrawl_scrape(
     url: str,
     extract_prompt: str,
@@ -40,11 +68,11 @@ async def firecrawl_scrape(
     timeout: int = 30000,
     remove_selectors: list[str] | None = None,
 ) -> list[dict[str, object]]:
-    """firecrawl-local SDK로 스크래핑. 추출된 products 리스트 반환.
-
-    실패 시 빈 리스트 반환 (예외 전파 금지).
-    """
+    """firecrawl-local SDK로 스크래핑. 추출된 products 리스트 반환."""
     if AsyncFirecrawlClient is None:
+        _logger.warning(
+            "firecrawl-local SDK is not installed; install backend/requirements-firecrawl-local.txt"
+        )
         return []
     try:
         async with AsyncFirecrawlClient(

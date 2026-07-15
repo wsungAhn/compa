@@ -113,3 +113,12 @@ backend/app/
 - **[docs/known-issues.md](docs/known-issues.md)** — 알려진 기술 제약 및 해결 방향
 - **[docs/BETA-TASKS.md](docs/BETA-TASKS.md)** — 베타 배포 준비 작업 명세 (T1~T5 + 피드백 결정)
 - **[docs/AUDIT-2026-06-10.md](docs/AUDIT-2026-06-10.md)** — 구현 현황 전방위 감사
+
+## 로컬 스크래핑 도구 (frankencrawler, 2026-07-14 추가)
+- 위치: `~/dev/firecrawl-local` — Firecrawl 호환 self-hosted 스크래핑/미디어 API, v0.12.0
+- 상시 실행: `http://localhost:8765` (launchd `com.firecrawl-local`, health: `/health`)
+- SDK: `pip install -e ~/dev/firecrawl-local` → `from firecrawl_local import FirecrawlClient`
+- MCP 도구: `scrape_clean`/`crawl_and_search`/`research_site` + `scrape`/`crawl`/`map_site`/`media_*`
+- `backend/app/core/config.py`에 `firecrawl_url=http://localhost:8765` 기본값 이미 있으나
+  `backend/requirements.txt`에 SDK 미포함 — 2026-07-14 감사 P0-4 참조
+  (`~/agent_hub/docs/design-cross-project-audit-remediation-2026-07-14.md`)

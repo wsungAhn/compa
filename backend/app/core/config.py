@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     ollama_url: str = "http://localhost:11434"
     local_ai_model: str = "qwen2.5:14b"
     use_local_ai: bool = False
-    # Firecrawl 스크래핑 서버
+    # Firecrawl 스크래핑 서버. Docker compose에서는 FIRECRAWL_URL=http://firecrawl-local:8765로 override.
     firecrawl_url: str = "http://localhost:8765"
     firecrawl_extract_provider: str = "local"
     # 활성 스크래퍼 목록 (쉼표 구분, "all" 이면 전체)

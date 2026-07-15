@@ -1,0 +1,3 @@
+# Local development only: install the sibling firecrawl-local SDK checkout.
+# CI and Docker images do not install this machine-local path by default.
+-e /Users/Mung/dev/firecrawl-local

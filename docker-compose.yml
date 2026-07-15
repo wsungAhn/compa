@@ -32,6 +32,10 @@ services:
     ports:
       - "8000:8000"
     env_file: .env
+    environment:
+      # When running frankencrawler as a compose service, use:
+      # FIRECRAWL_URL: http://firecrawl-local:8765
+      FIRECRAWL_URL: ${FIRECRAWL_URL:-http://localhost:8765}
     depends_on:
       db:
         condition: service_healthy
@@ -46,6 +50,10 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     env_file: .env
+    environment:
+      # When running frankencrawler as a compose service, use:
+      # FIRECRAWL_URL: http://firecrawl-local:8765
+      FIRECRAWL_URL: ${FIRECRAWL_URL:-http://localhost:8765}
     depends_on:
       db:
         condition: service_healthy
@@ -60,6 +68,10 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     env_file: .env
+    environment:
+      # When running frankencrawler as a compose service, use:
+      # FIRECRAWL_URL: http://firecrawl-local:8765
+      FIRECRAWL_URL: ${FIRECRAWL_URL:-http://localhost:8765}
     depends_on:
       db:
         condition: service_healthy

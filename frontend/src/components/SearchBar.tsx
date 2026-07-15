@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Product } from '../api/client'
 import { searchProducts, getJobStatus } from '../api/client'
+import { decidePollAction } from './searchPolling'
 
 interface Props {
   onSelect: (product: Product) => void
@@ -106,9 +107,11 @@ export function SearchBar({ onSelect, onCollecting }: Props) {
           try {
             const status = await getJobStatus(jobId)
 
-            if (status.status === 'done') {
-              // Update results with newly collected products
-              setResults(status.products)
+            const action = decidePollAction(status.status)
+
+            if (action === 'refresh-results') {
+              const refreshed = await searchProducts(query, false)
+              setResults(refreshed.products)
               setCollecting(false)
               setCollectionTimeout(false)
               onCollecting?.(false)
@@ -117,14 +120,14 @@ export function SearchBar({ onSelect, onCollecting }: Props) {
                 intervalRef.current = null
               }
               // Auto-select single result
-              if (status.products.length === 1) {
-                handleSelect(status.products[0])
-              } else if (status.products.length > 1) {
+              if (refreshed.products.length === 1) {
+                handleSelect(refreshed.products[0])
+              } else if (refreshed.products.length > 1) {
                 setOpen(true)
               } else {
                 setOpen(true)
               }
-            } else if (status.status === 'failed') {
+            } else if (action === 'stop-failed') {
               // Keep existing results, stop collecting
               setCollecting(false)
               setCollectionTimeout(false)

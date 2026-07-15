@@ -17,4 +17,8 @@ deep-translator>=1.11.4
 slowapi>=0.1.9
 types-beautifulsoup4==4.12.0.20240907
 mypy==1.13.0
-pytest==8.3.3
+pytest==8.4.0
+pytest-asyncio==1.4.0
+
+# firecrawl-local SDK is a sibling local checkout; install for scraper development with:
+#   pip install -r requirements-firecrawl-local.txt

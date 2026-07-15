@@ -27,6 +27,29 @@ SOCIAL_PLATFORM_NAME: dict[str, str] = {
     "xiaohongshu": "小红书",
 }
 
+_NO_EVENTS_ERROR = "no extracted events"
+_NO_MATCHED_EVENTS_ERROR = "no extracted events matched post"
+
+
+def _mark_retryable(post: SocialPost, error: str) -> None:
+    retry_count = post.retry_count if isinstance(post.retry_count, int) else 0
+    post.processed = False
+    post.failed = False
+    post.retry_count = retry_count + 1
+    post.last_error = error
+
+
+def _mark_processed(post: SocialPost) -> None:
+    post.processed = True
+    post.failed = False
+    post.last_error = None
+
+
+def _mark_permanent_failure(post: SocialPost, error: str) -> None:
+    post.processed = True
+    post.failed = True
+    post.last_error = error
+
 
 def infer_country(extracted_currency: str | None, social_platform: str) -> str:
     """Infer country from currency or platform fallback.
@@ -91,13 +114,27 @@ async def process_social_posts(db: AsyncSession, limit: int = 20) -> int:
     )
     posts: list[SocialPost] = list(result.scalars().all())
 
-    if not posts or not settings.anthropic_api_key:
+    if not posts:
+        return 0
+    if not settings.use_local_ai and not settings.anthropic_api_key:
         return 0
 
     # Extract events from post contents
     post_contents = [p.content for p in posts if p.content]
     extractor = SocialExtractor()
-    extracted_events = await extractor.extract_batch(post_contents)
+    try:
+        extracted_events = await extractor.extract_batch(post_contents)
+    except Exception as exc:
+        for post in posts:
+            _mark_retryable(post, f"extract failed: {type(exc).__name__}")
+        await db.commit()
+        return 0
+
+    if not extracted_events:
+        for post in posts:
+            _mark_retryable(post, _NO_EVENTS_ERROR)
+        await db.commit()
+        return 0
 
     # Track posts with indices for matching
     posts_with_indices: list[tuple[int, str]] = [
@@ -105,14 +142,14 @@ async def process_social_posts(db: AsyncSession, limit: int = 20) -> int:
     ]
 
     event_count = 0
+    successful_posts: set[int] = set()
+    failed_posts: set[int] = set()
     for extracted_event in extracted_events:
+        matched_post_idx = match_event_to_post(
+            extracted_event.product_name, posts_with_indices
+        )
+        matched_post = posts[matched_post_idx]
         try:
-            # Match event to post
-            matched_post_idx = match_event_to_post(
-                extracted_event.product_name, posts_with_indices
-            )
-            matched_post = posts[matched_post_idx]
-
             # Infer country
             country = infer_country(extracted_event.currency, matched_post.platform)
 
@@ -127,6 +164,11 @@ async def process_social_posts(db: AsyncSession, limit: int = 20) -> int:
             # Look up platform by name
             platform_name = SOCIAL_PLATFORM_NAME.get(matched_post.platform)
             if not platform_name:
+                _mark_permanent_failure(
+                    matched_post,
+                    f"unsupported social platform: {matched_post.platform}",
+                )
+                failed_posts.add(matched_post_idx)
                 continue
 
             platform_result = await db.execute(
@@ -134,6 +176,8 @@ async def process_social_posts(db: AsyncSession, limit: int = 20) -> int:
             )
             platform = platform_result.scalar_one_or_none()
             if not platform:
+                _mark_retryable(matched_post, f"platform not found: {platform_name}")
+                failed_posts.add(matched_post_idx)
                 continue
 
             # Classify event type
@@ -182,15 +226,18 @@ async def process_social_posts(db: AsyncSession, limit: int = 20) -> int:
 
             # Link post to event
             matched_post.sale_event_id = sale_event.id
+            _mark_processed(matched_post)
+            successful_posts.add(matched_post_idx)
             event_count += 1
 
-        except Exception:
-            # Per spec: swallow exceptions, don't propagate
+        except Exception as exc:
+            _mark_retryable(matched_post, f"event processing failed: {type(exc).__name__}")
+            failed_posts.add(matched_post_idx)
             continue
 
-    # Mark all processed posts
-    for post in posts:
-        post.processed = True
+    for idx, post in enumerate(posts):
+        if idx not in successful_posts and idx not in failed_posts:
+            _mark_retryable(post, _NO_MATCHED_EVENTS_ERROR)
 
     # Commit once at the end
     await db.commit()

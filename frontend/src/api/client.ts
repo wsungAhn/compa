@@ -80,8 +80,9 @@ export interface SearchResponse {
 }
 
 export interface JobStatus {
-  status: 'pending' | 'started' | 'done' | 'failed'
-  products: Product[]
+  task_id: string
+  status: 'pending' | 'started' | 'success' | 'failure'
+  ready: boolean
 }
 
 export const searchProducts = (q: string, collect = false) =>
