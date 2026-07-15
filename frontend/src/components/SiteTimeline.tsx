@@ -1,6 +1,7 @@
 import type { SaleEvent } from '../api/client'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { safeUrl } from '../utils/urlSafety'
+import { localDateString } from '../utils/localDateString'
 
 interface SiteTimelineProps {
   platformName: string
@@ -69,7 +70,7 @@ function buildChartData(events: SaleEvent[]): ChartPoint[] {
   // 3년 전 시작점 (0%)
   const start = new Date()
   start.setFullYear(start.getFullYear() - 3)
-  points.push({ date: start.toISOString().slice(0, 10), discount: 0 })
+  points.push({ date: localDateString(start), discount: 0 })
 
   // start_date가 있는 이벤트만, 날짜순 정렬
   const sorted = [...events]
@@ -86,12 +87,12 @@ function buildChartData(events: SaleEvent[]): ChartPoint[] {
     if (event.end_date) {
       const dayAfter = new Date(event.end_date)
       dayAfter.setDate(dayAfter.getDate() + 1)
-      points.push({ date: dayAfter.toISOString().slice(0, 10), discount: 0 })
+      points.push({ date: localDateString(dayAfter), discount: 0 })
     }
   }
 
   // 오늘 (마지막 포인트, 0%)
-  points.push({ date: new Date().toISOString().slice(0, 10), discount: 0 })
+  points.push({ date: localDateString(new Date()), discount: 0 })
 
   // 날짜순 정렬, 같은 날짜 내 discount 큰 것 우선
   return points.sort((a, b) =>

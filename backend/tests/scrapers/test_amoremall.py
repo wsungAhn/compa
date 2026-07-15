@@ -1,4 +1,6 @@
 """아모레몰 스크래퍼 단위 테스트 (실제 HTTP/Playwright 호출 없음)."""
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 from bs4 import BeautifulSoup
 
@@ -8,6 +10,7 @@ from app.scrapers.brands.amoremall import (
     _parse_price,
     _parse_rate,
 )
+from app.scrapers.brands import amoremall
 
 # ---------------------------------------------------------------------------
 # 헬퍼 함수 테스트
@@ -159,3 +162,38 @@ async def test_scrape_live() -> None:  # pragma: no cover
     scraper = AmoremallScraper()
     events = await scraper.scrape("세럼")
     assert isinstance(events, list)
+
+
+@pytest.mark.asyncio
+async def test_scrape_closes_browser_when_goto_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    browser = MagicMock()
+    browser.close = AsyncMock()
+
+    page = MagicMock()
+    page.goto = AsyncMock(side_effect=RuntimeError("goto failed"))
+    page.wait_for_selector = AsyncMock()
+    page.content = AsyncMock(return_value="")
+
+    context = MagicMock()
+    context.new_page = AsyncMock(return_value=page)
+    browser.new_context = AsyncMock(return_value=context)
+
+    class FakeAsyncPlaywright:
+        def __init__(self) -> None:
+            self.chromium = MagicMock()
+            self.chromium.launch = AsyncMock(return_value=browser)
+
+        async def __aenter__(self) -> "FakeAsyncPlaywright":
+            return self
+
+        async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
+            return None
+
+    monkeypatch.setattr(amoremall, "async_playwright", lambda: FakeAsyncPlaywright())
+
+    scraper = AmoremallScraper()
+    events = await scraper.scrape("세럼")
+
+    assert browser.close.await_count == 1
+    assert len(events) == 1
+    assert events[0].confidence == 0.0

@@ -47,84 +47,88 @@ class OliveYoungScraper(BaseScraper):
                     launch_kwargs["proxy"] = proxy_config
 
                 browser = await pw.chromium.launch(**launch_kwargs)  # type: ignore[arg-type]
-                context = await browser.new_context(
-                    user_agent=(
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                        "AppleWebKit/537.36 (KHTML, like Gecko) "
-                        "Chrome/124.0.0.0 Safari/537.36"
+                try:
+                    context = await browser.new_context(
+                        user_agent=(
+                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                            "AppleWebKit/537.36 (KHTML, like Gecko) "
+                            "Chrome/124.0.0.0 Safari/537.36"
+                        )
                     )
-                )
-                page = await context.new_page()
-                await self._wait_rate_limit()
+                    page = await context.new_page()
+                    await self._wait_rate_limit()
 
-                url = SEARCH_URL.format(query=query)
-                await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-                await page.wait_for_timeout(2000)
+                    url = SEARCH_URL.format(query=query)
+                    await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                    await page.wait_for_timeout(2000)
 
-                # 검색 결과에서 상품 목록 파싱
-                items = await page.query_selector_all(".prd-info-detail")
-                for item in items[:5]:  # 최대 5개
-                    try:
-                        name_el = await item.query_selector(".prd-name")
-                        name = (await name_el.inner_text()).strip() if name_el else query
+                    # 검색 결과에서 상품 목록 파싱
+                    items = await page.query_selector_all(".prd-info-detail")
+                    for item in items[:5]:  # 최대 5개
+                        try:
+                            name_el = await item.query_selector(".prd-name")
+                            name = (await name_el.inner_text()).strip() if name_el else query
 
-                        brand_el = await item.query_selector(".tx-brand")
-                        brand = (await brand_el.inner_text()).strip() if brand_el else None
+                            brand_el = await item.query_selector(".tx-brand")
+                            brand = (await brand_el.inner_text()).strip() if brand_el else None
 
-                        # 정가
-                        original_el = await item.query_selector(".tx-org")
-                        original_text = (await original_el.inner_text()) if original_el else ""
-                        original_price = _parse_price(original_text)
+                            # 정가
+                            original_el = await item.query_selector(".tx-org")
+                            original_text = (await original_el.inner_text()) if original_el else ""
+                            original_price = _parse_price(original_text)
 
-                        # 할인가
-                        sale_el = await item.query_selector(".tx-cur")
-                        sale_text = (await sale_el.inner_text()) if sale_el else ""
-                        sale_price = _parse_price(sale_text)
+                            # 할인가
+                            sale_el = await item.query_selector(".tx-cur")
+                            sale_text = (await sale_el.inner_text()) if sale_el else ""
+                            sale_price = _parse_price(sale_text)
 
-                        # 할인율
-                        rate_el = await item.query_selector(".tx-prd")
-                        rate_text = (await rate_el.inner_text()) if rate_el else ""
-                        rate_m = re.search(r"(\d+)%", rate_text)
-                        discount_rate = float(rate_m.group(1)) if rate_m else None
+                            # 할인율
+                            rate_el = await item.query_selector(".tx-prd")
+                            rate_text = (await rate_el.inner_text()) if rate_el else ""
+                            rate_m = re.search(r"(\d+)%", rate_text)
+                            discount_rate = float(rate_m.group(1)) if rate_m else None
 
-                        # 할인율 계산 (직접 표시 안 될 때)
-                        if discount_rate is None and original_price and sale_price and original_price > 0:
-                            discount_rate = round((1 - sale_price / original_price) * 100, 1)
+                            # 할인율 계산 (직접 표시 안 될 때)
+                            if discount_rate is None and original_price and sale_price and original_price > 0:
+                                discount_rate = round((1 - sale_price / original_price) * 100, 1)
 
-                        raw_text = await item.inner_text()
+                            raw_text = await item.inner_text()
 
-                        if sale_price and original_price and sale_price < original_price:
+                            if sale_price and original_price and sale_price < original_price:
+                                events.append(
+                                    ScrapedEvent(
+                                        product_name=name,
+                                        brand=brand,
+                                        original_price=original_price,
+                                        sale_price=sale_price,
+                                        discount_rate=discount_rate,
+                                        currency="KRW",
+                                        event_name="올리브영 할인",
+                                        source_url=url,
+                                        confidence=0.8,
+                                        raw_text=raw_text,
+                                    )
+                                )
+                        except Exception:
                             events.append(
                                 ScrapedEvent(
-                                    product_name=name,
-                                    brand=brand,
-                                    original_price=original_price,
-                                    sale_price=sale_price,
-                                    discount_rate=discount_rate,
-                                    currency="KRW",
-                                    event_name="올리브영 할인",
-                                    source_url=url,
-                                    confidence=0.8,
-                                    raw_text=raw_text,
+                                    product_name=query,
+                                    confidence=0.0,
+                                    raw_text="파싱 오류",
                                 )
                             )
+
+                    # 기획전 페이지 별도 수집
+                    await self._wait_rate_limit()
+                    try:
+                        events += await self._scrape_sale_events(page, query)
                     except Exception:
-                        events.append(
-                            ScrapedEvent(
-                                product_name=query,
-                                confidence=0.0,
-                                raw_text="파싱 오류",
-                            )
-                        )
-
-                # 기획전 페이지 별도 수집
-                await self._wait_rate_limit()
-                try:
-                    events += await self._scrape_sale_events(page, query)
-                except Exception:
-                    pass
-
-                await browser.close()
+                        pass
+                finally:
+                    try:
+                        await browser.close()
+                    except Exception:
+                        pass
         except Exception as exc:
             events.append(
                 ScrapedEvent(

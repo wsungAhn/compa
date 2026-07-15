@@ -31,6 +31,7 @@ class SephoraScraper(BaseScraper):
 
     async def scrape(self, query: str) -> list[ScrapedEvent]:
         events: list[ScrapedEvent] = []
+        api_data: dict[str, Any] = {}
         try:
             async with async_playwright() as pw:
                 launch_kwargs: dict[str, object] = {
@@ -43,33 +44,36 @@ class SephoraScraper(BaseScraper):
                     launch_kwargs["proxy"] = proxy_config
 
                 browser = await pw.chromium.launch(**launch_kwargs)  # type: ignore[arg-type]
-                context = await browser.new_context(
-                    user_agent=(
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                        "AppleWebKit/537.36 (KHTML, like Gecko) "
-                        "Chrome/124.0.0.0 Safari/537.36"
-                    ),
-                    locale="en-US",
-                )
-                page = await context.new_page()
+                try:
+                    context = await browser.new_context(
+                        user_agent=(
+                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                            "AppleWebKit/537.36 (KHTML, like Gecko) "
+                            "Chrome/124.0.0.0 Safari/537.36"
+                        ),
+                        locale="en-US",
+                    )
+                    page = await context.new_page()
 
-                api_data: dict[str, Any] = {}
+                    async def handle_response(resp: Any) -> None:
+                        if "/api/v2/catalog/search/" in resp.url and resp.status == 200:
+                            try:
+                                body = await resp.json()
+                                api_data["products"] = body.get("products", [])
+                            except Exception:
+                                pass
 
-                async def handle_response(resp: Any) -> None:
-                    if "/api/v2/catalog/search/" in resp.url and resp.status == 200:
-                        try:
-                            body = await resp.json()
-                            api_data["products"] = body.get("products", [])
-                        except Exception:
-                            pass
+                    page.on("response", handle_response)
 
-                page.on("response", handle_response)
-
-                await self._wait_rate_limit()
-                url = SEARCH_URL.format(query=query.replace(" ", "+"))
-                await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-                await page.wait_for_timeout(8000)
-                await browser.close()
+                    await self._wait_rate_limit()
+                    url = SEARCH_URL.format(query=query.replace(" ", "+"))
+                    await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                    await page.wait_for_timeout(8000)
+                finally:
+                    try:
+                        await browser.close()
+                    except Exception:
+                        pass
 
             for product in api_data.get("products", [])[:10]:
                 try:

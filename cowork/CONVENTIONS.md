@@ -14,10 +14,10 @@
 - **Test command (backend):** `cd backend && .venv/bin/python -m pytest tests/ -q`
 - **Type check (backend):** `cd backend && .venv/bin/python -m mypy --strict app/`
 - **Build/lint (frontend):** `cd frontend && npm run build && npm run lint`
-- **Current test baseline (2026-07-15 확인, Phase 2 랜딩 후):**
-  - backend: `324 passed, 1 skipped`
+- **Current test baseline (2026-07-15 확인, Phase 3 랜딩 후 — 감사 P0/P1/P2 전체 완료):**
+  - backend: `327 passed, 1 skipped`
   - mypy --strict: `Success: no issues found in 74 source files`
-  - frontend: build 성공(vite chunk-size 경고만) + lint 통과 + `npm run test` 8 passed
+  - frontend: build 성공(vite chunk-size 경고만) + lint 통과 + `npm run test` 9 passed
   - npm audit: `found 0 vulnerabilities`
 - **프로젝트 경로:** `/Users/Mung/dev/compa`
 - Playwright는 `executable_path="/usr/bin/google-chrome-stable"` — 이 Mac에는 없을 수 있음,

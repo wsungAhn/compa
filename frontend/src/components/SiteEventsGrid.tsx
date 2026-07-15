@@ -1,5 +1,6 @@
 import type { SaleEvent } from '../api/client'
 import { SiteTimeline } from './SiteTimeline'
+import { localDateString } from '../utils/localDateString'
 
 interface Props {
   eventsByPlatform: Record<string, SaleEvent[]>
@@ -9,7 +10,7 @@ interface Props {
  * 진행 중인 이벤트 또는 최근 이벤트의 가격 가져오기
  */
 function getCurrentSalePrice(events: SaleEvent[]): number | null {
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localDateString(new Date())
   const ongoing = events.find(
     e => e.start_date && e.end_date && e.start_date <= today && e.end_date >= today
   )

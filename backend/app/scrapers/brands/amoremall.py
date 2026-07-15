@@ -167,6 +167,8 @@ class AmoremallScraper(BaseScraper):
     async def scrape(self, query: str) -> list[ScrapedEvent]:
         events: list[ScrapedEvent] = []
         url = SEARCH_URL.format(query=quote_plus(query))
+        matched_selector: str | None = None
+        html = ""
         try:
             async with async_playwright() as pw:
                 launch_kwargs: dict[str, object] = {
@@ -179,37 +181,40 @@ class AmoremallScraper(BaseScraper):
                     launch_kwargs["proxy"] = proxy_config
 
                 browser = await pw.chromium.launch(**launch_kwargs)  # type: ignore[arg-type]
-                context = await browser.new_context(
-                    user_agent=(
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                        "AppleWebKit/537.36 (KHTML, like Gecko) "
-                        "Chrome/124.0.0.0 Safari/537.36"
+                try:
+                    context = await browser.new_context(
+                        user_agent=(
+                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                            "AppleWebKit/537.36 (KHTML, like Gecko) "
+                            "Chrome/124.0.0.0 Safari/537.36"
+                        )
                     )
-                )
-                page = await context.new_page()
-                await self._wait_rate_limit()
+                    page = await context.new_page()
+                    await self._wait_rate_limit()
 
-                await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                    await page.goto(url, wait_until="domcontentloaded", timeout=30000)
 
-                # SPA 렌더링 대기: 상품 카드 셀렉터 후보 순서대로 시도
-                matched_selector: str | None = None
-                for selector in _CARD_SELECTORS:
+                    # SPA 렌더링 대기: 상품 카드 셀렉터 후보 순서대로 시도
+                    for selector in _CARD_SELECTORS:
+                        try:
+                            await page.wait_for_selector(selector, timeout=8000)
+                            matched_selector = selector
+                            break
+                        except Exception:
+                            continue
+
+                    if matched_selector is None:
+                        _logger.warning(
+                            "아모레몰: selector 미매칭 — 상품 카드를 찾지 못했습니다. url=%s", url
+                        )
+                        return []
+
+                    html = await page.content()
+                finally:
                     try:
-                        await page.wait_for_selector(selector, timeout=8000)
-                        matched_selector = selector
-                        break
+                        await browser.close()
                     except Exception:
-                        continue
-
-                if matched_selector is None:
-                    _logger.warning(
-                        "아모레몰: selector 미매칭 — 상품 카드를 찾지 못했습니다. url=%s", url
-                    )
-                    await browser.close()
-                    return []
-
-                html = await page.content()
-                await browser.close()
+                        pass
 
             soup = BeautifulSoup(html, "html.parser")
             cards = soup.select(matched_selector)
