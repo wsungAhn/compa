@@ -1,7 +1,8 @@
+import hmac
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
@@ -13,10 +14,14 @@ from app.models.feedback import Feedback
 router = APIRouter(tags=["feedback"])
 
 
-def _is_authorized_feedback_secret(secret: str) -> bool:
+def _is_authorized_feedback_secret(secret: str | None) -> bool:
     """admin_secret이 설정돼 있고 정확히 일치할 때만 True (미설정 시 항상 비활성)."""
     configured = settings.admin_secret
-    return configured is not None and secret == configured
+    return (
+        configured is not None
+        and secret is not None
+        and hmac.compare_digest(secret, configured)
+    )
 
 
 class FeedbackIn(BaseModel):
@@ -51,8 +56,10 @@ async def post_feedback(request: Request, body: FeedbackIn) -> dict[str, bool]:
 
 
 @router.get("/api/admin/feedback", response_model=list[FeedbackOut])
-async def get_admin_feedback(secret: str) -> list[FeedbackOut]:
-    if not _is_authorized_feedback_secret(secret):
+async def get_admin_feedback(
+    x_admin_secret: str | None = Header(default=None, alias="X-Admin-Secret"),
+) -> list[FeedbackOut]:
+    if not _is_authorized_feedback_secret(x_admin_secret):
         raise HTTPException(status_code=404, detail="Not found")
     async with AsyncSessionLocal() as db:
         result = await db.execute(

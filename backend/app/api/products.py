@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai.pipeline import SOCIAL_PLATFORM_NAME
 from app.api.schemas import ProductEventsOut, ProductSummary, Recommendation, SaleEventOut, SearchResponse
 from app.core.affiliate import to_affiliate_url
+from app.core.url_safety import safe_url
 from app.core.database import AsyncSessionLocal, get_db
 from app.core.limiter import limiter
 from app.core.premium import premium_dep
@@ -307,7 +308,7 @@ async def get_product_events(
             discount_rate=float(e.discount_rate) if e.discount_rate else None,
             currency=e.currency,
             reason=e.reason,
-            source_url=to_affiliate_url(e.source_url, p.name),
+            source_url=to_affiliate_url(safe_url(e.source_url), p.name),
             confidence=e.confidence,
             scraped_name=e.scraped_name,
             is_bundle=bool(e.is_bundle),

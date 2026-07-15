@@ -5,6 +5,7 @@ from typing import Any
 
 import anthropic
 from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -73,11 +74,13 @@ async def find_matching_product(
 
     normalized_input = normalize_name(name)
 
-    # Stage 1: Exact match (case-insensitive)
-    # Use func.lower for SQL-side normalization, but we also normalize candidates
+    country_column = getattr(Product, column_name)
+
+    # Stage 1: Exact match (case-insensitive), with DB-side candidate narrowing.
     result = await db.execute(
         select(Product).where(
             Product.deleted_at.is_(None),
+            func.lower(country_column) == normalized_input,
         )
     )
     candidates = list(result.scalars().all())
@@ -91,10 +94,22 @@ async def find_matching_product(
     # Stage 2: Brand match (if brand is provided)
     if brand:
         brand_lower = brand.lower()
+        result = await db.execute(
+            select(Product).where(
+                Product.deleted_at.is_(None),
+                Product.brand.is_not(None),
+                func.lower(Product.brand) == brand_lower,
+            )
+        )
         brand_candidates = [
-            c for c in candidates
+            c for c in result.scalars().all()
             if c.brand and c.brand.lower() == brand_lower
         ]
+
+        for candidate in brand_candidates:
+            col_value = getattr(candidate, column_name)
+            if col_value and normalize_name(col_value) == normalized_input:
+                return candidate
 
         if len(brand_candidates) == 1:
             return brand_candidates[0]
@@ -104,6 +119,22 @@ async def find_matching_product(
             matched = await _ask_claude_for_match(name, brand, country, brand_candidates)
             if matched:
                 return matched
+    else:
+        # Fallback for stored raw scraped names that differ after normalization
+        # (HTML tags, repeated whitespace), while still avoiding rows without the
+        # country-specific name.
+        result = await db.execute(
+            select(Product).where(
+                Product.deleted_at.is_(None),
+                country_column.is_not(None),
+            )
+        )
+        candidates = list(result.scalars().all())
+
+        for candidate in candidates:
+            col_value = getattr(candidate, column_name)
+            if col_value and normalize_name(col_value) == normalized_input:
+                return candidate
 
     return None
 
@@ -225,5 +256,12 @@ async def get_or_create_product(
     }
     product = Product(**kwargs)
     db.add(product)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        matched = await find_matching_product(db, name, brand, country)
+        if matched:
+            return matched
+        raise
     return product

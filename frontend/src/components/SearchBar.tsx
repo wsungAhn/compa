@@ -2,11 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import type { Product } from '../api/client'
 import { searchProducts, getJobStatus } from '../api/client'
 import { decidePollAction } from './searchPolling'
+import { debounce, type DebouncedFunction } from '../utils/debounce'
 
 interface Props {
   onSelect: (product: Product) => void
   onCollecting?: (collecting: boolean) => void
 }
+
+const SEARCH_DEBOUNCE_MS = 300
 
 export function SearchBar({ onSelect, onCollecting }: Props) {
   const [query, setQuery] = useState('')
@@ -18,6 +21,14 @@ export function SearchBar({ onSelect, onCollecting }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const pollCountRef = useRef(0)
+  const searchSequenceRef = useRef(0)
+  const debouncedSearchRef = useRef<DebouncedFunction<[string, number]> | null>(null)
+
+  if (!debouncedSearchRef.current) {
+    debouncedSearchRef.current = debounce((q: string, sequence: number) => {
+      void runSearch(q, sequence)
+    }, SEARCH_DEBOUNCE_MS)
+  }
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -38,15 +49,14 @@ export function SearchBar({ onSelect, onCollecting }: Props) {
       if (intervalRef.current) {
         clearInterval(intervalRef.current)
       }
+      debouncedSearchRef.current?.cancel()
     }
   }, [])
 
-  async function handleSearch(q: string) {
-    setQuery(q)
-    if (q.trim().length < 1) { setResults([]); setOpen(false); return }
-    setLoading(true)
+  async function runSearch(q: string, sequence: number) {
     try {
       const response = await searchProducts(q, false)
+      if (sequence !== searchSequenceRef.current) return
       setResults(response.products)
       if (response.products.length > 0) {
         setOpen(true)
@@ -54,16 +64,38 @@ export function SearchBar({ onSelect, onCollecting }: Props) {
         setOpen(true)
       }
     } catch {
+      if (sequence !== searchSequenceRef.current) return
       setResults([])
     } finally {
-      setLoading(false)
+      if (sequence === searchSequenceRef.current) {
+        setLoading(false)
+      }
     }
+  }
+
+  function handleSearch(q: string) {
+    setQuery(q)
+    const sequence = searchSequenceRef.current + 1
+    searchSequenceRef.current = sequence
+
+    if (q.trim().length < 1) {
+      debouncedSearchRef.current?.cancel()
+      setResults([])
+      setOpen(false)
+      setLoading(false)
+      return
+    }
+
+    setLoading(true)
+    debouncedSearchRef.current?.(q, sequence)
   }
 
   async function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key !== 'Enter') return
     if (query.trim().length < 2) return
 
+    debouncedSearchRef.current?.cancel()
+    searchSequenceRef.current += 1
     setOpen(false)
     setCollecting(true)
     setCollectionTimeout(false)

@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai.classifier import classify_rule_based
 from app.ai.extractor import SocialExtractor
 from app.ai.matcher import get_or_create_product
+from app.core.url_safety import safe_url
 from app.core.config import settings
 from app.models.platform import Platform
 from app.models.sale_event import SaleEvent
@@ -213,7 +214,7 @@ async def process_social_posts(db: AsyncSession, limit: int = 20) -> int:
                 ),
                 currency=extracted_event.currency,
                 reason=extracted_event.reason,
-                source_url=matched_post.post_url,
+                source_url=safe_url(matched_post.post_url),
                 confidence=extracted_event.confidence,
                 needs_review=extracted_event.needs_review,
                 raw_text=(

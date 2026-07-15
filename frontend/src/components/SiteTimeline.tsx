@@ -1,5 +1,6 @@
 import type { SaleEvent } from '../api/client'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
+import { safeUrl } from '../utils/urlSafety'
 
 interface SiteTimelineProps {
   platformName: string
@@ -143,7 +144,7 @@ export function SiteTimeline({ platformName, events, isCheapest }: SiteTimelineP
   const timelineEvents = events.filter(e => e.start_date != null)
 
   const { price: currentPrice, label: currentLabel, event: currentEvent } = getCurrentPrice(events)
-  const currentUrl = currentEvent?.source_url ?? null
+  const currentUrl = safeUrl(currentEvent?.source_url)
   const isCurrentOngoing = currentEvent ? isEventOngoing(currentEvent) : false
 
   // 차트 데이터 생성

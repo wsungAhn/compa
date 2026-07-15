@@ -1,9 +1,11 @@
 """Unit tests for product matching — normalize_name, COUNTRY_NAME_COLUMN, pure functions."""
+import asyncio
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 import uuid
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.matcher import (
@@ -201,8 +203,6 @@ class TestFindMatchingProduct:
 
     def _create_mock_db(self, products: list[Product]) -> AsyncMock:
         """Helper to create a properly mocked AsyncSession."""
-        from unittest.mock import MagicMock
-
         mock_db = AsyncMock(spec=AsyncSession)
         mock_cursor_result = MagicMock()
         mock_scalar_result = MagicMock()
@@ -210,6 +210,14 @@ class TestFindMatchingProduct:
         mock_cursor_result.scalars.return_value = mock_scalar_result
         mock_db.execute.return_value = mock_cursor_result
         return mock_db
+
+    def _create_mock_result(self, products: list[Product]) -> MagicMock:
+        """Create a SQLAlchemy-like result object containing products."""
+        mock_cursor_result = MagicMock()
+        mock_scalar_result = MagicMock()
+        mock_scalar_result.all.return_value = products
+        mock_cursor_result.scalars.return_value = mock_scalar_result
+        return mock_cursor_result
 
     async def test_exact_match_kr(self) -> None:
         """Test exact match on Korean name column."""
@@ -299,6 +307,53 @@ class TestFindMatchingProduct:
 
         assert result == p1
 
+    async def test_brand_match_uses_narrowed_candidate_query(self) -> None:
+        """Test brand fallback does not consume a full products table result."""
+        target = create_test_product(name_kr="설화수", brand="AMOREPACIFIC")
+        all_products = [
+            create_test_product(name_kr=f"다른상품 {idx}", brand="OtherBrand")
+            for idx in range(100)
+        ]
+        all_products.append(target)
+        mock_db = AsyncMock(spec=AsyncSession)
+        mock_db.execute.side_effect = [
+            self._create_mock_result([]),
+            self._create_mock_result([target]),
+        ]
+
+        result = await find_matching_product(
+            mock_db,
+            "completely different name",
+            "AMOREPACIFIC",
+            "KR",
+        )
+
+        assert result == target
+        assert mock_db.execute.call_count == 2
+        assert len(all_products) > 100
+
+    async def test_exact_match_fallback_normalizes_dirty_name_without_brand(self) -> None:
+        """Test dirty stored names still match by Python normalization without brand fallback."""
+        product = create_test_product(
+            name_kr="  <b>설화수</b>   윤조에센스  ",
+            brand=None,
+        )
+        mock_db = AsyncMock(spec=AsyncSession)
+        mock_db.execute.side_effect = [
+            self._create_mock_result([]),
+            self._create_mock_result([product]),
+        ]
+
+        result = await find_matching_product(
+            mock_db,
+            "설화수 윤조에센스",
+            None,
+            "KR",
+        )
+
+        assert result == product
+        assert mock_db.execute.call_count == 2
+
 
 @pytest.mark.asyncio
 class TestGetOrCreateProduct:
@@ -370,6 +425,40 @@ class TestGetOrCreateProduct:
 
         # Should remain unchanged
         assert result.name_en == "Original Name"
+
+    async def test_concurrent_create_recovers_from_unique_violation(self) -> None:
+        """Test concurrent creates converge to one product after unique violation."""
+        first_db = AsyncMock(spec=AsyncSession)
+        second_db = AsyncMock(spec=AsyncSession)
+        first_db.flush.return_value = None
+        second_db.flush.side_effect = IntegrityError("insert", {}, Exception("unique"))
+        find_calls = 0
+
+        async def fake_find_matching_product(
+            db: AsyncSession,
+            name: str,
+            brand: str | None,
+            country: str,
+        ) -> Product | None:
+            nonlocal find_calls
+            find_calls += 1
+            if find_calls <= 2:
+                return None
+            created_product = first_db.add.call_args.args[0]
+            assert isinstance(created_product, Product)
+            return created_product
+
+        with patch("app.ai.matcher.find_matching_product", side_effect=fake_find_matching_product):
+            first_result, second_result = await asyncio.gather(
+                get_or_create_product(first_db, "Sulwhasoo First Care", "Sulwhasoo", "US"),
+                get_or_create_product(second_db, "Sulwhasoo First Care", "Sulwhasoo", "US"),
+            )
+
+        assert first_result is second_result
+        assert first_db.add.call_count == 1
+        assert second_db.add.call_count == 1
+        second_db.rollback.assert_awaited_once()
+        assert find_calls == 3
 
 
 @pytest.mark.asyncio

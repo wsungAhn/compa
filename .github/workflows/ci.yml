@@ -32,6 +32,8 @@ jobs:
           node-version: "22"
       - name: Install dependencies
         run: cd frontend && npm ci
+      - name: Run npm audit
+        run: cd frontend && npm audit --audit-level=high
       - name: Run lint
         run: cd frontend && npm run lint
       - name: Run build

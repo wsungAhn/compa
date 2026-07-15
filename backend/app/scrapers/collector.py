@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai.classifier import classify_rule_based
 from app.ai.matcher import get_or_create_product
 from app.core.database import AsyncSessionLocal
+from app.core.url_safety import safe_url
 from app.models.platform import Platform
 from app.models.product import Product
 from app.models.sale_event import SaleEvent
@@ -202,7 +203,7 @@ async def _save_events(
             discount_rate=s.discount_rate,
             currency=s.currency or "KRW",
             reason=s.reason,
-            source_url=s.source_url,
+            source_url=safe_url(s.source_url),
             confidence=s.confidence,
             needs_review=s.confidence < 0.7,
             scraped_name=s.product_name,
