@@ -19,6 +19,12 @@ from app.models.platform import Platform
 from app.models.product import Product
 from app.models.sale_event import SaleEvent
 from app.scrapers.base import BaseScraper, ScrapedEvent
+from app.scrapers.brands.shopify import (
+    GlossierOfficialScraper,
+    LaPrairieOfficialScraper,
+    SKIIOfficialScraper,
+    TatchaOfficialScraper,
+)
 from app.scrapers.brands.amoremall import AmoremallScraper
 from app.scrapers.brands.chantecaille_kr import ChantecailleKRScraper
 from app.scrapers.brands.lamer_kr import LaMerKRScraper
@@ -46,6 +52,10 @@ SCRAPERS: dict[str, tuple[type[BaseScraper], str]] = {
     "Sephora":   (SephoraScraper,   "en"),
     "Ulta":      (UltaScraper,      "en"),
     "Amazon US": (AmazonScraper,    "en"),
+    "SK-II 공홈":              (SKIIOfficialScraper,       "en"),
+    "Tatcha 공홈":             (TatchaOfficialScraper,     "en"),
+    "La Prairie 공홈":         (LaPrairieOfficialScraper,  "en"),
+    "Glossier 공홈":           (GlossierOfficialScraper,   "en"),
     "SK-II Official":          (SKIIScraper,           "en"),
     "Shiseido Official":       (ShiseidoScraper,       "en"),
     "La Mer Official KR":      (LaMerKRScraper,        "ko"),

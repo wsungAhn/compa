@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     firecrawl_extract_provider: str = "local"
     # 활성 스크래퍼 목록 (쉼표 구분, "all" 이면 전체)
     # Live sources as of 2026-08-05: 네이버쇼핑(API 종료)·올리브영·Ulta는 죽었다.
-    enabled_scrapers: str = "Sephora,Amazon US,Rakuten"
+    enabled_scrapers: str = "Sephora,Amazon US,Rakuten,SK-II 공홈,Tatcha 공홈,La Prairie 공홈,Glossier 공홈"
 
     @field_validator("allowed_origins", mode="before")
     @classmethod

@@ -7,7 +7,9 @@ from app.core.proxy import httpx_proxy
 from app.scrapers.base import BaseScraper, ScrapedEvent
 
 _SEARCH_URL = "https://www.cosme.com/products/list.php?keyword={query}"
-_JPY_RE = re.compile(r"([\d,]+)\s*円|¥\s*([\d,]+)")
+# @cosme prints fullwidth ￥ (U+FFE5), not the halfwidth ¥ (U+00A5) this regex
+# originally accepted — every price silently failed to parse.
+_JPY_RE = re.compile(r"([\d,]+)\s*円|[¥￥]\s*([\d,]+)")
 
 
 def _parse_jpy(text: str) -> float | None:
@@ -32,9 +34,12 @@ def parse_search_html(html: str, url: str) -> list[ScrapedEvent]:
     events: list[ScrapedEvent] = []
     soup = BeautifulSoup(html, "html.parser")
 
-    # Defensive: try multiple selectors for product list items
+    # Current markup first: the legacy selectors below still match a couple of
+    # unrelated nodes, and an early match short-circuits the chain — that is how
+    # this scraper kept returning zero events without erroring.
     product_items = (
-        soup.select("li.item")
+        soup.select("div.product")
+        or soup.select("li.item")
         or soup.select("div.product-item")
         or soup.select("li[class*='item']")
         or soup.select("div[class*='product']")
@@ -44,7 +49,8 @@ def parse_search_html(html: str, url: str) -> list[ScrapedEvent]:
         try:
             # Extract product name: try multiple selectors
             name_el = (
-                item.select_one("a.product-name")
+                item.select_one("p.product__name")
+                or item.select_one("a.product-name")
                 or item.select_one("a[class*='name']")
                 or item.select_one("a")
             )
@@ -52,11 +58,15 @@ def parse_search_html(html: str, url: str) -> list[ScrapedEvent]:
             if not name:
                 continue
 
+            brand_el = item.select_one("p.product__brand")
+            brand = brand_el.get_text(strip=True) if brand_el else None
+
             # Extract price: look for yen currency indicators
             # Try multiple price selectors
             price_text: str | None = None
             price_el = (
-                item.select_one("span[class*='price']")
+                item.select_one("p.product__price")
+                or item.select_one("span[class*='price']")
                 or item.select_one("div[class*='price']")
                 or item.select_one("p[class*='price']")
             )
@@ -80,6 +90,7 @@ def parse_search_html(html: str, url: str) -> list[ScrapedEvent]:
             events.append(
                 ScrapedEvent(
                     product_name=name,
+                    brand=brand,
                     original_price=original_price,
                     sale_price=sale_price,
                     discount_rate=None,

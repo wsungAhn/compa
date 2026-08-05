@@ -169,6 +169,17 @@ class XiaohongshuScraper(BaseScraper):
                 html = response.text
 
             events = parse_initial_state(html, url)
+            if not events:
+                # Silent [] reads as "no discounts"; 小红书 serves a JS bundle
+                # with no usable __INITIAL_STATE__ to plain HTTP clients
+                # (verified 2026-08-05, 718KB response, 0 events).
+                events.append(
+                    ScrapedEvent(
+                        product_name=query,
+                        confidence=0.0,
+                        raw_text=f"no __INITIAL_STATE__ payload in {len(html)} bytes (JS shell or block)",
+                    )
+                )
 
         except Exception as exc:
             events.append(

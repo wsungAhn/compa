@@ -137,6 +137,27 @@ class TmallScraper(BaseScraper):
 
             events = parse_search_html(html, url)
 
+
+            if not events:
+
+                # Silent [] reads as "no discounts"; this platform returns a JS
+
+                # shell / bot wall to plain HTTP clients (verified 2026-08-05).
+
+                events.append(
+
+                    ScrapedEvent(
+
+                        product_name=query,
+
+                        confidence=0.0,
+
+                        raw_text=f"no product markup in {len(html)} bytes (JS shell or block)",
+
+                    )
+
+                )
+
         except Exception as exc:
             events.append(
                 ScrapedEvent(
