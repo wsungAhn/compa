@@ -6,7 +6,12 @@ import httpx
 from app.core.config import settings
 from app.scrapers.base import BaseScraper, ScrapedEvent
 
-_ENDPOINT = "https://app.rakuten.co.jp/services/api/IchibaItem/Search/20170706"
+# 2026 API. The 2017 endpoint (app.rakuten.co.jp) is retired and rejects the
+# UUID-style applicationId the developer portal now issues.
+_ENDPOINT = "https://openapi.rakuten.co.jp/ichibams/api/IchibaItem/Search/20260401"
+# Rakuten rejects the request with REQUEST_CONTEXT_BODY_HTTP_REFERRER_MISSING
+# unless it matches an "Allowed website" registered for the application.
+_REFERER = "https://wsungahn.github.io"
 
 
 def parse_response(data: dict[str, Any], query: str) -> list[ScrapedEvent]:
@@ -62,8 +67,11 @@ class RakutenScraper(BaseScraper):
                 "hits": 10,
                 "sort": "+itemPrice",
             }
+            if settings.rakuten_access_key:
+                params["accessKey"] = settings.rakuten_access_key
+            headers = {"Referer": _REFERER, "Origin": _REFERER}
             async with httpx.AsyncClient(timeout=30.0) as client:
-                resp = await client.get(_ENDPOINT, params=params)
+                resp = await client.get(_ENDPOINT, params=params, headers=headers)
                 resp.raise_for_status()
             data = resp.json()
             events = parse_response(data, query)

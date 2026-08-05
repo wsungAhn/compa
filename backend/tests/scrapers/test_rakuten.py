@@ -1,6 +1,10 @@
 """楽天 スクレーパー 単体テスト (実際のHTTP呼び出しなし)."""
 from typing import Any
 
+import pytest
+
+from app.core.config import settings
+from app.scrapers.jp import rakuten as rakuten_module
 from app.scrapers.jp.rakuten import RakutenScraper, parse_response
 
 
@@ -9,6 +13,45 @@ def test_scraper_platform_attrs() -> None:
     assert scraper.PLATFORM_NAME == "Rakuten"
     assert scraper.COUNTRY == "JP"
     assert scraper.RATE_LIMIT_SEC == 0.5
+
+
+@pytest.mark.asyncio
+async def test_scrape_uses_2026_endpoint_with_access_key_and_referer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The 2017 endpoint is retired: it rejects UUID applicationIds, and the
+    2026 one 400s without accessKey + a registered Referer."""
+    captured: dict[str, Any] = {}
+
+    class _Resp:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, Any]:
+            return {"Items": []}
+
+    class _Client:
+        async def __aenter__(self) -> "_Client":
+            return self
+
+        async def __aexit__(self, *exc: object) -> None:
+            return None
+
+        async def get(self, url: str, **kwargs: Any) -> _Resp:
+            captured["url"] = url
+            captured.update(kwargs)
+            return _Resp()
+
+    monkeypatch.setattr(rakuten_module.httpx, "AsyncClient", lambda **kw: _Client())
+    monkeypatch.setattr(settings, "rakuten_app_id", "70e50432-uuid-style")
+    monkeypatch.setattr(settings, "rakuten_access_key", "pk_test")
+
+    events = await RakutenScraper().scrape("セラム")
+
+    assert events == []  # no failure event => the request itself succeeded
+    assert captured["url"].startswith("https://openapi.rakuten.co.jp/ichibams/")
+    assert captured["params"]["accessKey"] == "pk_test"
+    assert captured["headers"]["Referer"].startswith("https://")
 
 
 def test_parse_response_empty_dict() -> None:
