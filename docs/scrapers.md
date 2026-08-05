@@ -4,7 +4,7 @@
 
 | 플랫폼 | 국가 | 방식 | 상태 | 쿼리 언어 |
 |--------|------|------|------|----------|
-| 네이버쇼핑 | KR | httpx + Naver Search API | ✅ 정상 | 한국어 |
+| 네이버쇼핑 | KR | httpx + Naver Search API | ⚠️ 서비스 종료 예고 (아래 참조) | 한국어 |
 | 올리브영 | KR | Playwright (Chrome) | ⏭️ SKIP (403 차단) | 한국어 |
 | Sephora | US | Playwright (Chrome) | ✅ 정상 | 영어 |
 | Ulta | US | Playwright (Chrome) | ✅ 구현 완료 | 영어 |
@@ -20,6 +20,32 @@
 
 `collector.py`에서 `deep-translator` 라이브러리로 자동 번역.
 어떤 언어로 입력해도 각 플랫폼에 맞는 언어로 변환 후 수집.
+
+## 네이버 검색 API 종료 → NAVER API HUB 이관 (2026-06-29 공지, 2026-08-05 확인)
+
+네이버 개발자센터가 **Search API·Search Trend·Shopping Insight 서비스 종료 및
+NAVER API HUB(네이버 클라우드 플랫폼) 이관**을 공지했다.
+
+이관 후 계약 (`guide.ncloud-docs.com/docs/apihub-migration`):
+
+| 항목 | 기존 (Developers) | NAVER API HUB |
+|------|------------------|---------------|
+| 도메인 | `openapi.naver.com` | `naverapihub.apigw.ntruss.com` |
+| 경로 | `/v1/search/news.json` | `/search/v1/news` |
+| 인증 헤더 | `X-Naver-Client-Id` / `X-Naver-Client-Secret` | `X-NCP-APIGW-API-KEY-ID` / `X-NCP-APIGW-API-KEY` |
+| 키 | 기존 키 **사용 불가** | NCP 콘솔에서 신규 발급 |
+| 한도 | 일 25,000건 | 검색 통합 월 775,000건 · 50 RPS/키 (한시 무료) |
+
+> **핵심 리스크: 쇼핑 검색이 이관 대상에 없다.** API HUB 검색 카테고리는 뉴스·블로그·
+> 이미지·웹문서·백과사전·지식iN·지역·카페글뿐이다("쇼핑 인사이트"는 클릭 트렌드
+> 데이터이지 상품 가격이 아니다). 2026-08-05 실측: `/search/v1/shop`·`/search/v1/shopping`
+> → **404**, 대조군 `/search/v1/news` → 401(존재). 구 `openapi.naver.com/v1/search/shop.json`
+> 은 아직 401(살아있음)이지만 종료 예고 대상이다. 같은 질문이 ncloud 포럼에도
+> 올라와 있으나(2026-07-23, topic/616) 답변 없음.
+>
+> 즉 **한국 가격 데이터 소스를 재설계해야 한다** — 종료일 확인 후 (a) 종료 전까지 구 API
+> 유지 (b) 쇼핑 스크래핑(403 이력 있음, firecrawl 스텔스 필요) (c) 쿠팡 파트너스 등
+> 대체 소스 중 선택. 이 결정 전까지 네이버 라인은 키가 있어도 수명이 유한하다.
 
 ## Rakuten API 인증 (2026 신규)
 
