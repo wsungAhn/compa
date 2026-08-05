@@ -1,7 +1,32 @@
 import asyncio
+import os
+import pathlib
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import date
+
+_LINUX_CHROME = "/usr/bin/google-chrome-stable"
+
+
+def chrome_launch_kwargs() -> dict[str, object]:
+    """Playwright launch kwargs pointing at a real Chrome.
+
+    Ubuntu needs the explicit path (the bundled Chromium doesn't support 26.04),
+    but that path doesn't exist on macOS/Windows — there Playwright's `channel`
+    finds the installed Chrome. CHROME_PATH overrides both.
+    """
+    kwargs: dict[str, object] = {
+        "headless": True,
+        "args": ["--no-sandbox", "--disable-dev-shm-usage"],
+    }
+    override = os.environ.get("CHROME_PATH")
+    if override:
+        kwargs["executable_path"] = override
+    elif pathlib.Path(_LINUX_CHROME).exists():
+        kwargs["executable_path"] = _LINUX_CHROME
+    else:
+        kwargs["channel"] = "chrome"
+    return kwargs
 
 
 @dataclass

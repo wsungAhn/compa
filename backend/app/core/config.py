@@ -32,7 +32,8 @@ class Settings(BaseSettings):
     firecrawl_url: str = "http://localhost:8765"
     firecrawl_extract_provider: str = "local"
     # 활성 스크래퍼 목록 (쉼표 구분, "all" 이면 전체)
-    enabled_scrapers: str = "네이버쇼핑,Rakuten"
+    # Live sources as of 2026-08-05: 네이버쇼핑(API 종료)·올리브영·Ulta는 죽었다.
+    enabled_scrapers: str = "Sephora,Amazon US,Rakuten"
 
     @field_validator("allowed_origins", mode="before")
     @classmethod

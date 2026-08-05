@@ -5,11 +5,11 @@
 | 플랫폼 | 국가 | 방식 | 상태 | 쿼리 언어 |
 |--------|------|------|------|----------|
 | 네이버쇼핑 | KR | httpx + Naver Search API | ⚠️ 서비스 종료 예고 (아래 참조) | 한국어 |
-| 올리브영 | KR | Playwright (Chrome) | ⏭️ SKIP (403 차단) | 한국어 |
-| Sephora | US | Playwright (Chrome) | ✅ 정상 | 영어 |
-| Ulta | US | Playwright (Chrome) | ✅ 구현 완료 | 영어 |
-| Amazon US | US | PA API 5.0 + Playwright fallback | ✅ 구현 완료 (PA API 키 필요) | 영어 |
-| Rakuten | JP | httpx + Rakuten API | ✅ 정상 | 일본어 |
+| 올리브영 | KR | Playwright (Chrome) | ❌ 차단 (firecrawl 스텔스로도 실패, 08-05 재확인) | 한국어 |
+| Sephora | US | Playwright (Chrome) | ✅ 정상 (08-05 라이브 확인) | 영어 |
+| Ulta | US | httpx | ❌ 차단 (JS 셸만 반환, firecrawl도 차단) | 영어 |
+| Amazon US | US | PA API 5.0 + HTML fallback | ✅ 정상 (08-05 셀렉터 수정, 키 없이 폴백 동작) | 영어 |
+| Rakuten | JP | httpx + Rakuten API | ✅ 정상 (08-05 2026 엔드포인트 전환) | 일본어 |
 | @cosme | JP | Playwright (Chrome) | ✅ 구현 완료 | 일본어 |
 | Tmall | CN | Playwright (Chrome) | ✅ 구현 완료 | 중국어 |
 | 小红书 | CN | Playwright (Chrome) | ✅ 구현 완료 | 중국어 |
@@ -96,3 +96,13 @@ await page.wait_for_timeout(8000)
 - 정규 제품명: 유저 입력 쿼리 → `product.name_kr`로 저장
 - 스크래퍼 반환 상품명 → `sale_event.scraped_name`에 보존
 - 기획세트 감지: "세트", "set", "kit", "duo", "bundle", "기획" 등 → `is_bundle=True`
+
+## 활성 스크래퍼 (2026-08-05 기준)
+
+`ENABLED_SCRAPERS` 기본값 = `Sephora,Amazon US,Rakuten` — 라이브 실측으로 살아있는
+것만 켠다. 네이버쇼핑(API 종료)·올리브영·Ulta·아모레몰은 전부 차단/종료 확인됐다.
+
+**조용한 실패 금지**: 스크래퍼가 아무것도 못 받았을 때 빈 리스트를 반환하면
+"할인이 없다"로 읽혀 고장이 숨는다. 파싱 결과가 0건이면 `confidence=0` 이벤트에
+원인을 담아 반환할 것(Ulta가 이 방식으로 몇 달간 죽은 채 방치됐다). 수집기는
+이름이 빈 이벤트를 저장하지 않는다 — 셀렉터가 깨졌다는 신호이지 상품이 아니다.

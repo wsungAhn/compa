@@ -4,7 +4,7 @@ from typing import Any
 from playwright.async_api import async_playwright
 
 from app.core.proxy import playwright_proxy
-from app.scrapers.base import BaseScraper, ScrapedEvent
+from app.scrapers.base import BaseScraper, ScrapedEvent, chrome_launch_kwargs
 
 SEARCH_URL = "https://www.sephora.com/search?keyword={query}"
 
@@ -34,11 +34,7 @@ class SephoraScraper(BaseScraper):
         api_data: dict[str, Any] = {}
         try:
             async with async_playwright() as pw:
-                launch_kwargs: dict[str, object] = {
-                    "headless": True,
-                    "executable_path": "/usr/bin/google-chrome-stable",
-                    "args": ["--no-sandbox", "--disable-dev-shm-usage"],
-                }
+                launch_kwargs: dict[str, object] = chrome_launch_kwargs()
                 proxy_config = playwright_proxy()
                 if proxy_config:
                     launch_kwargs["proxy"] = proxy_config

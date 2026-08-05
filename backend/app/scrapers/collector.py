@@ -280,7 +280,10 @@ async def _collect_platform(
 
             by_product: dict[str, list[ScrapedEvent]] = {}
             for s in scraped_events:
-                if s.confidence > 0:
+                # A nameless event means the scraper's selector broke, not that a
+                # product has no name — storing it creates a junk product row that
+                # every later search and comparison inherits.
+                if s.confidence > 0 and s.product_name and s.product_name.strip():
                     by_product.setdefault(s.product_name, []).append(s)
 
             for product_name, events in by_product.items():

@@ -325,3 +325,66 @@ def test_parse_paapi_response_invalid_structure() -> None:
     events = parse_paapi_response(response, "https://example.com")
 
     assert events == []
+
+
+_CURRENT_MARKUP = """
+<div data-component-type="s-search-result">
+  <h2><span>SK-II Facial Treatment Essence 230ml</span></h2>
+  <span class="a-price-whole">190.</span><span class="a-price-fraction">00</span>
+  <a class="a-link-normal" href="/dp/B00TEST"></a>
+</div>
+"""
+
+_LEGACY_MARKUP = """
+<div data-component-type="s-search-result">
+  <h2><a><span>Legacy Titled Product</span></a></h2>
+  <span class="a-price-whole">25.</span><span class="a-price-fraction">50</span>
+</div>
+"""
+
+_NAMELESS_MARKUP = """
+<div data-component-type="s-search-result">
+  <h2></h2>
+  <span class="a-price-whole">42.</span><span class="a-price-fraction">00</span>
+</div>
+"""
+
+
+def test_parse_search_html_current_markup() -> None:
+    """Amazon moved the title out of the anchor; "h2 a span" alone stopped matching."""
+    events = parse_search_html(_CURRENT_MARKUP, "https://www.amazon.com/s?k=skii")
+    assert len(events) == 1
+    assert events[0].product_name == "SK-II Facial Treatment Essence 230ml"
+    assert events[0].sale_price == 190.0
+
+
+def test_parse_search_html_legacy_markup_still_parses() -> None:
+    events = parse_search_html(_LEGACY_MARKUP, "https://www.amazon.com/s?k=x")
+    assert len(events) == 1
+    assert events[0].product_name == "Legacy Titled Product"
+
+
+def test_parse_search_html_skips_nameless_result() -> None:
+    """A priced-but-nameless row means the selector broke — it must not become a product."""
+    assert parse_search_html(_NAMELESS_MARKUP, "https://www.amazon.com/s?k=x") == []
+
+
+_2026_MARKUP = """
+<div data-component-type="s-search-result">
+  <div data-cy="title-recipe">
+    <h2 class="a-size-mini s-line-clamp-1"><span class="a-size-base-plus">SK-II</span></h2>
+    <a class="a-link-normal" href="/dp/B00TEST">
+      <h2 class="a-size-base-plus"><span>Facial Treatment Essence 230ml</span></h2>
+    </a>
+  </div>
+  <span class="a-price-whole">190.</span><span class="a-price-fraction">00</span>
+</div>
+"""
+
+
+def test_parse_search_html_2026_title_recipe_markup() -> None:
+    """The brand and the product title live in two separate h2s; plain "h2" gives only the brand."""
+    events = parse_search_html(_2026_MARKUP, "https://www.amazon.com/s?k=skii")
+    assert len(events) == 1
+    assert events[0].product_name == "SK-II Facial Treatment Essence 230ml"
+    assert events[0].brand == "SK-II"

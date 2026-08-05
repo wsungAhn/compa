@@ -243,8 +243,24 @@ def parse_search_html(html: str, url: str) -> list[ScrapedEvent]:
 
     for item in results[:5]:
         try:
-            name_el = item.select_one("h2 a span")
-            name = name_el.get_text(strip=True) if name_el else ""
+            # Amazon's 2026 markup splits the title block: a brand <h2> and the
+            # real product title in a second <h2> inside the link. The old
+            # "h2 a span" selector matched neither, so events came back nameless,
+            # and plain "h2" yields only the brand.
+            recipe = item.select_one('[data-cy="title-recipe"]')
+            name_el = (
+                (recipe.select_one("a h2") if recipe else None)
+                or item.select_one("h2 a span")
+                or item.select_one("h2 span")
+            )
+            name = name_el.get_text(" ", strip=True) if name_el else ""
+            if not name:
+                continue
+
+            brand_el = recipe.select_one("h2.s-line-clamp-1") if recipe else None
+            brand = brand_el.get_text(" ", strip=True) if brand_el else None
+            if brand and not name.lower().startswith(brand.lower()):
+                name = f"{brand} {name}"
 
             whole_el = item.select_one("span.a-price-whole")
             frac_el = item.select_one("span.a-price-fraction")
@@ -275,6 +291,7 @@ def parse_search_html(html: str, url: str) -> list[ScrapedEvent]:
             events.append(
                 ScrapedEvent(
                     product_name=name,
+                    brand=brand,
                     original_price=original_price,
                     sale_price=sale_price,
                     discount_rate=discount_rate if discount_rate and discount_rate > 0 else None,
