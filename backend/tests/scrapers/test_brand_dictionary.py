@@ -2,6 +2,7 @@
 from app.scrapers.brand_dictionary import (
     AMBIGUOUS_BRANDS,
     BRAND_ALIASES,
+    canonicalize_brand_mentions,
     detect_brand,
     detect_brands,
 )
@@ -46,3 +47,22 @@ def test_longest_alias_wins_for_single_pick() -> None:
 def test_detection_dictionary_is_wider_than_collection_registry() -> None:
     """분리한 이유 자체 — 감지 범위가 수집 범위보다 넓어야 한다."""
     assert len(BRAND_ALIASES) > len(BRANDS) * 2
+
+
+def test_canonicalize_brand_mentions_replaces_aliases_with_canonical_names() -> None:
+    """토리든 다이브인 세럼 → Torriden으로 치환."""
+    result = canonicalize_brand_mentions("토리든 다이브인 세럼")
+    assert "Torriden" in result
+    assert "토리든" not in result
+
+
+def test_canonicalize_brand_mentions_idempotent_for_canonical_names() -> None:
+    """이미 정본 표기인 경우 그대로 유지."""
+    result = canonicalize_brand_mentions("SK-II フェイシャルトリートメント エッセンス 75mL")
+    assert result == "SK-II フェイシャルトリートメント エッセンス 75mL"
+
+
+def test_canonicalize_brand_mentions_no_brands_returns_original() -> None:
+    """브랜드가 없는 문장은 원문 그대로."""
+    result = canonicalize_brand_mentions("아무 브랜드도 없는 문장")
+    assert result == "아무 브랜드도 없는 문장"

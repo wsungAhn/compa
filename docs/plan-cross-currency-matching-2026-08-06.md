@@ -58,8 +58,55 @@ DB·네트워크에 닿지 않는다. 전부 오프라인 테스트.
 
 ### C. 번역 계층
 
-`deep-translator`(collector가 이미 쓴다) + **영속 캐시**. 카탈로그 2,541건을 매 회
-번역하면 외부 API에 그대로 얹힌다. 비영문만 대상.
+#### 선행조사(로컬모델 실측, 2026-08-06)
+
+**① 레포 내 검색**: `app/ai/translator.py`가 이미 있다 — `detect_language`(유니코드
+비율로 ja/zh/ko/en 판별), 인메모리 캐시(maxsize 1000, 초과 시 전체 clear), `deep_translator.
+GoogleTranslator` 호출, try/except 실패 시 원문 반환까지 C단계가 필요로 하는 골격이
+이미 90% 있다. **새로 만들지 않는다 — 엔진만 교체한다.**
+
+**② 외부 — 로컬모델 실측**: 이 Mac에 이미 Ollama가 있지만 pull된 모델은 전부 14~32B
+범용 모델뿐이라 번역 전용으로 쓰기엔 무겁다. 조사 결과 `translategemma:4b`(Google,
+Gemma 3 기반 전용 번역모델, 2026 출시, [blog.google](https://blog.google/innovation-and-ai/technology/developers-tools/translategemma/),
+Apache 2.0)를 채택 — 3.3GB(Q4_K_M), 55개 언어, Ollama로 바로 pull(`ollama pull
+translategemma:4b`, 최근 커밋/릴리스 활성). Pull 후 실측 4건(JP 노이즈 포함/제거,
+JP 샘플 키워드, KR, ZH):
+
+- 나이브 프롬프트("Translate to English: ...")는 수다스러운 잡담체 출력 → **정형
+  프롬프트 필수**(`You are a professional {SRC} to {TGT} translator... Produce only
+  the {TGT} translation, without any additional explanations`). `/api/generate`로
+  호출하면 0.3~0.7초/문장, 깨끗한 한 줄 출력.
+- **함정 1 — 브랜드명 음역 오류**: "토리든"(Torriden) → "Tori Den"으로 오역. 그대로
+  두면 `containment_score`가 깨진다(정본 "Torriden" 토큰과 안 겹침). **해법**: 번역
+  호출 전에 `app/scrapers/brand_dictionary.py`의 기존 `BRAND_ALIASES`로 원문의 별칭을
+  정본 영문 브랜드명으로 먼저 치환한다(신규 사전 아님, 재사용).
+- **함정 2 — 샘플 키워드 손실**: "トライアル" → "Trial Size"로 번역됨.
+  `app/ai/matching.py`의 `_SAMPLE_KEYWORDS`엔 "sample"만 있고 "trial"이 없다. **해법**:
+  `is_sample_listing`은 번역 전 원문에 호출해야 한다 — B단계 `evaluate_match` 설계가
+  이미 `listing_name`(원문)에 직접 호출하도록 돼 있으므로 **D단계 배선만 원문 유지하면
+  된다**(B단계 코드 변경 불요).
+
+**③ 결론**: `deep-translator`(외부 GoogleTranslator) → 로컬 `translategemma:4b`로
+교체. 외부 API 의존이 사라지므로 원 설계문서(`design-cross-currency-matching-
+2026-08-05.md`)가 "범위 밖"으로 미뤄둔 **캐시 영속화는 이번에도 미룬다** — 그 항목의
+근거였던 "외부 API에 얹힌다"는 전제 자체가 로컬 엔진으로는 성립하지 않는다. 인메모리
+캐시의 "1000건 초과 시 전체 clear" 비효율만 이번에 같이 손본다(파일을 만지는 김에
+LRU로 — 별도 라운드를 만들 정도는 아니다).
+
+**④ 추론 위치 — 랩탑으로 오프로드(2026-08-06 사용자 지시)**: Mac Studio는 지금 헤비한
+로컬모델 벤치테스트가 돌고 있어 자원을 나눠쓰면 안 된다. 랩탑(Windows, `AlienWare-Home`,
+LAN `192.168.86.34:11434`)에 이미 Ollama가 LAN 노출돼 있고(`nomic-embed-text` 등 기존
+임베더 워크로드가 거기서 돈다) `translategemma:4b`를 새로 pull해 실측 확인 완료 —
+웜업 후 0.5~1초/문장으로 Mac Studio 실측(0.3~0.7초)과 큰 차이 없다(첫 호출은 모델
+로드로 ~11초, 이후 캐시됨). `settings.ollama_url`(범용, `qwen2.5-coder:32b` 등 무거운
+로컬 AI용)과 분리된 **`settings.translation_ollama_url`**로 이 엔드포인트를 가리킨다 —
+같은 설정을 공유하면 다른 기능이 랩탑 쪽으로 잘못 라우팅될 위험이 있다.
+
+브랜드 음역 비결정성도 이번에 다시 확인됨: "토리든"이 호출마다 "Tori Den"/"Toryden"으로
+다르게 나온다(온도>0로 추정) — ②의 함정 1(브랜드 별칭 사전 치환) 해법이 필수임을
+재확인.
+
+카탈로그 2,541건 중 비영문만 대상(`detect_language`가 이미 en을 거른다).
 
 **번역 실패를 감지한다**(감사 R2). 번역이 실패하면 원문이 그대로 돌아오거나 빈 문자열이
 되는데, 그러면 포함도가 조용히 0이 되고 우리는 그걸 "매칭 없음"으로 읽는다 — 오늘만

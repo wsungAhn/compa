@@ -150,3 +150,16 @@ def detect_brand(text: str) -> str | None:
     """가장 구체적인 브랜드 하나."""
     brands = detect_brands(text)
     return brands[0] if brands else None
+
+
+def canonicalize_brand_mentions(text: str) -> str:
+    """텍스트에 등장하는 브랜드 별칭을 정본 영문 브랜드명으로 치환한다.
+
+    번역 전에 호출한다 — 일반 번역모델이 브랜드명을 음역해버리는 문제를 막기 위함
+    (실측: "토리든"이 호출마다 "Tori Den"/"Toryden"으로 비결정적으로 오역됨).
+    """
+    result = text
+    # 긴 별칭을 먼저 처리하기 위해 별칭 길이 내림차순으로 정렬
+    for brand, alias, pattern in sorted(_COMPILED, key=lambda x: -len(x[1])):
+        result = pattern.sub(brand, result)
+    return result

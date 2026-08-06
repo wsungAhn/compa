@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     ollama_url: str = "http://localhost:11434"
     local_ai_model: str = "qwen2.5:14b"
     use_local_ai: bool = False
+    # 번역 전용 Ollama 엔드포인트 — local_ai_model과 분리(다른 머신으로 오프로드 가능하게)
+    translation_ollama_url: str = "http://localhost:11434"
+    local_translation_model: str = "translategemma:4b"
     # Firecrawl 스크래핑 서버. Docker compose에서는 FIRECRAWL_URL=http://firecrawl-local:8765로 override.
     firecrawl_url: str = "http://localhost:8765"
     firecrawl_extract_provider: str = "local"
