@@ -20,6 +20,8 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 
+from app.scrapers.brand_dictionary import detect_brand
+
 logger = logging.getLogger(__name__)
 
 # Reddit 지정 형식: <platform>:<app ID>:<version> (by /u/<username>)
@@ -57,14 +59,6 @@ DEAL_RE = re.compile(
     re.I,
 )
 
-# 브랜드 표기 변형 — 레지스트리 이름만으로는 못 잡는 것들.
-BRAND_ALIASES: dict[str, tuple[str, ...]] = {
-    "SK-II": ("sk-ii", "skii", "sk2"),
-    "innisfree": ("innisfree",),
-    "Beauty of Joseon": ("beauty of joseon",),
-}
-
-
 @dataclass(frozen=True)
 class DealSignal:
     """세일이 났다는 신호. 가격이 아니다 — 승격은 공홈 실가격 확인 후."""
@@ -87,19 +81,17 @@ def _parse_updated(raw: str) -> datetime | None:
 
 
 def match_brand(title: str, brands: list[str]) -> str | None:
-    """제목에 등장하는 브랜드. 가장 긴 매칭이 이긴다(SK2가 SK-II를 가리지 않도록)."""
+    """제목에 등장하는 브랜드.
+
+    감지 사전을 먼저 본다 — 수집 레지스트리(가격을 받을 수 있는 26개)는 감지 범위가
+    너무 좁아서 K뷰티 딜을 통째로 흘렸다(2026-08-06 Torriden 실측).
+    """
+    detected = detect_brand(title)
+    if detected:
+        return detected
     low = title.lower()
-    hits: list[tuple[str, str]] = []
-    for brand in brands:
-        if brand.lower() in low:
-            hits.append((brand, brand))
-    for brand, aliases in BRAND_ALIASES.items():
-        for alias in aliases:
-            if alias in low:
-                hits.append((brand, alias))
-    if not hits:
-        return None
-    return max(hits, key=lambda h: len(h[1]))[0]
+    hits = [b for b in brands if b.lower() in low]
+    return max(hits, key=len) if hits else None
 
 
 def parse_feed(xml: str, brands: list[str], max_age_hours: int = MAX_AGE_HOURS) -> list[DealSignal]:
