@@ -30,3 +30,6 @@ Thumbs.db
 
 # Windows reserved device artifact
 nul
+
+# Celery beat 스케줄 상태 (LaunchAgent 실행 시 backend/에 생성)
+celerybeat-schedule*
