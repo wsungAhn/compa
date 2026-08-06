@@ -31,7 +31,8 @@ USER_AGENT = "python:com.mwco.compa:v0.1.0 (by /u/wsungahn)"
 # 리필 속도가 대략 1req/60s다. 그래서 아래 페이싱은 60초를 바닥으로 잡는다.
 MIN_INTERVAL_SECONDS = 60
 # 고정 주기는 그 자체로 기계 지문이다. 바닥 이상에서 불규칙하게 고른다.
-INTERVAL_CHOICES = (60, 90, 120, 180)
+# 값이 딱 떨어지는 것(90/120/180)도 지문이 되므로 어중간한 수를 쓴다.
+INTERVAL_CHOICES = (60, 76, 100, 200)
 
 # 딜성 문구 밀도만 보면 beautydeals 14 / MUAontheCheap 23 / Ulta 9 였지만, 연령
 # 분포를 재보니 beautydeals의 new.rss는 **최신 글이 6년 전**(중앙값 11년)인 죽은
