@@ -231,8 +231,12 @@ def _build_recommendation(events: list[SaleEvent], country: str | None = None) -
 
     shallow = position.history_days < 3
 
-    # 정가 대비 할인은 오늘 관측만으로도 사실이다 — 이력 깊이와 무관하게 말할 수 있다.
-    if position.off_list_pct and (shallow or position.at_observed_low):
+    # 정가(compare_at_price)는 판매자가 넣는 값이라 그대로 믿을 수 없다. 세트 상품은
+    # "정가"가 구성품 합계라 상시 할인처럼 보인다(실측 2026-08-05: MERIT는 카탈로그의
+    # 81.9%가 '할인 중', 예: 세트 $90 vs "정가" $100). 번들이면 정가를 신뢰하지 않는다.
+    trustworthy_list_price = position.off_list_pct and not any(e.is_bundle for e in events)
+
+    if trustworthy_list_price and (shallow or position.at_observed_low):
         reason = f"정가 대비 {position.off_list_pct:.0f}% 할인 중입니다."
         if not shallow:
             reason += f" 관측된 최저가({position.observed_min:,.0f}) 수준입니다."
@@ -271,7 +275,8 @@ def _build_recommendation(events: list[SaleEvent], country: str | None = None) -
         return _with_position(Recommendation(
             verdict="buy_now",
             reason=f"관측된 최저가({position.observed_min:,.0f}) 수준입니다.",
-            expected_discount=position.off_list_pct,
+            # 신뢰할 수 없는 정가를 할인율로 되돌려 내보내지 않는다.
+            expected_discount=position.off_list_pct if trustworthy_list_price else None,
         ))
 
     return _with_position(Recommendation(

@@ -129,3 +129,23 @@ def test_country_drives_the_sale_calendar() -> None:
     us = _build_recommendation(events, country="US")
     assert us.next_event_name is not None
     assert "11.11" not in us.next_event_name
+
+
+def test_bundle_list_price_is_not_trusted() -> None:
+    """세트의 "정가"는 구성품 합계라 상시 할인처럼 보인다(MERIT 카탈로그 81.9%)."""
+    events = [_event(90.0, 10), _event(90.0, 0, list_price=100.0)]
+    for e in events:
+        e.is_bundle = True
+    rec = _build_recommendation(events)
+    # 가격이 관측 최저 수준이라는 판단 자체는 유효하다 — 다만 "정가 대비 N% 할인"을
+    # 주장하거나 그 할인율을 내보내면 안 된다.
+    assert "정가 대비" not in rec.reason
+    assert rec.expected_discount is None
+
+
+def test_non_bundle_list_price_is_trusted() -> None:
+    events = [_event(90.0, 10), _event(75.0, 0, list_price=103.0)]
+    for e in events:
+        e.is_bundle = False
+    rec = _build_recommendation(events)
+    assert rec.verdict == "buy_now"
