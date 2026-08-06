@@ -23,9 +23,6 @@ from app.scrapers.brands.shopify import BRAND_SCRAPERS
 from app.scrapers.brands.amoremall import AmoremallScraper
 from app.scrapers.brands.chantecaille_kr import ChantecailleKRScraper
 from app.scrapers.brands.lamer_kr import LaMerKRScraper
-from app.scrapers.brands.laprairie import LaPrairieScraper
-from app.scrapers.brands.skii import SKIIScraper
-from app.scrapers.brands.tatcha import TatchaScraper
 from app.scrapers.cn.tmall import TmallScraper
 from app.scrapers.cn.xiaohongshu import XiaohongshuScraper
 from app.scrapers.jp.cosme import CosmeScraper
@@ -47,12 +44,9 @@ SCRAPERS: dict[str, tuple[type[BaseScraper], str]] = {
     "Sephora":   (SephoraScraper,   "en"),
     "Ulta":      (UltaScraper,      "en"),
     "Amazon US": (AmazonScraper,    "en"),
-    "SK-II Official":          (SKIIScraper,           "en"),
     "Shiseido Official":       (ShiseidoScraper,       "en"),
     "La Mer Official KR":      (LaMerKRScraper,        "ko"),
     "Chantecaille Official KR":(ChantecailleKRScraper, "ko"),
-    "La Prairie Official":     (LaPrairieScraper,      "ko"),
-    "Tatcha Official":         (TatchaScraper,         "en"),
     "Rakuten":   (RakutenScraper,   "ja"),
     "@cosme":    (CosmeScraper,     "ja"),
     "Tmall":     (TmallScraper,     "zh"),
@@ -96,8 +90,8 @@ FAST_SCRAPERS: set[str] = {"네이버쇼핑"}
 
 # Browser 스크래퍼 목록 (semaphore 적용)
 _BROWSER_SCRAPERS: set[str] = {
-    "올리브영", "아모레몰", "Sephora", "SK-II Official", "Shiseido Official",
-    "La Mer Official KR", "Chantecaille Official KR", "La Prairie Official", "Tatcha Official",
+    "올리브영", "아모레몰", "Sephora", "Shiseido Official",
+    "La Mer Official KR", "Chantecaille Official KR",
 }
 
 # 번역 결과 인메모리 캐시
