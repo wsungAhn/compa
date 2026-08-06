@@ -103,3 +103,64 @@ async def record(db: AsyncSession, obs: Observation) -> SaleWindow | None:
     )
     db.add(window)
     return window
+
+
+@dataclass(frozen=True)
+class Prediction:
+    """반복 관측에서 뽑은 다음 세일 주차."""
+
+    recurrence_key: str
+    iso_week: int
+    years_observed: int
+    week_spread: int  # 최대-최소(참고용). 이상치 하나에 무너지므로 판정엔 쓰지 않는다
+    concentration: float  # 중앙값 ±1주 안에 들어온 연도 비율
+    label: str | None
+
+    @property
+    def is_reliable(self) -> bool:
+        """3년 이상 관측됐고 중앙값 ±1주에 70% 이상 몰릴 때만 D-day를 말한다.
+
+        최대-최소 편차를 쓰면 이상치 하나가 판정을 뒤집는다 — 실측에서 블랙프라이데이
+        11년치 중 10년이 W47~48인데 W28짜리 하울 하나 때문에 편차가 20으로 튀어
+        "흔들림"으로 오판됐다. 집중도는 그 하나를 견딘다.
+        """
+        return self.years_observed >= 3 and self.concentration >= 0.7
+
+
+def monday_of(iso_year: int, iso_week: int) -> date:
+    return date.fromisocalendar(iso_year, min(max(iso_week, 1), 52), 1)
+
+
+async def predict(db: AsyncSession, recurrence_key: str) -> Prediction | None:
+    """연도 간 관측을 모아 이 행사가 몇 주차에 열리는지 추정한다.
+
+    중앙값을 쓴다 — 한 해 이상치(코로나 해에 밀린 행사 등)가 평균을 끌고 가면
+    사용자를 엉뚱한 주에 대기시킨다.
+    """
+    rows = (
+        await db.execute(
+            select(SaleWindow)
+            .where(
+                SaleWindow.recurrence_key == recurrence_key,
+                SaleWindow.deleted_at.is_(None),
+            )
+            .order_by(SaleWindow.iso_year)
+        )
+    ).scalars().all()
+    if not rows:
+        return None
+
+    by_year: dict[int, int] = {}
+    for row in rows:
+        by_year.setdefault(row.iso_year, row.iso_week)
+    weeks = sorted(by_year.values())
+    median = weeks[len(weeks) // 2]
+    near = sum(1 for w in weeks if abs(w - median) <= 1)
+    return Prediction(
+        recurrence_key=recurrence_key,
+        iso_week=median,
+        years_observed=len(by_year),
+        week_spread=weeks[-1] - weeks[0],
+        concentration=round(near / len(weeks), 3),
+        label=next((r.event_name for r in rows if r.event_name), None),
+    )

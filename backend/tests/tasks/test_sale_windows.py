@@ -85,3 +85,59 @@ async def test_estimates_do_not_claim_an_exact_date() -> None:
         assert row.iso_week == 15            # 슬롯은 남는다
         assert row.is_estimate is True
         assert row.recurrence_key == "sephora_spring"
+
+
+@pytest.mark.asyncio
+async def test_prediction_survives_a_single_outlier_year() -> None:
+    """실측: 블프 11년치 중 10년이 W47~48인데 W28짜리 하울 하나로 편차가 20이 됐다.
+    최대-최소로 판정하면 그 하나에 무너지므로 중앙값 ±1주 집중도를 쓴다."""
+    async with AsyncSessionLocal() as db:
+        weeks = [47, 47, 47, 48, 48, 48, 47, 48, 28]  # 마지막이 이상치
+        for i, week in enumerate(weeks):
+            await sale_windows.record(db, sale_windows.Observation(
+                brand="TEST_BF", source="youtube_timing",
+                on=sale_windows.monday_of(2010 + i, week),
+                is_estimate=True, recurrence_key="TEST_bf",
+                source_url=f"ytsearch:TEST_bf:{2010 + i}",
+            ))
+        await db.commit()
+
+        pred = await sale_windows.predict(db, "TEST_bf")
+        assert pred is not None
+        assert pred.iso_week in (47, 48)
+        assert pred.week_spread >= 19          # 이상치가 편차는 망가뜨리지만
+        assert pred.concentration >= 0.85      # 집중도는 견딘다
+        assert pred.is_reliable
+
+
+@pytest.mark.asyncio
+async def test_moving_event_is_not_declared_reliable() -> None:
+    """프라임데이는 해마다 움직인다 — 집중도가 낮으면 주차를 단정하지 않는다."""
+    async with AsyncSessionLocal() as db:
+        for i, week in enumerate([25, 27, 27, 2, 28, 26]):
+            await sale_windows.record(db, sale_windows.Observation(
+                brand="TEST_PD", source="youtube_timing",
+                on=sale_windows.monday_of(2019 + i, week),
+                is_estimate=True, recurrence_key="TEST_pd",
+                source_url=f"ytsearch:TEST_pd:{2019 + i}",
+            ))
+        await db.commit()
+        pred = await sale_windows.predict(db, "TEST_pd")
+        assert pred is not None and not pred.is_reliable
+
+
+@pytest.mark.asyncio
+async def test_two_years_is_not_enough() -> None:
+    async with AsyncSessionLocal() as db:
+        for i in range(2):
+            await sale_windows.record(db, sale_windows.Observation(
+                brand="TEST_Thin", source="youtube_timing",
+                on=sale_windows.monday_of(2024 + i, 15),
+                is_estimate=True, recurrence_key="TEST_thin",
+                source_url=f"ytsearch:TEST_thin:{2024 + i}",
+            ))
+        await db.commit()
+        pred = await sale_windows.predict(db, "TEST_thin")
+        assert pred is not None
+        assert pred.concentration == 1.0      # 완벽히 일치해도
+        assert not pred.is_reliable           # 2년으로는 반복이라 못 한다

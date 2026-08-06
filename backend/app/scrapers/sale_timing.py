@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter
+from datetime import date
 from dataclasses import dataclass
 
 
@@ -67,6 +68,45 @@ def estimate(query: str, upload_dates: list[str]) -> TimingEstimate | None:
         year_span=(min(years), max(years)),
         months=dict(sorted(months.items())),
     )
+
+
+@dataclass(frozen=True)
+class YearPeak:
+    """한 해의 최빈 주차. 연도별로 나눠야 반복 여부를 볼 수 있다."""
+
+    iso_year: int
+    iso_week: int
+    count: int
+    total: int
+
+    @property
+    def share(self) -> float:
+        return round(self.count / self.total, 3) if self.total else 0.0
+
+
+def peaks_by_year(upload_dates: list[str], min_per_year: int = 3) -> list[YearPeak]:
+    """업로드 날짜 → 연도별 최빈 ISO 주차.
+
+    월 단위 집계는 "4월 어디쯤"까지만 말한다. 주차로 쪼개고 연도별로 나눠야
+    "작년에도 같은 주였나"를 물을 수 있다 — 반복 예측의 재료다.
+    표본이 얇은 해는 한 편이 그 해를 대표해버리므로 버린다.
+    """
+    by_year: dict[int, list[int]] = {}
+    for raw in upload_dates:
+        try:
+            day = date(int(raw[:4]), int(raw[4:6]), int(raw[6:8]))
+        except ValueError:
+            continue
+        iso = day.isocalendar()
+        by_year.setdefault(iso[0], []).append(iso[1])
+
+    peaks: list[YearPeak] = []
+    for year, weeks in by_year.items():
+        if len(weeks) < min_per_year:
+            continue
+        week, count = Counter(weeks).most_common(1)[0]
+        peaks.append(YearPeak(iso_year=year, iso_week=week, count=count, total=len(weeks)))
+    return sorted(peaks, key=lambda p: p.iso_year)
 
 
 def to_record(est: TimingEstimate) -> dict[str, object]:

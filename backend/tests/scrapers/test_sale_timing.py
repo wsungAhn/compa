@@ -1,5 +1,6 @@
 """세일 시기 관측 — 하울 업로드 분포로 캘린더의 추측 날짜를 대체한다."""
 import json
+from datetime import date
 
 from app.core import sale_calendar
 from app.scrapers.sale_timing import estimate, parse_upload_dates, to_record
@@ -87,3 +88,41 @@ def test_roundtrip_record_shape() -> None:
     assert est is not None
     rec = to_record(est)
     assert rec["peak_month"] == 4 and rec["months"] == {"4": 2}
+
+
+def test_peaks_by_year_splits_weeks_per_year() -> None:
+    """월 집계는 "4월 어디쯤"까지다 — 반복을 보려면 연도별 주차로 쪼개야 한다."""
+    from app.scrapers.sale_timing import peaks_by_year
+
+    dates = ["20221125", "20221126", "20221128", "20211126", "20211127", "20211129"]
+    peaks = {p.iso_year: p.iso_week for p in peaks_by_year(dates)}
+    assert peaks == {2021: 47, 2022: 47}
+
+
+def test_thin_years_are_dropped() -> None:
+    """한 편이 그 해를 대표해버리면 안 된다."""
+    from app.scrapers.sale_timing import peaks_by_year
+
+    assert peaks_by_year(["20220401", "20230401"]) == []
+
+
+def test_predictions_do_not_override_exact_rules(tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """블프는 "11월 넷째 목요일 다음날"로 확정된다. 하울 분포는 W47/W48에 걸쳐
+    median이 한 주 어긋나므로, 규칙이 있으면 규칙이 이긴다."""
+    import json as _json
+
+    path = tmp_path / "sale_timing.json"
+    path.write_text(_json.dumps({
+        "months": [],
+        "predictions": [
+            {"recurrence_key": "black_friday", "iso_week": 47, "years_observed": 11,
+             "week_spread": 20, "concentration": 0.91, "label": "Black Friday", "reliable": True},
+            {"recurrence_key": "some_new_event", "iso_week": 20, "years_observed": 4,
+             "week_spread": 1, "concentration": 0.9, "label": "New Event", "reliable": True},
+        ],
+    }), encoding="utf-8")
+    monkeypatch.setattr(sale_calendar, "_MEASURED_PATH", path)
+
+    names = [s.name for s in sale_calendar.predicted_sales(date(2026, 1, 5))]
+    assert "Black Friday" not in names   # 규칙이 담당
+    assert "New Event" in names          # 규칙이 없는 자리는 예측이 메운다

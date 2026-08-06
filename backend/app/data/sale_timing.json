@@ -1,95 +1,151 @@
-[
-  {
-    "query": "sephora sale haul",
-    "peak_month": 4,
-    "share": 0.9,
-    "sample_size": 30,
-    "year_span": [
-      2025,
-      2026
-    ],
-    "months": {
-      "4": 27,
-      "5": 2,
-      "6": 1
+{
+  "months": [
+    {
+      "query": "sephora sale haul",
+      "peak_month": 4,
+      "share": 0.8,
+      "sample_size": 40,
+      "year_span": [
+        2023,
+        2026
+      ],
+      "months": {
+        "1": 1,
+        "4": 32,
+        "10": 2,
+        "11": 5
+      },
+      "confident": true,
+      "event": "Sephora Savings Event (봄)",
+      "recurrence_key": "sephora_spring"
     },
-    "confident": true,
-    "event": "Sephora Savings Event (봄)"
-  },
-  {
-    "query": "sephora fall sale haul",
-    "peak_month": 4,
-    "share": 0.767,
-    "sample_size": 30,
-    "year_span": [
-      2022,
-      2026
-    ],
-    "months": {
-      "1": 1,
-      "4": 23,
-      "5": 1,
-      "8": 1,
-      "10": 3,
-      "11": 1
+    {
+      "query": "sephora fall sale haul",
+      "peak_month": 4,
+      "share": 0.9,
+      "sample_size": 40,
+      "year_span": [
+        2022,
+        2026
+      ],
+      "months": {
+        "1": 1,
+        "4": 36,
+        "8": 1,
+        "10": 1,
+        "11": 1
+      },
+      "confident": true,
+      "event": "Sephora Savings Event (가을)",
+      "recurrence_key": "sephora_fall"
     },
-    "confident": true,
-    "event": "Sephora Savings Event (가을)"
-  },
-  {
-    "query": "ulta 21 days of beauty haul",
-    "peak_month": 3,
-    "share": 0.767,
-    "sample_size": 30,
-    "year_span": [
-      2021,
-      2026
-    ],
-    "months": {
-      "2": 1,
-      "3": 23,
-      "4": 4,
-      "10": 2
+    {
+      "query": "ulta 21 days of beauty haul",
+      "peak_month": 3,
+      "share": 0.65,
+      "sample_size": 40,
+      "year_span": [
+        2016,
+        2026
+      ],
+      "months": {
+        "2": 1,
+        "3": 26,
+        "4": 5,
+        "8": 3,
+        "9": 2,
+        "10": 3
+      },
+      "confident": true,
+      "event": "Ulta 21 Days of Beauty",
+      "recurrence_key": "ulta_21days"
     },
-    "confident": true,
-    "event": "Ulta 21 Days of Beauty"
-  },
-  {
-    "query": "black friday beauty haul",
-    "peak_month": 11,
-    "share": 0.467,
-    "sample_size": 30,
-    "year_span": [
-      2009,
-      2022
-    ],
-    "months": {
-      "1": 2,
-      "7": 1,
-      "11": 14,
-      "12": 13
+    {
+      "query": "black friday beauty haul",
+      "peak_month": 11,
+      "share": 0.625,
+      "sample_size": 40,
+      "year_span": [
+        2009,
+        2025
+      ],
+      "months": {
+        "1": 1,
+        "7": 1,
+        "11": 25,
+        "12": 13
+      },
+      "confident": true,
+      "event": "Black Friday",
+      "recurrence_key": "black_friday"
     },
-    "confident": true,
-    "event": "Black Friday"
-  },
-  {
-    "query": "amazon prime day beauty haul",
-    "peak_month": 7,
-    "share": 0.367,
-    "sample_size": 30,
-    "year_span": [
-      2017,
-      2026
-    ],
-    "months": {
-      "1": 1,
-      "4": 1,
-      "6": 10,
-      "7": 11,
-      "8": 2,
-      "10": 5
+    {
+      "query": "amazon prime day beauty haul",
+      "peak_month": 7,
+      "share": 0.45,
+      "sample_size": 40,
+      "year_span": [
+        2017,
+        2026
+      ],
+      "months": {
+        "1": 1,
+        "4": 1,
+        "6": 11,
+        "7": 18,
+        "8": 3,
+        "10": 6
+      },
+      "confident": true,
+      "event": "Amazon Prime Day",
+      "recurrence_key": "amazon_prime_day"
+    }
+  ],
+  "predictions": [
+    {
+      "recurrence_key": "sephora_spring",
+      "iso_week": 44,
+      "years_observed": 2,
+      "week_spread": 28,
+      "concentration": 0.5,
+      "label": "Sephora Savings Event (봄)",
+      "reliable": false
     },
-    "confident": false,
-    "event": "Amazon Prime Day"
-  }
-]
+    {
+      "recurrence_key": "sephora_fall",
+      "iso_week": 45,
+      "years_observed": 2,
+      "week_spread": 29,
+      "concentration": 0.5,
+      "label": "Sephora Savings Event (가을)",
+      "reliable": false
+    },
+    {
+      "recurrence_key": "ulta_21days",
+      "iso_week": 42,
+      "years_observed": 2,
+      "week_spread": 32,
+      "concentration": 0.5,
+      "label": "Ulta 21 Days of Beauty",
+      "reliable": false
+    },
+    {
+      "recurrence_key": "black_friday",
+      "iso_week": 47,
+      "years_observed": 11,
+      "week_spread": 20,
+      "concentration": 0.909,
+      "label": "Black Friday",
+      "reliable": true
+    },
+    {
+      "recurrence_key": "amazon_prime_day",
+      "iso_week": 27,
+      "years_observed": 6,
+      "week_spread": 26,
+      "concentration": 0.667,
+      "label": "Amazon Prime Day",
+      "reliable": false
+    }
+  ]
+}

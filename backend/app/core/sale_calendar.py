@@ -95,9 +95,10 @@ def measured_sales() -> list[ApproximateSale]:
     if not _MEASURED_PATH.is_file():
         return []
     try:
-        records = json.loads(_MEASURED_PATH.read_text(encoding="utf-8"))
+        payload = json.loads(_MEASURED_PATH.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return []
+    records = payload.get("months", payload) if isinstance(payload, dict) else payload
 
     merged: dict[int, ApproximateSale] = {}
     for rec in records:
@@ -125,6 +126,54 @@ def measured_sales() -> list[ApproximateSale]:
     return sorted(merged.values(), key=lambda s: s.month)
 
 
+def predicted_sales(today: date) -> list[SaleEvent]:
+    """연도 간 관측에서 나온 주차 예측. 근거가 약하면 아무 말도 하지 않는다.
+
+    reliable=False(관측 1년 또는 주차가 흔들림)는 제외한다 — 틀린 D-day를 자신 있게
+    말하는 것이 적대감사 R1의 핵심 지적이었다.
+    """
+    if not _MEASURED_PATH.is_file():
+        return []
+    try:
+        payload = json.loads(_MEASURED_PATH.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return []
+    if not isinstance(payload, dict):
+        return []
+
+    # 규칙으로 정확한 날짜가 나오는 행사는 예측이 끼어들지 않는다. 블랙프라이데이는
+    # "11월 넷째 목요일 다음날"로 확정되는데, 하울 분포는 W47/W48에 걸쳐 median이
+    # 한 주 어긋난다 — 정확한 규칙이 있으면 그쪽이 옳다.
+    rule_covered = {name.lower() for name, _rule, _country in RULES}
+
+    out: list[SaleEvent] = []
+    for pred in payload.get("predictions", []):
+        if not pred.get("reliable"):
+            continue
+        label = str(pred.get("label") or pred.get("recurrence_key") or "")
+        key = str(pred.get("recurrence_key") or "").replace("_", " ")
+        if label.lower() in rule_covered or key in rule_covered:
+            continue
+        week = int(pred.get("iso_week", 0))
+        if not 1 <= week <= 53:
+            continue
+        for year in (today.year, today.year + 1):
+            try:
+                when = date.fromisocalendar(year, week, 1)
+            except ValueError:
+                continue
+            delta = (when - today).days
+            if 0 <= delta <= 365:
+                out.append(SaleEvent(
+                    name=label or key,
+                    when=when,
+                    country="US",
+                    days_until=delta,
+                ))
+                break
+    return sorted(out, key=lambda s: s.days_until)
+
+
 def upcoming_sales(today: date, country: str | None = None, horizon_days: int = 365) -> list[SaleEvent]:
     """오늘 이후 horizon_days 이내의 세일을 가까운 순으로 반환."""
     found: list[SaleEvent] = []
@@ -141,6 +190,12 @@ def upcoming_sales(today: date, country: str | None = None, horizon_days: int = 
 
 
 def next_sale(today: date, country: str | None = None) -> SaleEvent | None:
-    """가장 가까운 다음 정기 세일."""
+    """가장 가까운 다음 정기 세일.
+
+    규칙으로 확정되는 행사와 관측에서 나온 예측을 함께 본다. 예측 쪽은 근거가
+    충분한 것만 들어온다(predicted_sales).
+    """
     sales = upcoming_sales(today, country)
+    if not country or country == "US":
+        sales = sorted(sales + predicted_sales(today), key=lambda s: s.days_until)
     return sales[0] if sales else None
