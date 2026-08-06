@@ -213,6 +213,7 @@ async def _save_events(
             confidence=s.confidence,
             needs_review=s.confidence < 0.7,
             scraped_name=s.product_name,
+            size_ml=s.size_ml,
             is_bundle=_is_bundle(s.product_name),
             raw_text=s.raw_text,
         ).on_conflict_do_nothing()

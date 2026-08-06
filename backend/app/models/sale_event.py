@@ -32,6 +32,9 @@ class SaleEvent(Base):
     confidence: Mapped[float | None] = mapped_column(Float)
     needs_review: Mapped[bool | None] = mapped_column(default=False)
     scraped_name: Mapped[str | None] = mapped_column(Text)
+    # ml로 정규화한 용량. 30ml 미니어처와 230ml 본품을 같은 상품으로 묶으면
+    # "일본이 3배 싸다"는 거짓 비교가 나간다.
+    size_ml: Mapped[float | None] = mapped_column(Float)
     is_bundle: Mapped[bool] = mapped_column(default=False, server_default="false")
     raw_text: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

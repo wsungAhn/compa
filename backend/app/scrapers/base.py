@@ -45,6 +45,9 @@ class ScrapedEvent:
     confidence: float = 1.0
     raw_text: str | None = None
     event_type: str | None = None  # "regular" | "surprise" | None
+    # ml로 정규화한 용량. 크로스 통화 매칭의 급소 — 미국은 oz, 일본은 ml로 표기해
+    # 정규화 없이는 정답 쌍까지 탈락한다(실측 0/10).
+    size_ml: float | None = None
 
 
 class BaseScraper(ABC):

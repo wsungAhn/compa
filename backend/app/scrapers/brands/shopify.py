@@ -13,6 +13,7 @@ from typing import Any
 import httpx
 
 from app.core.proxy import httpx_proxy
+from app.core.size import parse_size_ml
 from app.scrapers.base import BaseScraper, ScrapedEvent
 
 logger = logging.getLogger(__name__)
@@ -58,15 +59,21 @@ def parse_products(
         if not variants:
             continue
 
-        # 가장 싼 판매 가능 variant 기준 (사이즈별로 가격이 갈린다)
+        # 가장 싼 판매 가능 variant 기준 (사이즈별로 가격이 갈린다).
+        # variant.title이 용량이다("2.5 oz") — 상품명엔 없으므로 여기서 안 뽑으면
+        # 용량 정보가 파이프라인에 아예 안 실린다.
         priced = [
-            (_to_float(v.get("price")), _to_float(v.get("compare_at_price")))
+            (
+                _to_float(v.get("price")),
+                _to_float(v.get("compare_at_price")),
+                parse_size_ml(str(v.get("title") or "")),
+            )
             for v in variants
         ]
-        priced = [(p, c) for p, c in priced if p]
+        priced = [(p, c, s) for p, c, s in priced if p]
         if not priced:
             continue
-        sale_price, compare_at = min(priced, key=lambda pair: pair[0] or 0.0)
+        sale_price, compare_at, size_ml = min(priced, key=lambda tri: tri[0] or 0.0)
         if not sale_price:
             continue
 
@@ -82,6 +89,7 @@ def parse_products(
             ScrapedEvent(
                 product_name=title,
                 brand=brand,
+                size_ml=size_ml or parse_size_ml(title),
                 original_price=original_price,
                 sale_price=sale_price,
                 discount_rate=discount_rate,
