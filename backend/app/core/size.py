@@ -46,6 +46,35 @@ def parse_size_ml(text: str | None) -> float | None:
     return round(value, 1)
 
 
+def all_sizes_ml(text: str | None) -> list[float]:
+    """텍스트에 등장하는 모든 용량(ml). 중복은 제거하고 순서는 유지한다."""
+    if not text:
+        return []
+    out: list[float] = []
+    for raw, unit in _SIZE_RE.findall(text):
+        try:
+            value = float(raw.replace(",", "."))
+        except ValueError:
+            continue
+        if value <= 0 or value > 10000:
+            continue
+        ml = round(value * FL_OZ_TO_ML, 1) if unit.lower().startswith(("fl", "oz")) else round(value, 1)
+        if ml not in out:
+            out.append(ml)
+    return out
+
+
+def unambiguous_size_ml(text: str | None) -> float | None:
+    """용량이 하나로 특정될 때만 반환한다.
+
+    가격이 하나인데 제목에 용량이 여러 개면 그 가격을 어느 용량에 붙일지 알 수 없다.
+    추측하면 거짓 비교가 나간다 — 실측: "…30m, 75ml, まとめ買い お試し" 리스팅에서
+    75ml을 집어 ¥1,980(정본 $99)이 됐다. 모를 때는 모른다고 두는 게 맞다.
+    """
+    sizes = all_sizes_ml(text)
+    return sizes[0] if len(sizes) == 1 else None
+
+
 def sizes_match(a: float | None, b: float | None, tolerance: float = 0.08) -> bool:
     """두 용량이 같은 상품으로 볼 만큼 가까운가.
 

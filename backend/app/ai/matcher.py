@@ -45,6 +45,67 @@ def normalize_name(name: str) -> str:
     return cleaned
 
 
+_NAME_STOPWORDS = {
+    "the", "and", "for", "with", "set", "kit", "duo", "new", "mini",
+    "oz", "ml", "size", "value", "official", "official)",
+}
+
+
+def _name_tokens(text: str) -> set[str]:
+    cleaned = re.sub(r"[^\w가-힣ぁ-んァ-ン一-龥]+", " ", text.lower())
+    return {w for w in cleaned.split() if len(w) > 2 and w not in _NAME_STOPWORDS}
+
+
+# 제품 종류. 종류가 다르면 이름이 아무리 겹쳐도 같은 제품이 아니다
+# ("Facial Treatment Essence"와 "Facial Treatment Mask"는 3토큰을 공유한다).
+_PRODUCT_TYPES = {
+    "essence", "serum", "ampoule", "cream", "lotion", "toner", "mask", "cleanser",
+    "oil", "balm", "sunscreen", "spf", "cushion", "foundation", "lipstick", "tint",
+    "shampoo", "conditioner", "mist", "emulsion", "gel", "scrub", "peel", "patch",
+    "에센스", "세럼", "앰플", "크림", "로션", "토너", "마스크", "클렌저", "쿠션",
+}
+
+
+def _types_in(tokens: set[str]) -> set[str]:
+    return tokens & _PRODUCT_TYPES
+
+
+def _same_product_evidence(candidate: Product, normalized_input: str) -> bool:
+    """후보와 같은 제품으로 볼 근거가 있는가.
+
+    브랜드 일치만으로 합치면 카탈로그가 무너진다(2026-08-06 실측: SK-II 8개 제품이
+    한 행으로). 여기서는 두 가지만 본다 — 종류가 다르면 거부, 그리고 이름 토큰이
+    충분히 겹칠 것. 정교한 매칭(번역·용량·포함도)은 크로스 통화 계획 B단계 담당이다.
+    """
+    incoming = _name_tokens(normalized_input)
+    if not incoming:
+        return False
+    incoming_types = _types_in(incoming)
+
+    for column in COUNTRY_NAME_COLUMN.values():
+        value = getattr(candidate, column, None)
+        if not value:
+            continue
+        existing = _name_tokens(str(value))
+        if not existing:
+            continue
+        existing_types = _types_in(existing)
+        # 양쪽 다 종류를 밝혔는데 다르면 같은 제품이 아니다.
+        if incoming_types and existing_types and not (incoming_types & existing_types):
+            continue
+        shared = incoming & existing
+        if not shared:
+            continue
+        smaller = min(len(incoming), len(existing))
+        if len(shared) >= 2 and smaller and len(shared) / smaller >= 0.5:
+            return True
+        # 한쪽 이름이 토큰 하나뿐이면 그 토큰이 곧 정체성이다("윤조에센스").
+        # 다만 짧은 일반어("oil", "set")가 이 예외를 타면 안 되므로 길이를 요구한다.
+        if smaller == 1 and max(len(w) for w in shared) >= 4:
+            return True
+    return False
+
+
 async def find_matching_product(
     db: AsyncSession,
     name: str,
@@ -112,7 +173,12 @@ async def find_matching_product(
                 return candidate
 
         if len(brand_candidates) == 1:
-            return brand_candidates[0]
+            # 브랜드만 같다고 같은 제품이 아니다. 이 지름길은 브랜드에 제품이 하나
+            # 생기는 순간 **그 브랜드의 모든 신규 제품을 그 하나로 빨아들인다**
+            # (2026-08-06 실측: SK-II 공홈의 SKINPOWER·LXP·Cleanser·Mask·Essence가
+            # 전부 한 행으로 합쳐졌다). 이름에 최소한의 근거가 있을 때만 채택한다.
+            if _same_product_evidence(brand_candidates[0], normalized_input):
+                return brand_candidates[0]
 
         # Stage 3: Claude fallback (if multiple brand candidates)
         if len(brand_candidates) > 1 and settings.anthropic_api_key:

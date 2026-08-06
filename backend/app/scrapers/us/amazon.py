@@ -10,7 +10,7 @@ from bs4 import BeautifulSoup
 
 from app.core.config import settings
 from app.core.proxy import httpx_proxy
-from app.core.size import parse_size_ml
+from app.core.size import unambiguous_size_ml
 from app.scrapers.base import BaseScraper, ScrapedEvent
 
 _SEARCH_URL = "https://www.amazon.com/s?k={query}&i=beauty"
@@ -298,7 +298,7 @@ def parse_search_html(html: str, url: str) -> list[ScrapedEvent]:
                 ScrapedEvent(
                     product_name=name,
                     brand=brand,
-                    size_ml=parse_size_ml(name),
+                    size_ml=unambiguous_size_ml(name),
                     original_price=original_price,
                     sale_price=sale_price,
                     discount_rate=discount_rate if discount_rate and discount_rate > 0 else None,

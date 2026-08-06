@@ -64,3 +64,20 @@ def test_unknown_size_does_not_reject() -> None:
 def test_multipack_is_flagged() -> None:
     assert is_multipack("SK-II Essence 2 x 30ml")
     assert not is_multipack("SK-II Essence 75ml")
+
+
+def test_multiple_sizes_make_the_size_unknown() -> None:
+    """가격이 하나인데 용량이 여러 개면 그 가격을 어디에 붙일지 알 수 없다.
+    추측하면 거짓 비교가 나가므로 모른다고 둔다."""
+    from app.core.size import all_sizes_ml, unambiguous_size_ml
+
+    assert all_sizes_ml("エッセンス 30ml 75ml 160ml") == [30.0, 75.0, 160.0]
+    assert unambiguous_size_ml("エッセンス 30ml 75ml 160ml") is None
+    assert unambiguous_size_ml("Essence 2.5 oz / 5.4 oz") is None
+
+
+def test_single_size_is_taken() -> None:
+    from app.core.size import unambiguous_size_ml
+
+    assert unambiguous_size_ml("SK-II エッセンス 75ml （化粧水）") == 75.0
+    assert unambiguous_size_ml("PITERA Essence 2.5 oz") == 73.9

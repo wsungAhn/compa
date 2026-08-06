@@ -59,47 +59,45 @@ def parse_products(
         if not variants:
             continue
 
-        # 가장 싼 판매 가능 variant 기준 (사이즈별로 가격이 갈린다).
-        # variant.title이 용량이다("2.5 oz") — 상품명엔 없으므로 여기서 안 뽑으면
-        # 용량 정보가 파이프라인에 아예 안 실린다.
-        priced = [
-            (
-                _to_float(v.get("price")),
-                _to_float(v.get("compare_at_price")),
-                parse_size_ml(str(v.get("title") or "")),
-            )
-            for v in variants
-        ]
-        priced = [(p, c, s) for p, c, s in priced if p]
-        if not priced:
-            continue
-        sale_price, compare_at, size_ml = min(priced, key=lambda tri: tri[0] or 0.0)
-        if not sale_price:
-            continue
-
-        original_price = compare_at if compare_at and compare_at > sale_price else None
-        discount_rate = (
-            round((original_price - sale_price) / original_price * 100, 1)
-            if original_price
-            else None
-        )
-
+        # variant마다 (용량, 가격)이 따로다 — 최저가 하나만 쓰면 나머지 용량의
+        # 가격을 통째로 버리게 된다. 그 버린 값들이 정확히 다른 나라 리스팅
+        # (일본 160ml·230ml 등)의 비교 상대다. 용량별로 분리해 싣는다.
         handle = product.get("handle")
-        events.append(
-            ScrapedEvent(
-                product_name=title,
-                brand=brand,
-                size_ml=size_ml or parse_size_ml(title),
-                original_price=original_price,
-                sale_price=sale_price,
-                discount_rate=discount_rate,
-                currency="USD",
-                start_date=date.today(),
-                event_name=f"{brand} 공홈 {'할인' if original_price else '현재가'}",
-                source_url=f"{base_url}/products/{handle}" if handle else base_url,
-                confidence=0.95,
+        source_url = f"{base_url}/products/{handle}" if handle else base_url
+        seen_sizes: set[float | None] = set()
+
+        for variant in variants:
+            sale_price = _to_float(variant.get("price"))
+            if not sale_price:
+                continue
+            compare_at = _to_float(variant.get("compare_at_price"))
+            size_ml = parse_size_ml(str(variant.get("title") or "")) or parse_size_ml(title)
+            # 같은 용량이 여러 variant로 나뉘면(색상 등) 최저가만 남긴다.
+            if size_ml in seen_sizes:
+                continue
+            seen_sizes.add(size_ml)
+
+            original_price = compare_at if compare_at and compare_at > sale_price else None
+            discount_rate = (
+                round((original_price - sale_price) / original_price * 100, 1)
+                if original_price
+                else None
             )
-        )
+            events.append(
+                ScrapedEvent(
+                    product_name=title,
+                    brand=brand,
+                    size_ml=size_ml,
+                    original_price=original_price,
+                    sale_price=sale_price,
+                    discount_rate=discount_rate,
+                    currency="USD",
+                    start_date=date.today(),
+                    event_name=f"{brand} 공홈 {'할인' if original_price else '현재가'}",
+                    source_url=source_url,
+                    confidence=0.95,
+                )
+            )
 
     return events
 

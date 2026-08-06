@@ -4,7 +4,7 @@ from typing import Any
 import httpx
 
 from app.core.config import settings
-from app.core.size import parse_size_ml
+from app.core.size import unambiguous_size_ml
 from app.scrapers.base import BaseScraper, ScrapedEvent
 
 # 2026 API. The 2017 endpoint (app.rakuten.co.jp) is retired and rejects the
@@ -36,7 +36,7 @@ def parse_response(data: dict[str, Any], query: str) -> list[ScrapedEvent]:
             events.append(
                 ScrapedEvent(
                     product_name=item.get("itemName", query),
-                    size_ml=parse_size_ml(item.get("itemName", "")),
+                    size_ml=unambiguous_size_ml(item.get("itemName", "")),
                     sale_price=sale_price,
                     currency="JPY",
                     start_date=date.today(),

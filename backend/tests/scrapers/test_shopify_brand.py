@@ -60,23 +60,25 @@ def test_compare_at_below_price_is_not_a_discount() -> None:
     assert events[0].original_price is None
 
 
-def test_cheapest_variant_wins() -> None:
-    """사이즈별로 가격이 갈린다 — 표시가는 최저가 기준."""
+def test_every_variant_is_emitted_with_its_own_discount() -> None:
+    """이전엔 최저가 하나만 남겼다. 용량마다 가격도 할인도 다르므로 각각 싣는다."""
     events = parse_products(
         _payload({
             "title": "Essence",
             "handle": "essence",
             "variants": [
-                {"price": "205.00", "compare_at_price": None},
-                {"price": "99.00", "compare_at_price": "120.00"},
+                {"title": "7 oz", "price": "205.00", "compare_at_price": None},
+                {"title": "2.5 oz", "price": "99.00", "compare_at_price": "120.00"},
             ],
         }),
         query="essence",
         brand="SK-II",
         base_url=_BASE,
     )
-    assert events[0].sale_price == 99.0
-    assert events[0].original_price == 120.0
+    assert len(events) == 2
+    assert events[0].sale_price == 205.0 and events[0].original_price is None
+    assert events[1].sale_price == 99.0 and events[1].original_price == 120.0
+    assert [e.size_ml for e in events] == [207.0, 73.9]
 
 
 def test_query_filters_catalog() -> None:
@@ -124,3 +126,44 @@ def test_seed_covers_every_brand_platform() -> None:
 
     seeded = {p["name"] for p in PLATFORMS}
     assert set(BRAND_SCRAPERS) <= seeded
+
+
+def test_each_variant_becomes_its_own_price_point() -> None:
+    """용량마다 가격이 다르다 — 최저가 하나만 쓰면 나머지 용량의 가격을 통째로 버리게
+    되고, 그 버린 값들이 정확히 다른 나라 리스팅의 비교 상대다."""
+    events = parse_products(
+        _payload({
+            "title": "PITERA Facial Treatment Essence",
+            "handle": "fte",
+            "variants": [
+                {"title": "2.5 oz", "price": "99.00"},
+                {"title": "5.4 oz", "price": "190.00"},
+                {"title": "11 oz", "price": "325.00", "compare_at_price": "350.00"},
+            ],
+        }),
+        query="essence",
+        brand="SK-II",
+        base_url=_BASE,
+    )
+    assert len(events) == 3
+    assert [e.size_ml for e in events] == [73.9, 159.7, 325.3]
+    assert [e.sale_price for e in events] == [99.0, 190.0, 325.0]
+    # 할인은 variant 단위로 따로 잡힌다
+    assert events[2].original_price == 350.0
+    assert events[0].original_price is None
+
+
+def test_same_size_variants_keep_only_the_cheapest() -> None:
+    """색상만 다른 같은 용량이 여러 행으로 늘어나면 안 된다."""
+    events = parse_products(
+        _payload({
+            "title": "Cushion", "handle": "c",
+            "variants": [
+                {"title": "15 g / No.21", "price": "60.00"},
+                {"title": "15 g / No.23", "price": "55.00"},
+            ],
+        }),
+        query="cushion", brand="Laneige", base_url=_BASE,
+    )
+    assert len(events) == 1
+    assert events[0].sale_price == 60.0   # 첫 variant 기준(같은 용량은 1건만)

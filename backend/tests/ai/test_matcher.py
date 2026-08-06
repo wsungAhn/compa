@@ -291,25 +291,29 @@ class TestFindMatchingProduct:
 
         assert result is None
 
-    async def test_brand_match_with_single_candidate(self) -> None:
-        """Test brand-based matching with exactly one candidate."""
-        p1 = create_test_product(name_kr="설화수", brand="AMOREPACIFIC")
+    async def test_brand_match_requires_name_evidence(self) -> None:
+        """브랜드만 같다고 합치면 카탈로그가 무너진다.
+
+        이전 구현은 "같은 브랜드 후보가 하나면 그것"이었는데, 브랜드에 제품이 하나
+        생기는 순간 그 브랜드의 모든 신규 제품이 그 하나로 빨려들었다(2026-08-06
+        실측: SK-II 8개 제품이 한 행으로). 이름 근거가 있어야 합친다.
+        """
+        p1 = create_test_product(name_kr="설화수 윤조에센스", brand="AMOREPACIFIC")
         p2 = create_test_product(name_kr="다른상품", brand="OtherBrand")
 
         mock_db = self._create_mock_db([p1, p2])
+        assert await find_matching_product(
+            mock_db, "completely different name", "AMOREPACIFIC", "KR"
+        ) is None
 
-        result = await find_matching_product(
-            mock_db,
-            "completely different name",
-            "AMOREPACIFIC",
-            "KR",
-        )
-
-        assert result == p1
+        mock_db = self._create_mock_db([p1, p2])
+        assert await find_matching_product(
+            mock_db, "설화수 윤조에센스 60ml", "AMOREPACIFIC", "KR"
+        ) == p1
 
     async def test_brand_match_uses_narrowed_candidate_query(self) -> None:
         """Test brand fallback does not consume a full products table result."""
-        target = create_test_product(name_kr="설화수", brand="AMOREPACIFIC")
+        target = create_test_product(name_kr="윤조에센스", brand="AMOREPACIFIC")
         all_products = [
             create_test_product(name_kr=f"다른상품 {idx}", brand="OtherBrand")
             for idx in range(100)
@@ -323,7 +327,7 @@ class TestFindMatchingProduct:
 
         result = await find_matching_product(
             mock_db,
-            "completely different name",
+            "설화수 윤조에센스",
             "AMOREPACIFIC",
             "KR",
         )
