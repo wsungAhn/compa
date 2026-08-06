@@ -57,7 +57,11 @@ async def _latest_price(
 @router.get("/{product_id}/comparison", response_model=ComparisonOut)
 async def get_price_comparison(
     product_id: UUID,
-    preferred: str = Query(..., description="선호 플랫폼명 (예: 네이버쇼핑)"),
+    preferred: str = Query("", description="선호 플랫폼명(예: Sephora). currency만 줘도 된다"),
+    currency: str | None = Query(
+        None,
+        description="사용자 주 통화(USD/KRW/JPY/CNY). 지정하면 모든 가격을 이 통화로 환산",
+    ),
     platforms: str = Query("all", description="비교할 플랫폼 목록 (쉼표 구분, 기본 all)"),
     db: AsyncSession = Depends(get_db),
 ) -> ComparisonOut:
@@ -124,15 +128,19 @@ async def get_price_comparison(
     preferred_converted_price: float | None = None
     alternatives: list[PlatformPrice] = []
 
+    # 사용자 통화가 지정되면 그게 기준이다 — 플랫폼을 몰라도 비교가 성립한다.
+    preferred_currency = currency.upper() if currency else None
+
     for p, e in platform_prices:
-        if p.name == preferred:
-            preferred_currency = e.currency
-            preferred_converted_price = float(e.sale_price) if e.sale_price else None
+        if preferred and p.name == preferred:
+            if preferred_currency is None:
+                preferred_currency = e.currency
             preferred_pp = to_platform_price(p, e, preferred_currency, None)
+            preferred_converted_price = preferred_pp.converted_price
 
     # saving 계산 포함 alternatives 생성 (선호 제외, 모든 통화 포함)
     for p, e in platform_prices:
-        if p.name != preferred:
+        if not preferred or p.name != preferred:
             alternatives.append(
                 to_platform_price(p, e, preferred_currency, preferred_converted_price)
             )

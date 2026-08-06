@@ -12,6 +12,8 @@ from app.ai.pipeline import SOCIAL_PLATFORM_NAME
 from app.api.schemas import ProductEventsOut, ProductSummary, Recommendation, SaleEventOut, SearchResponse
 from app.core.affiliate import to_affiliate_url
 from app.core.url_safety import safe_url
+from app.core.price_position import Observation, compute as compute_position
+from app.core.sale_calendar import next_sale
 from app.core.database import AsyncSessionLocal, get_db
 from app.core.limiter import limiter
 from app.core.premium import premium_dep
@@ -185,74 +187,102 @@ async def search_products(
     )
 
 
-def _build_recommendation(events: list[SaleEvent]) -> Recommendation:
+def _build_recommendation(events: list[SaleEvent], country: str | None = None) -> Recommendation:
+    """가격 위치 + 정기 세일 달력으로 판단.
+
+    이전 구현은 event_type/start_date/end_date에 의존했는데, 스크래핑으로는 미래
+    세일 일정도 행사 종료일도 오지 않는다(실측: end_date 0건, start_date는 전부
+    수집일). 그래서 세 분기가 모두 죽고 폴백 문구만 나갔다. 판단 근거를 관측
+    가격 시계열과 규칙으로 열거되는 세일 달력으로 옮긴다.
+    """
     today = date.today()
-
-    # Check if current surprise event is active
-    active_surprise = next(
-        (e for e in events if e.event_type == "surprise" and e.start_date and e.end_date
-         and e.start_date <= today <= e.end_date),
-        None,
-    )
-    if active_surprise:
-        return Recommendation(
-            verdict="buy_now",
-            reason="현재 돌발 할인 행사가 진행 중입니다.",
-            expected_discount=float(active_surprise.discount_rate) if active_surprise.discount_rate else None,
+    observations = [
+        Observation(
+            price=float(e.sale_price),
+            observed_at=e.created_at,
+            list_price=float(e.original_price) if e.original_price else None,
         )
-
-    # Check if current price is all-time low
-    past_rates = [float(e.discount_rate) for e in events if e.discount_rate is not None]
-    if past_rates:
-        max_ever = max(past_rates)
-        active_regular = next(
-            (e for e in events if e.event_type == "regular" and e.start_date and e.end_date
-             and e.start_date <= today <= e.end_date),
-            None,
-        )
-        if active_regular and active_regular.discount_rate and float(active_regular.discount_rate) >= max_ever * 0.95:
-            return Recommendation(
-                verdict="buy_now",
-                reason="현재 역대 최고 할인율 수준입니다.",
-                expected_discount=float(active_regular.discount_rate),
-            )
-
-    # Find next upcoming regular event
-    upcoming = [
-        e for e in events
-        if e.event_type == "regular" and e.start_date and e.start_date > today
+        for e in events
+        if e.sale_price
     ]
-    if upcoming:
-        next_event = min(upcoming, key=lambda e: e.start_date or date.max)
-        days_until = ((next_event.start_date or date.max) - today).days
-        avg_discount = None
-        rates = [
-            float(e.discount_rate)
-            for e in events
-            if e.event_name == next_event.event_name and e.discount_rate is not None
-        ]
-        if rates:
-            avg_discount = sum(rates) / len(rates)
+    position = compute_position(observations)
+    upcoming = next_sale(today, country)
+    currency = next((e.currency for e in events if e.currency), None)
 
-        if days_until <= 60:
-            return Recommendation(
-                verdict="wait",
-                reason=f"{next_event.event_name}까지 D-{days_until}. 기다리면 더 저렴하게 살 수 있습니다.",
-                next_event_name=next_event.event_name,
-                days_until_next=days_until,
-                expected_discount=round(avg_discount, 1) if avg_discount else None,
-            )
+    def _with_position(rec: Recommendation) -> Recommendation:
+        if not position:
+            return rec
+        return rec.model_copy(update={
+            "current_price": position.current,
+            "observed_min": position.observed_min,
+            "observed_max": position.observed_max,
+            "above_min_pct": position.above_min_pct,
+            "off_list_pct": position.off_list_pct,
+            "currency": currency,
+            "history_days": position.history_days,
+            "sample_size": position.sample_size,
+        })
 
-    # Default: good deal if any discount history exists
-    if past_rates:
-        avg = sum(past_rates) / len(past_rates)
+    if not position:
         return Recommendation(
             verdict="good_deal",
-            reason=f"과거 평균 할인율({avg:.0f}%)보다 나쁘지 않은 시점입니다.",
-            expected_discount=round(avg, 1),
+            reason="아직 가격 관측이 없습니다. 수집이 끝나면 다시 확인해 보세요.",
         )
 
-    return Recommendation(verdict="good_deal", reason="할인 이력이 충분하지 않습니다. 현재 구매도 나쁘지 않습니다.")
+    shallow = position.history_days < 3
+
+    # 정가 대비 할인은 오늘 관측만으로도 사실이다 — 이력 깊이와 무관하게 말할 수 있다.
+    if position.off_list_pct and (shallow or position.at_observed_low):
+        reason = f"정가 대비 {position.off_list_pct:.0f}% 할인 중입니다."
+        if not shallow:
+            reason += f" 관측된 최저가({position.observed_min:,.0f}) 수준입니다."
+        return _with_position(Recommendation(
+            verdict="buy_now",
+            reason=reason,
+            expected_discount=position.off_list_pct,
+        ))
+
+    # 이력이 얕으면 "최저가보다 비싸다/싸다"를 주장하지 않는다. 하루치 변동은
+    # 노이즈이고, 그걸로 기다리라고 하면 사용자를 잘못 붙잡아 둔다.
+    if shallow:
+        return _with_position(Recommendation(
+            verdict="good_deal",
+            reason=(
+                f"관측 이력이 {position.history_days}일({position.sample_size}건)로 짧아 "
+                "최저가 판단이 이릅니다. 며칠 뒤 다시 확인해 보세요."
+            ),
+            next_event_name=upcoming.name if upcoming else None,
+            days_until_next=upcoming.days_until if upcoming else None,
+        ))
+
+    # 최저가보다 눈에 띄게 비싼데 정기 세일이 가까우면 기다릴 값어치가 있다.
+    if position.above_min_pct >= 10 and upcoming and upcoming.days_until <= 60:
+        return _with_position(Recommendation(
+            verdict="wait",
+            reason=(
+                f"지금은 관측 최저가보다 {position.above_min_pct:.0f}% 비쌉니다. "
+                f"{upcoming.name}까지 D-{upcoming.days_until}."
+            ),
+            next_event_name=upcoming.name,
+            days_until_next=upcoming.days_until,
+        ))
+
+    if position.at_observed_low:
+        return _with_position(Recommendation(
+            verdict="buy_now",
+            reason=f"관측된 최저가({position.observed_min:,.0f}) 수준입니다.",
+            expected_discount=position.off_list_pct,
+        ))
+
+    return _with_position(Recommendation(
+        verdict="good_deal",
+        reason=(
+            f"관측 최저가보다 {position.above_min_pct:.0f}% 높지만 "
+            f"최고가({position.observed_max:,.0f}) 대비로는 낮은 편입니다."
+        ),
+        next_event_name=upcoming.name if upcoming else None,
+        days_until_next=upcoming.days_until if upcoming else None,
+    ))
 
 
 @router.get("/{product_id}/events", response_model=ProductEventsOut)
@@ -316,7 +346,10 @@ async def get_product_events(
         for e, p in rows
     ]
 
-    recommendation = _build_recommendation([e for e, _ in rows])
+    # 세일 달력은 국가별로 다르다 — 이 상품이 실제로 관측된 플랫폼의 국가를 쓴다.
+    countries: list[str] = [p.country for _e, p in rows if p.country]
+    event_country = max(set(countries), key=countries.count) if countries else None
+    recommendation = _build_recommendation([e for e, _ in rows], country=event_country)
 
     return ProductEventsOut(
         product=ProductSummary.model_validate(product, from_attributes=True),
