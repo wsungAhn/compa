@@ -278,6 +278,11 @@ def parse_search_html(html: str, url: str) -> list[ScrapedEvent]:
             if orig_el:
                 m = _PRICE_RE.search(orig_el.get_text(strip=True).replace(",", ""))
                 original_price = float(m.group()) if m else None
+            # a-text-price도 단위가격·다른 사이즈 가격을 담을 때가 있다. 정가가
+            # 판매가 이하면 그건 정가가 아니라 오파싱이고, 그대로 두면 음수 할인이
+            # 나온다(실측: sale 190 / "정가" 35).
+            if original_price is not None and original_price <= sale_price:
+                original_price = None
 
             discount_rate: float | None = None
             if original_price and sale_price and original_price > 0:

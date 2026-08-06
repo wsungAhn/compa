@@ -388,3 +388,24 @@ def test_parse_search_html_2026_title_recipe_markup() -> None:
     assert len(events) == 1
     assert events[0].product_name == "SK-II Facial Treatment Essence 230ml"
     assert events[0].brand == "SK-II"
+
+
+_BAD_ORIGINAL_MARKUP = """
+<div data-component-type="s-search-result">
+  <div data-cy="title-recipe">
+    <h2 class="a-size-mini s-line-clamp-1"><span>SK-II</span></h2>
+    <a href="/dp/B0"><h2 class="a-size-base-plus"><span>Essence</span></h2></a>
+  </div>
+  <span class="a-price-whole">190.</span><span class="a-price-fraction">00</span>
+  <span class="a-text-price"><span class="a-offscreen">$35.00</span></span>
+</div>
+"""
+
+
+def test_original_price_below_sale_price_is_dropped() -> None:
+    """a-text-price가 단위가격을 담을 때가 있다 — 그대로 두면 음수 할인이 된다."""
+    events = parse_search_html(_BAD_ORIGINAL_MARKUP, "https://www.amazon.com/s?k=x")
+    assert len(events) == 1
+    assert events[0].sale_price == 190.0
+    assert events[0].original_price is None
+    assert events[0].discount_rate is None
