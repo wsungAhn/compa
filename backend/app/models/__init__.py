@@ -6,3 +6,4 @@ from app.models.feedback import Feedback
 from app.models.search_log import SearchLog
 
 __all__ = ["Platform", "Product", "SaleEvent", "SocialPost", "Feedback", "SearchLog"]
+from app.models.sale_window import SaleWindow  # noqa: F401,E402
