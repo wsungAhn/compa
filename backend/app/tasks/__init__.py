@@ -18,6 +18,7 @@ celery.conf.update(
         "app.tasks.social_collect",
         "app.tasks.social_extract",
         "app.tasks.seed",
+        "app.tasks.reddit_signals",
     ],
     beat_schedule={
         "collect-all-daily": {
@@ -31,6 +32,16 @@ celery.conf.update(
         "social-collect-6h": {
             "task": "app.tasks.social_collect.collect_social_for_products",
             "schedule": crontab(hour="*/6", minute=30),
+        },
+        # 저빈도 — 무인증 RSS라 하루 24회면 충분하고, 팬아웃은 429를 부른다.
+        "reddit-signals-hourly": {
+            "task": "app.tasks.reddit_signals.collect_reddit_signals",
+            "schedule": crontab(minute=5),
+        },
+        # 48시간 보존 강제. 수집과 같은 주기라 최대 체류가 한도를 넘지 않는다.
+        "reddit-purge-hourly": {
+            "task": "app.tasks.reddit_signals.purge_expired_social_posts",
+            "schedule": crontab(minute=50),
         },
         "social-extract-hourly": {
             "task": "app.tasks.social_extract.extract_social_posts",

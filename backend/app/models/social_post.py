@@ -14,7 +14,10 @@ class SocialPost(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     platform: Mapped[str] = mapped_column(
-        Enum("instagram", "tiktok", "facebook", "naver_blog", "xiaohongshu", name="social_platform"),
+        Enum(
+            "instagram", "tiktok", "facebook", "naver_blog", "xiaohongshu", "reddit",
+            name="social_platform",
+        ),
         nullable=False,
     )
     post_url: Mapped[str | None] = mapped_column(Text)
