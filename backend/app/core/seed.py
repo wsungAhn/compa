@@ -6,7 +6,6 @@ from app.scrapers.brands.shopify import BRANDS
 
 PLATFORMS = [
     {"name": "올리브영", "country": "KR", "url": "https://www.oliveyoung.co.kr", "scrape_method": "scraping"},
-    {"name": "네이버쇼핑", "country": "KR", "url": "https://shopping.naver.com", "scrape_method": "official_api"},
     {"name": "쿠팡", "country": "KR", "url": "https://www.coupang.com", "scrape_method": "scraping"},
     {"name": "Sephora", "country": "US", "url": "https://www.sephora.com", "scrape_method": "scraping"},
     {"name": "Ulta", "country": "US", "url": "https://www.ulta.com", "scrape_method": "scraping"},

@@ -8,11 +8,11 @@ from app.scrapers import collector
 
 
 def test_get_enabled_scrapers_default_safe_subset(monkeypatch: MagicMock) -> None:
-    monkeypatch.setattr(collector, "settings", MagicMock(enabled_scrapers="네이버쇼핑,Rakuten"))
+    monkeypatch.setattr(collector, "settings", MagicMock(enabled_scrapers="Sephora,Rakuten"))
 
     enabled = collector.get_enabled_scrapers()
 
-    assert list(enabled.keys()) == ["네이버쇼핑", "Rakuten"]
+    assert list(enabled.keys()) == ["Sephora", "Rakuten"]
 
 
 def test_get_enabled_scrapers_all(monkeypatch: MagicMock) -> None:
@@ -24,11 +24,11 @@ def test_get_enabled_scrapers_all(monkeypatch: MagicMock) -> None:
 
 
 def test_get_enabled_scrapers_ignores_unknown_names(monkeypatch: MagicMock) -> None:
-    monkeypatch.setattr(collector, "settings", MagicMock(enabled_scrapers="네이버쇼핑,Nope,Rakuten"))
+    monkeypatch.setattr(collector, "settings", MagicMock(enabled_scrapers="Sephora,Nope,Rakuten"))
 
     enabled = collector.get_enabled_scrapers()
 
-    assert list(enabled.keys()) == ["네이버쇼핑", "Rakuten"]
+    assert list(enabled.keys()) == ["Sephora", "Rakuten"]
 
 
 def test_collect_fast_candidates_respect_enabled(monkeypatch: MagicMock) -> None:
@@ -68,9 +68,9 @@ async def test_collect_fast_returns_only_products_with_events(monkeypatch: Magic
         force: bool = False,
     ) -> set[object]:
         assert product_id == placeholder.id
-        assert platform_name == "네이버쇼핑"
+        assert platform_name == "Rakuten"
         assert query == "설화수"
-        assert platform_country == "KR"
+        assert platform_country == "JP"
         assert force is False
         return {collected_product.id}
 
@@ -84,11 +84,26 @@ async def test_collect_fast_returns_only_products_with_events(monkeypatch: Magic
     monkeypatch.setattr(collector, "get_or_create_product", fake_get_or_create_product)
     monkeypatch.setattr(collector, "_collect_platform", fake_collect_platform)
     monkeypatch.setattr(collector, "_products_with_events", fake_products_with_events)
-    monkeypatch.setattr(collector, "get_enabled_scrapers", lambda: {"네이버쇼핑": collector.SCRAPERS["네이버쇼핑"]})
-    monkeypatch.setattr(collector, "FAST_SCRAPERS", {"네이버쇼핑"})
+    monkeypatch.setattr(collector, "get_enabled_scrapers", lambda: {"Rakuten": collector.SCRAPERS["Rakuten"]})
+    monkeypatch.setattr(collector, "FAST_SCRAPERS", {"Rakuten"})
     monkeypatch.setattr(collector, "SKIP_SCRAPERS", set())
 
     products = await collector.collect_fast(mock_db, "설화수")
 
     assert products == [collected_product]
     assert placeholder not in products
+
+
+@pytest.mark.asyncio
+async def test_collect_fast_creates_no_placeholder_when_nothing_to_collect(
+    monkeypatch: MagicMock,
+) -> None:
+    """수집 대상이 없으면 product를 만들지 않는다 — 검색어마다 빈 행이 쌓였다."""
+    created = AsyncMock()
+    monkeypatch.setattr(collector, "get_or_create_product", created)
+    monkeypatch.setattr(collector, "FAST_SCRAPERS", set())
+
+    products = await collector.collect_fast(AsyncMock(spec=AsyncSession), "설화수")
+
+    assert products == []
+    created.assert_not_called()

@@ -28,7 +28,6 @@ from app.scrapers.cn.xiaohongshu import XiaohongshuScraper
 from app.scrapers.jp.cosme import CosmeScraper
 from app.scrapers.jp.rakuten import RakutenScraper
 from app.scrapers.kr.coupang import CoupangScraper
-from app.scrapers.kr.naver_shop import NaverShopScraper
 from app.scrapers.kr.oliveyoung import OliveYoungScraper
 from app.scrapers.us.amazon import AmazonScraper
 from app.scrapers.us.sephora import SephoraScraper
@@ -39,7 +38,6 @@ from app.scrapers.us.ulta import UltaScraper
 SCRAPERS: dict[str, tuple[type[BaseScraper], str]] = {
     "올리브영":  (OliveYoungScraper, "ko"),
     "아모레몰":  (AmoremallScraper,  "ko"),
-    "네이버쇼핑": (NaverShopScraper, "ko"),
     "쿠팡":      (CoupangScraper,   "ko"),
     "Sephora":   (SephoraScraper,   "en"),
     "Ulta":      (UltaScraper,      "en"),
@@ -85,8 +83,8 @@ _BUNDLE_KEYWORDS = {"세트", "set", "kit", "duo", "bundle", "기획", "스페�
 # 403/503 차단으로 수집 불가한 플랫폼
 SKIP_SCRAPERS: set[str] = set()
 
-# 빠른 경로: REST API만 사용하는 플랫폼
-FAST_SCRAPERS: set[str] = {"네이버쇼핑"}
+# 빠른 경로: REST API만 사용하는 플랫폼 (네이버쇼핑 종료 후 비어 있음)
+FAST_SCRAPERS: set[str] = set()
 
 # Browser 스크래퍼 목록 (semaphore 적용)
 _BROWSER_SCRAPERS: set[str] = {
@@ -306,17 +304,20 @@ async def _collect_platform(
 
 
 async def collect_fast(db: AsyncSession, query: str) -> list[Product]:
-    """빠른 경로: 활성 스크래퍼 중 FAST_SCRAPERS만 실행 (~1-2s, Naver REST API)."""
-    # Get or create a product for this query using KR as default
-    product = await get_or_create_product(db, query, None, "KR")
-    await db.commit()
-    await db.refresh(product)
-
+    """빠른 경로: 활성 스크래퍼 중 FAST_SCRAPERS만 실행 (단일 REST 호출 플랫폼)."""
     enabled = get_enabled_scrapers()
     stale = [
         name for name in FAST_SCRAPERS
         if name not in SKIP_SCRAPERS and name in enabled
     ]
+    # 수집할 게 없는데 product를 먼저 만들면 검색어마다 빈 placeholder가 쌓인다.
+    if not stale:
+        return []
+
+    product = await get_or_create_product(db, query, None, "KR")
+    await db.commit()
+    await db.refresh(product)
+
     if stale:
         platform_country = _get_platform_country(stale[0])
         collected = await asyncio.gather(*[
