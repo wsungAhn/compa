@@ -7,6 +7,8 @@
 from __future__ import annotations
 
 import calendar
+import json
+import pathlib
 from dataclasses import dataclass
 from datetime import date
 
@@ -50,15 +52,12 @@ def _fixed(month: int, day: int):  # type: ignore[no-untyped-def]
     return rule
 
 
-# (이름, 연도→날짜 규칙, 대상 국가)
-# 날짜가 해마다 바뀌는 행사(프라임데이 등)는 통상 시기로 근사한다 — D-day의 목적은
-# "기다릴 만한가"이지 예약이 아니다.
+# 날짜가 규칙으로 확정되는 행사만 여기 남긴다. 해마다 움직이는 행사(Sephora 세일,
+# 프라임데이)를 고정일로 근사하면 "세일 없음"이 아니라 **틀린 D-day를 자신 있게**
+# 말하게 된다(적대감사 R1). 그런 행사는 아래 MEASURED 쪽에서 월 단위로만 다룬다.
 RULES: list[tuple[str, object, str]] = [
     ("Black Friday", _black_friday, GLOBAL),
     ("Cyber Monday", _cyber_monday, GLOBAL),
-    ("Amazon Prime Day", _fixed(7, 16), "US"),
-    ("Sephora Savings Event (봄)", _fixed(4, 5), "US"),
-    ("Sephora Savings Event (가을)", _fixed(10, 25), "US"),
     ("Memorial Day Sale", lambda y: _nth_weekday(y, 5, 0, 4), "US"),
     ("Labor Day Sale", lambda y: _nth_weekday(y, 9, 0, 1), "US"),
     ("11.11 (光棍节)", _fixed(11, 11), "CN"),
@@ -66,6 +65,55 @@ RULES: list[tuple[str, object, str]] = [
     ("楽天スーパーSALE", _fixed(3, 4), "JP"),
     ("Boxing Day", _fixed(12, 26), GLOBAL),
 ]
+
+
+_MEASURED_PATH = pathlib.Path(__file__).resolve().parents[1] / "data" / "sale_timing.json"
+# 관측이 이 월에 몰려야 캘린더에 쓴다. 아래는 sale_timing.TimingEstimate.is_confident와
+# 같은 기준이며, 신뢰 못 할 항목은 아예 말하지 않는 쪽을 택한다.
+_MEASURED_COUNTRY = "US"
+
+
+@dataclass(frozen=True)
+class ApproximateSale:
+    """월 단위로만 아는 행사. 정확한 날짜를 지어내지 않는다."""
+
+    name: str
+    month: int
+    share: float
+    sample_size: int
+
+
+def measured_sales() -> list[ApproximateSale]:
+    """하울 영상 업로드 분포에서 관측된 세일 시기(scripts/refresh_sale_timing.py)."""
+    if not _MEASURED_PATH.is_file():
+        return []
+    try:
+        records = json.loads(_MEASURED_PATH.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return []
+
+    by_month: dict[int, str] = {}
+    out: list[ApproximateSale] = []
+    for rec in records:
+        if not rec.get("confident"):
+            continue
+        name, month = str(rec.get("event", "")), int(rec.get("peak_month", 0))
+        if not name or not 1 <= month <= 12:
+            continue
+        # 서로 다른 행사가 같은 달로 관측되면 둘 중 하나는 쿼리가 잘못된 것이다
+        # (실측: "sephora fall sale haul"이 봄 하울까지 긁어와 4월로 나왔다).
+        if month in by_month:
+            continue
+        by_month[month] = name
+        out.append(
+            ApproximateSale(
+                name=name,
+                month=month,
+                share=float(rec.get("share", 0.0)),
+                sample_size=int(rec.get("sample_size", 0)),
+            )
+        )
+    return out
 
 
 def upcoming_sales(today: date, country: str | None = None, horizon_days: int = 365) -> list[SaleEvent]:
