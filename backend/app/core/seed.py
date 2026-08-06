@@ -2,6 +2,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.platform import Platform
+from app.scrapers.brands.shopify import BRANDS
 
 PLATFORMS = [
     {"name": "올리브영", "country": "KR", "url": "https://www.oliveyoung.co.kr", "scrape_method": "scraping"},
@@ -18,10 +19,6 @@ PLATFORMS = [
     {"name": "TikTok", "country": "US", "url": "https://www.tiktok.com", "scrape_method": "official_api"},
     {"name": "Facebook", "country": "US", "url": "https://www.facebook.com", "scrape_method": "official_api"},
     {"name": "네이버블로그", "country": "KR", "url": "https://blog.naver.com", "scrape_method": "official_api"},
-    {"name": "SK-II 공홈", "country": "US", "url": "https://www.sk-ii.com", "scrape_method": "official_api"},
-    {"name": "Tatcha 공홈", "country": "US", "url": "https://www.tatcha.com", "scrape_method": "official_api"},
-    {"name": "La Prairie 공홈", "country": "US", "url": "https://www.laprairie.com", "scrape_method": "official_api"},
-    {"name": "Glossier 공홈", "country": "US", "url": "https://www.glossier.com", "scrape_method": "official_api"},
     {"name": "SK-II Official", "country": "US", "url": "https://www.sk-ii.com", "scrape_method": "scraping"},
     {"name": "Shiseido Official", "country": "US", "url": "https://www.shiseido.com", "scrape_method": "scraping"},
     {"name": "La Mer Official KR", "country": "KR", "url": "https://www.lamerkorea.com", "scrape_method": "scraping"},
@@ -29,6 +26,13 @@ PLATFORMS = [
     {"name": "La Prairie Official", "country": "KR", "url": "https://www.laprairie.com", "scrape_method": "scraping"},
     {"name": "Tatcha Official", "country": "US", "url": "https://tatcha.com", "scrape_method": "scraping"},
     {"name": "아모레몰", "country": "KR", "url": "https://www.amoremall.com", "scrape_method": "scraping"},
+]
+
+# 브랜드 공홈은 스크래퍼 레지스트리에서 파생한다 — 브랜드를 늘릴 때 시드를 같이
+# 고치는 걸 잊으면 _get_platform이 None을 반환해 수집이 조용히 스킵된다.
+PLATFORMS += [
+    {"name": name, "country": "US", "url": f"https://{domain}", "scrape_method": "official_api"}
+    for name, domain, _brand in BRANDS
 ]
 
 

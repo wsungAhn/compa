@@ -19,12 +19,7 @@ from app.models.platform import Platform
 from app.models.product import Product
 from app.models.sale_event import SaleEvent
 from app.scrapers.base import BaseScraper, ScrapedEvent
-from app.scrapers.brands.shopify import (
-    GlossierOfficialScraper,
-    LaPrairieOfficialScraper,
-    SKIIOfficialScraper,
-    TatchaOfficialScraper,
-)
+from app.scrapers.brands.shopify import BRAND_SCRAPERS
 from app.scrapers.brands.amoremall import AmoremallScraper
 from app.scrapers.brands.chantecaille_kr import ChantecailleKRScraper
 from app.scrapers.brands.lamer_kr import LaMerKRScraper
@@ -52,10 +47,6 @@ SCRAPERS: dict[str, tuple[type[BaseScraper], str]] = {
     "Sephora":   (SephoraScraper,   "en"),
     "Ulta":      (UltaScraper,      "en"),
     "Amazon US": (AmazonScraper,    "en"),
-    "SK-II 공홈":              (SKIIOfficialScraper,       "en"),
-    "Tatcha 공홈":             (TatchaOfficialScraper,     "en"),
-    "La Prairie 공홈":         (LaPrairieOfficialScraper,  "en"),
-    "Glossier 공홈":           (GlossierOfficialScraper,   "en"),
     "SK-II Official":          (SKIIScraper,           "en"),
     "Shiseido Official":       (ShiseidoScraper,       "en"),
     "La Mer Official KR":      (LaMerKRScraper,        "ko"),
@@ -68,6 +59,10 @@ SCRAPERS: dict[str, tuple[type[BaseScraper], str]] = {
     "小红书":    (XiaohongshuScraper,"zh"),
 }
 
+# 브랜드 공홈은 레지스트리에서 병합한다 — 브랜드를 늘릴 때 collector를 건드리지
+# 않도록 (shopify.BRANDS 한 곳만 수정).
+SCRAPERS.update({name: (cls, "en") for name, cls in BRAND_SCRAPERS.items()})
+
 def get_enabled_scrapers() -> dict[str, tuple[type[BaseScraper], str]]:
     """settings.enabled_scrapers 기반 활성 스크래퍼 반환.
 
@@ -77,7 +72,16 @@ def get_enabled_scrapers() -> dict[str, tuple[type[BaseScraper], str]]:
     raw = settings.enabled_scrapers.strip()
     if raw.lower() == "all":
         return dict(SCRAPERS)
-    names = [n.strip() for n in raw.split(",") if n.strip()]
+    names: list[str] = []
+    for token in raw.split(","):
+        token = token.strip()
+        if not token:
+            continue
+        # "brands" = 공홈 레지스트리 전체. 브랜드를 늘려도 설정을 안 고쳐도 된다.
+        if token.lower() == "brands":
+            names.extend(BRAND_SCRAPERS)
+        else:
+            names.append(token)
     return {name: SCRAPERS[name] for name in names if name in SCRAPERS}
 
 

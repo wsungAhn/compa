@@ -1,11 +1,7 @@
 """브랜드 공홈(Shopify products.json) 스크래퍼 단위 테스트 (실제 HTTP 호출 없음)."""
 from typing import Any
 
-from app.scrapers.brands.shopify import (
-    SKIIOfficialScraper,
-    TatchaOfficialScraper,
-    parse_products,
-)
+from app.scrapers.brands.shopify import BRAND_SCRAPERS, BRANDS, parse_products
 
 _BASE = "https://www.tatcha.com"
 
@@ -108,7 +104,23 @@ def test_product_without_price_is_skipped() -> None:
     assert events == []
 
 
-def test_subclass_platform_attrs() -> None:
-    assert SKIIOfficialScraper().PLATFORM_NAME == "SK-II 공홈"
-    assert SKIIOfficialScraper().DOMAIN == "www.sk-ii.com"
-    assert TatchaOfficialScraper().BRAND == "Tatcha"
+def test_registry_generates_one_scraper_per_brand() -> None:
+    assert len(BRAND_SCRAPERS) == len(BRANDS)
+    skii = BRAND_SCRAPERS["SK-II 공홈"]()
+    assert skii.DOMAIN == "www.sk-ii.com"
+    assert skii.BRAND == "SK-II"
+    assert BRAND_SCRAPERS["Tatcha 공홈"]().BRAND == "Tatcha"
+
+
+def test_registry_has_no_duplicate_domains() -> None:
+    """같은 도메인을 두 번 등록하면 같은 카탈로그를 두 플랫폼으로 중복 저장한다."""
+    domains = [domain for _name, domain, _brand in BRANDS]
+    assert len(domains) == len(set(domains))
+
+
+def test_seed_covers_every_brand_platform() -> None:
+    """시드에 없는 플랫폼은 _get_platform이 None을 반환해 수집이 조용히 스킵된다."""
+    from app.core.seed import PLATFORMS
+
+    seeded = {p["name"] for p in PLATFORMS}
+    assert set(BRAND_SCRAPERS) <= seeded

@@ -148,25 +148,53 @@ class ShopifyBrandScraper(BaseScraper):
         return events
 
 
-class SKIIOfficialScraper(ShopifyBrandScraper):
-    PLATFORM_NAME = "SK-II 공홈"
-    DOMAIN = "www.sk-ii.com"
-    BRAND = "SK-II"
+# (플랫폼명, 도메인, 브랜드). 전부 2026-08-05에 products.json 응답을 실측 확인했다.
+# 추가 전에는 반드시 `curl https://<도메인>/products.json?limit=5`로 확인할 것 —
+# Shopify여도 엔드포인트를 닫아둔 곳이 있다(Drunk Elephant 410, Fresh·YTTP 403).
+BRANDS: list[tuple[str, str, str]] = [
+    ("SK-II 공홈", "www.sk-ii.com", "SK-II"),
+    ("Tatcha 공홈", "www.tatcha.com", "Tatcha"),
+    ("La Prairie 공홈", "www.laprairie.com", "La Prairie"),
+    ("Glossier 공홈", "www.glossier.com", "Glossier"),
+    # K-beauty (미국 법인몰)
+    ("Laneige 공홈", "us.laneige.com", "Laneige"),
+    ("Sulwhasoo 공홈", "us.sulwhasoo.com", "Sulwhasoo"),
+    ("Amorepacific 공홈", "us.amorepacific.com", "Amorepacific"),
+    ("Innisfree 공홈", "us.innisfree.com", "innisfree"),
+    ("Beauty of Joseon 공홈", "beautyofjoseon.com", "Beauty of Joseon"),
+    ("COSRX 공홈", "www.cosrx.com", "COSRX"),
+    # 프레스티지 스킨케어
+    ("Sunday Riley 공홈", "sundayriley.com", "Sunday Riley"),
+    ("Tata Harper 공홈", "www.tataharperskincare.com", "Tata Harper"),
+    ("111Skin 공홈", "www.111skin.com", "111SKIN"),
+    ("Herbivore 공홈", "www.herbivorebotanicals.com", "Herbivore"),
+    ("Osea 공홈", "oseamalibu.com", "OSEA"),
+    ("Summer Fridays 공홈", "summerfridays.com", "Summer Fridays"),
+    ("Necessaire 공홈", "necessaire.com", "Nécessaire"),
+    # 메이크업
+    ("Westman Atelier 공홈", "westman-atelier.com", "Westman Atelier"),
+    ("Victoria Beckham 공홈", "victoriabeckhambeauty.com", "Victoria Beckham Beauty"),
+    ("ILIA 공홈", "iliabeauty.com", "ILIA"),
+    ("Kosas 공홈", "kosas.com", "Kosas"),
+    ("Merit 공홈", "meritbeauty.com", "MERIT"),
+    ("Rare Beauty 공홈", "www.rarebeauty.com", "Rare Beauty"),
+    ("Saie 공홈", "saiehello.com", "Saie"),
+    ("Natasha Denona 공홈", "natashadenona.com", "Natasha Denona"),
+    ("Pat McGrath 공홈", "www.patmcgrath.com", "Pat McGrath Labs"),
+]
 
 
-class TatchaOfficialScraper(ShopifyBrandScraper):
-    PLATFORM_NAME = "Tatcha 공홈"
-    DOMAIN = "www.tatcha.com"
-    BRAND = "Tatcha"
+def _brand_class(platform_name: str, domain: str, brand: str) -> type[ShopifyBrandScraper]:
+    """브랜드별 서브클래스를 레지스트리에서 생성. 26개를 손으로 쓰지 않는다."""
+    class_name = "".join(ch for ch in brand.title() if ch.isalnum()) + "OfficialScraper"
+    return type(
+        class_name,
+        (ShopifyBrandScraper,),
+        {"PLATFORM_NAME": platform_name, "DOMAIN": domain, "BRAND": brand},
+    )
 
 
-class LaPrairieOfficialScraper(ShopifyBrandScraper):
-    PLATFORM_NAME = "La Prairie 공홈"
-    DOMAIN = "www.laprairie.com"
-    BRAND = "La Prairie"
-
-
-class GlossierOfficialScraper(ShopifyBrandScraper):
-    PLATFORM_NAME = "Glossier 공홈"
-    DOMAIN = "www.glossier.com"
-    BRAND = "Glossier"
+BRAND_SCRAPERS: dict[str, type[ShopifyBrandScraper]] = {
+    platform_name: _brand_class(platform_name, domain, brand)
+    for platform_name, domain, brand in BRANDS
+}
