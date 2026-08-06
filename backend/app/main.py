@@ -1,9 +1,11 @@
 import logging
+import pathlib
 from contextlib import asynccontextmanager
 from collections.abc import AsyncGenerator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy import select
@@ -66,3 +68,10 @@ async def health_check() -> dict[str, object]:
         "enabled_scrapers": list(get_enabled_scrapers().keys()),
         "firecrawl": await get_firecrawl_status(),
     }
+
+
+# 빌드된 프론트엔드를 같은 오리진에서 서빙한다. 별도 정적 서버 프로세스가 없어지고
+# /api와 same-origin이라 CORS 문제도 사라진다 (dist가 없으면 API 전용으로 동작).
+_DIST = pathlib.Path(__file__).resolve().parents[2] / "frontend" / "dist"
+if _DIST.is_dir():
+    app.mount("/", StaticFiles(directory=_DIST, html=True), name="frontend")
