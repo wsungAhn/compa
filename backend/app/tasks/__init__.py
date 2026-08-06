@@ -38,6 +38,11 @@ celery.conf.update(
             "task": "app.tasks.reddit_signals.collect_reddit_signals",
             "schedule": crontab(minute=5),
         },
+        # Slickdeals는 Reddit 같은 무인증 한도가 없어 조금 더 자주 봐도 된다.
+        "slickdeals-signals": {
+            "task": "app.tasks.reddit_signals.collect_slickdeals_signals",
+            "schedule": crontab(minute="25,55"),
+        },
         # 48시간 보존 강제. 수집과 같은 주기라 최대 체류가 한도를 넘지 않는다.
         "reddit-purge-hourly": {
             "task": "app.tasks.reddit_signals.purge_expired_social_posts",

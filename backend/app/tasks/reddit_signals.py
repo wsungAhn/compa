@@ -13,6 +13,7 @@ from sqlalchemy import delete, select
 from app.core.database import AsyncSessionLocal
 from app.models.social_post import SocialPost
 from app.scrapers.brands.shopify import BRANDS
+from app.scrapers import slickdeals
 from app.scrapers.reddit_deals import fetch_all_subreddits, now_utc
 from app.tasks import celery
 
@@ -59,6 +60,40 @@ async def _collect() -> int:
     return stored
 
 
+def collect_slickdeals_signals() -> int:
+    """Slickdeals 딜 신호. Reddit과 나란히 두는 추가 소스 — 소스는 누적이다."""
+    return asyncio.run(_collect_slickdeals())
+
+
+async def _collect_slickdeals() -> int:
+    signals = await slickdeals.fetch_all()
+    if not signals:
+        return 0
+    stored = 0
+    async with AsyncSessionLocal() as db:
+        for signal in signals:
+            if signal.url:
+                existing = await db.execute(
+                    select(SocialPost).where(SocialPost.post_url == signal.url)
+                )
+                if existing.scalar_one_or_none():
+                    continue
+            price = f" (${signal.price:,.2f})" if signal.price else ""
+            db.add(
+                SocialPost(
+                    platform="slickdeals",
+                    post_url=signal.url or None,
+                    content=f"[{signal.brand}] {signal.title}{price}",
+                    posted_at=signal.posted_at,
+                    sale_event_id=None,
+                )
+            )
+            stored += 1
+        await db.commit()
+    logger.info("slickdeals: %d signals stored (%d fetched)", stored, len(signals))
+    return stored
+
+
 def purge_expired_social_posts() -> int:
     """48시간이 지난 reddit 행을 하드 삭제한다.
 
@@ -86,4 +121,5 @@ async def _purge() -> int:
 
 
 collect_reddit_signals = celery.task(collect_reddit_signals)
+collect_slickdeals_signals = celery.task(collect_slickdeals_signals)
 purge_expired_social_posts = celery.task(purge_expired_social_posts)

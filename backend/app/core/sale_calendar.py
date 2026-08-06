@@ -81,10 +81,17 @@ class ApproximateSale:
     month: int
     share: float
     sample_size: int
+    corroborations: int = 1  # 이 달을 가리킨 독립 쿼리 수
 
 
 def measured_sales() -> list[ApproximateSale]:
-    """하울 영상 업로드 분포에서 관측된 세일 시기(scripts/refresh_sale_timing.py)."""
+    """하울 영상 업로드 분포에서 관측된 세일 시기(scripts/refresh_sale_timing.py).
+
+    서로 다른 쿼리가 같은 달을 가리키면 **버리지 않고 합친다**. 라벨이 틀렸다고
+    관측까지 틀린 게 아니다 — 실측에서 "sephora fall sale haul"이 봄 하울까지
+    긁어와 4월로 나왔는데, 그건 가을 행사가 4월이라는 뜻이 아니라 **4월에 대한
+    독립적인 두 번째 증거**다. 표본을 합산하고 몇 개 쿼리가 지지했는지 남긴다.
+    """
     if not _MEASURED_PATH.is_file():
         return []
     try:
@@ -92,28 +99,30 @@ def measured_sales() -> list[ApproximateSale]:
     except (json.JSONDecodeError, OSError):
         return []
 
-    by_month: dict[int, str] = {}
-    out: list[ApproximateSale] = []
+    merged: dict[int, ApproximateSale] = {}
     for rec in records:
         if not rec.get("confident"):
             continue
         name, month = str(rec.get("event", "")), int(rec.get("peak_month", 0))
         if not name or not 1 <= month <= 12:
             continue
-        # 서로 다른 행사가 같은 달로 관측되면 둘 중 하나는 쿼리가 잘못된 것이다
-        # (실측: "sephora fall sale haul"이 봄 하울까지 긁어와 4월로 나왔다).
-        if month in by_month:
+        share = float(rec.get("share", 0.0))
+        size = int(rec.get("sample_size", 0))
+        prior = merged.get(month)
+        if prior is None:
+            merged[month] = ApproximateSale(name=name, month=month, share=share, sample_size=size)
             continue
-        by_month[month] = name
-        out.append(
-            ApproximateSale(
-                name=name,
-                month=month,
-                share=float(rec.get("share", 0.0)),
-                sample_size=int(rec.get("sample_size", 0)),
-            )
+        total = prior.sample_size + size
+        merged[month] = ApproximateSale(
+            # 라벨은 더 많은 표본이 지지하는 쪽을 쓴다. 둘 다 같은 달을 봤으므로
+            # 어느 라벨이 정확한지는 관측이 답해주지 않는다.
+            name=prior.name if prior.sample_size >= size else name,
+            month=month,
+            share=round((prior.share * prior.sample_size + share * size) / total, 3) if total else 0.0,
+            sample_size=total,
+            corroborations=prior.corroborations + 1,
         )
-    return out
+    return sorted(merged.values(), key=lambda s: s.month)
 
 
 def upcoming_sales(today: date, country: str | None = None, horizon_days: int = 365) -> list[SaleEvent]:

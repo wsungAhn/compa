@@ -16,6 +16,7 @@ class SocialPost(Base):
     platform: Mapped[str] = mapped_column(
         Enum(
             "instagram", "tiktok", "facebook", "naver_blog", "xiaohongshu", "reddit",
+            "slickdeals",
             name="social_platform",
         ),
         nullable=False,

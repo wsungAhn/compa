@@ -39,9 +39,10 @@ def test_estimate_without_samples_is_none() -> None:
     assert estimate("q", []) is None
 
 
-def test_measured_sales_drops_month_collisions(tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+def test_month_collisions_are_merged_not_discarded(tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     """실측: "sephora fall sale haul"이 봄 하울까지 긁어와 4월로 나왔다.
-    두 행사가 같은 달이면 하나는 쿼리가 잘못된 것이므로 뒤엣것을 버린다."""
+    라벨은 틀렸지만 **4월이라는 관측 자체는 공짜로 얻은 두 번째 증거**다 — 버리지 않고
+    표본을 합산한다."""
     path = tmp_path / "sale_timing.json"
     path.write_text(json.dumps([
         {"event": "Sephora Savings Event (봄)", "peak_month": 4, "share": 0.9,
@@ -55,11 +56,13 @@ def test_measured_sales_drops_month_collisions(tmp_path, monkeypatch) -> None:  
     ]), encoding="utf-8")
     monkeypatch.setattr(sale_calendar, "_MEASURED_PATH", path)
 
-    names = [s.name for s in sale_calendar.measured_sales()]
-    assert "Sephora Savings Event (봄)" in names
-    assert "Sephora Savings Event (가을)" not in names   # 월 충돌 → 버림
-    assert "Amazon Prime Day" not in names              # 신뢰도 미달 → 버림
-    assert "Ulta 21 Days of Beauty" in names
+    sales = {s.month: s for s in sale_calendar.measured_sales()}
+    april = sales[4]
+    assert april.sample_size == 60          # 30 + 30, 두 쿼리 합산
+    assert april.corroborations == 2        # 독립 쿼리 2개가 4월을 지지
+    assert 0.77 <= april.share <= 0.90      # 가중 평균
+    assert sales[3].corroborations == 1     # Ulta는 단독 관측
+    assert 7 not in sales                   # 프라임데이는 신뢰도 미달 → 제외
 
 
 def test_missing_or_broken_file_is_not_fatal(tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
