@@ -15,6 +15,7 @@ celery.conf.update(
     include=[
         "app.tasks.collect",
         "app.tasks.classify",
+        "app.tasks.match_products",
         "app.tasks.social_collect",
         "app.tasks.social_extract",
         "app.tasks.seed",
@@ -51,6 +52,10 @@ celery.conf.update(
         "social-extract-hourly": {
             "task": "app.tasks.social_extract.extract_social_posts",
             "schedule": crontab(minute=45),
+        },
+        "match-products-6h": {
+            "task": "app.tasks.match_products.match_pending_products",
+            "schedule": crontab(minute=40, hour="*/6"),
         },
     },
 )

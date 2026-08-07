@@ -14,6 +14,7 @@ from app.api.comparison import router as comparison_router
 from app.api.feedback import router as feedback_router
 from app.api.jobs import router as jobs_router
 from app.api.products import router as products_router
+from app.api.admin import router as admin_router
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.core.limiter import limiter
@@ -56,6 +57,7 @@ app.include_router(products_router)
 app.include_router(comparison_router)
 app.include_router(jobs_router)
 app.include_router(feedback_router)
+app.include_router(admin_router)
 
 
 @app.get("/health")
