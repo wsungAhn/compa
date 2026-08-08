@@ -75,8 +75,34 @@ progress`는 *같은 asyncpg 커넥션을 두 코루틴이 동시에 쓸 때*도
 실물로 확인했다: `collect_on_demand`(`collector.py:363`)와 `collect_fast`(`:324`)가
 `gather`로 팬아웃하지만, 팬아웃 대상 `_collect_platform`(`:257`)은 **자기 세션을 새로
 연다**(`async with AsyncSessionLocal() as db`). 외부에서 받은 `db`는 gather 구간에서
-사용되지 않는다. **공유 세션 동시 사용 증거 없음** → 루프 간 커넥션 재사용이 유일한
+사용되지 않는다. **공유 세션 동시 사용 증거 없음** → 루프 간 커넥션 재사용이 §1 실패의
 원인이라는 귀속이 유지된다.
+
+### 3.1 같은 계열의 잠복 쌍둥이 — `_BROWSER_SEMAPHORE` (감사 r3에서 발견)
+
+"모듈 레벨 객체가 루프에 묶인다"는 이 버그의 본질은 DB 풀에만 있는 게 아니다.
+`collector.py:102`에 **모듈 레벨 `asyncio.Semaphore(4)`**가 있고 `:283`에서
+`async with`로 쓰인다. Python 3.11 실측:
+
+```
+run #1 (경합 있음, n=6): ok
+run #2: FAIL RuntimeError: <Semaphore [locked]> is bound to a different event loop
+run #3: FAIL RuntimeError: <Semaphore [locked]> is bound to a different event loop
+```
+
+**단 경합이 있을 때만 터진다.** `Semaphore.acquire()`는 비경합 경로에서 `_get_loop()`를
+부르지 않아 루프에 묶이지 않는다(비경합 3회 연속은 3/3 성공 실측). 한 번 경합하면
+루프에 묶이고 `[locked]` 상태로 영구 고착된다.
+
+**지금은 발화하지 않는다**: 실측 `_BROWSER_SCRAPERS` 6개 중 **enabled와 교집합이 1개**
+→ 동시 획득이 최대 1이라 4를 넘는 경합이 발생할 수 없다.
+
+**발화 조건 (수치)**: enabled ∩ `_BROWSER_SCRAPERS` ≥ **5**. `enabled_scrapers=all`로
+바꾸거나 브라우저 스크래퍼를 늘리면 그 순간 NullPool로 못 고치는 2차 장애가 열린다.
+
+**이 문서 범위 밖**(대상 파일이 `collector.py`이고 현재 발화 불가) — §8에 후속으로
+등록하고 핸드오프에 명시한다. "DB 풀이 §1의 원인"은 유지되나 **"루프 친화 전역 객체가
+DB 풀뿐"이라는 뜻은 아니다.**
 
 ## 4. 설계
 
@@ -116,7 +142,7 @@ FastAPI `get_db`는 요청당 세션 1개라 **요청당 +5.5ms**다. 이 서비
 
 | 항목 | 실측값 | 근거 |
 |---|---:|---|
-| `gather` 팬아웃 폭 | **29** | `get_enabled_scrapers()` 29, `SKIP_SCRAPERS` 0 (`collector.py:363`) |
+| `gather` 팬아웃 폭 | **29** + 호출자 outer 세션 1 = **30** | `get_enabled_scrapers()` 29, `SKIP_SCRAPERS` 0 (`collector.py:363`). 호출자가 이미 세션을 열고 있다(`collector.py:333`) — 감사 r3 지적 반영해 보수적으로 30으로 센다 |
 | Celery worker 동시성 | **2** | `ops/com.compa.worker.plist:13` `--concurrency=2` |
 | API 프로세스 | **1** | `com.compa.api.plist` — uvicorn `--workers` 미지정 |
 | PG `max_connections` | **100** | 라이브 측정 |
@@ -140,25 +166,30 @@ r1의 "API는 요청당 세션 1개(+5.5ms)"는 **틀렸다.** 실측으로 정�
 | `collect_fast` 인라인 (`products.py:163`) | **0** | `FAST_SCRAPERS`가 **빈 집합**(`collector.py:87`) → `stale` 비어 즉시 `return []`. 팬아웃 없음 |
 | **백그라운드 수집** (`products.py:174` → `_collect_in_background` → `collect_on_demand`) | **29** | `background_tasks.add_task`로 응답 후 API 프로세스 안에서 실행. `collector.py:363` 팬아웃 29 |
 
-즉 **NullPool을 문 API 프로세스는 백그라운드 수집 1건당 커넥션 29개를 연다.**
-`_collecting_queries`가 같은 쿼리는 중복 차단하지만(`products.py:65`), 서로 다른 쿼리
-N건은 동시 실행된다 → **29N**.
+**단 이 29폭 경로는 정상 운영 경로가 아니다 (감사 r3에서 정정 — r2의 내 계산이 과장)**:
+`products.py:174`는 **`except Exception:` 블록 안**에 있다. 정상 경로는 Celery
+`run_collection_slow.delay(q)`로 나가고(`:167`), 백그라운드 팬아웃은 **Celery 디스패치가
+실패했을 때만**(Redis 불통 등) 쓰이는 폴백이다.
 
-**정정된 최악 계산**: worker 58 + API 29N.
-**N ≥ 2면 58 + 58 = 116 > 97 → `too many connections`.**
+그리고 이 조건은 worker 부하와 **동시에 성립할 수 없다**: Celery 디스패치가 실패하는
+상황이면 worker도 태스크를 받지 못하므로 worker 쪽 58은 존재하지 않는다. r2가 쓴
+"58 + 58 = 116"은 **양립 불가능한 두 상태를 더한 값**이었다. 철회한다.
 
-**이 관찰 창에서는 터지지 않는다**: §7의 재시작 대상은 worker/beat뿐이고 **API는
-재시작하지 않는다**(사용자 승인 범위). 재시작 전까지 API 프로세스는 구코드(QueuePool,
-상한 15)를 물고 돌므로 창 안 최악은 58 + 15 = **73 < 97**이다.
+**정정된 최악 계산**:
 
-> ⚠️ **API 재시작 게이트 (Gate Before Irreversible)**: API 프로세스가 재시작되는
-> 순간(수동 kickstart·머신 재부팅 포함) 이 계산은 116으로 바뀐다. **API를 재시작하기
-> 전에 아래 둘 중 하나를 반드시 선행할 것** — ① Celery 전용 엔진 분리(§5 대안표) 또는
-> ② `collect_on_demand` 팬아웃에 세마포어 상한. 이 문서 범위 밖이며 사용자 판단 사항.
+| 상태 | worker | API | 합계 |
+|---|---:|---:|---:|
+| 정상 운영 | 2 × 30 = **60** | 요청당 1 (`get_db`) + `collect_fast` 0 → 소수 | **~65** |
+| Celery 불통(폴백) | **0** (태스크 미수신) | 서로 다른 쿼리 N건 × 30 | 30N |
 
-**부채 트리거 (수치로 고정)**: ① **API 프로세스 재시작** (위 게이트, 가장 먼저 온다)
-② worker `--concurrency`를 3 이상 ③ `SCRAPERS` 레지스트리 40개 초과
-④ uvicorn `--workers` 도입. **그때가 Celery 전용 엔진 분리 시점이다.**
+정상 운영 ~65 < 97. 폴백 상태는 N ≥ 3이면 90으로 97에 근접하나 worker가 0이다.
+**따라서 API를 NullPool로 올려도 재부팅 안전성이 깨지지 않는다** — r2가 세운 "API 재시작
+게이트"는 잘못된 산식 위에 있었으므로 **철회한다.**
+
+**부채 트리거 (수치로 고정)**: ① worker `--concurrency`를 3 이상
+② `SCRAPERS` 레지스트리 40개 초과 ③ uvicorn `--workers` 도입
+④ `FAST_SCRAPERS`가 비어있지 않게 되어 인라인 팬아웃이 살아나는 경우.
+**그때가 Celery 전용 엔진 분리 시점이다.**
 
 **검토했으나 채택하지 않은 대안**:
 
@@ -206,9 +237,13 @@ r1은 여기서 "그러니 CI에선 T1만 스킵된다"고 썼는데 **전제가
 
 - 스킵 조건은 `pytest.mark.skipif`로 두되 **스킵 사유 문자열에 "requires live PG"를 명시**
 - **판정 술어는 collection time에 안전한 동기 함수여야 한다**(감사 r2). async 엔진을
-  `skipif` 안에서 만들면 import 시점 부작용이 생긴다. `socket.create_connection(
-  (host, port), timeout=0.5)` 성공 여부 같은 **동기 소켓 확인** 또는 명시적 env 플래그로
-  판단하고, 판정 헬퍼는 테스트 파일 안에 둔다(새 모듈 만들지 않는다)
+  `skipif` 안에서 만들면 import 시점 부작용이 생긴다. 판정 헬퍼는 테스트 파일 안에
+  둔다(새 모듈 만들지 않는다).
+- **포트 열림 확인만으로는 부족하다**(감사 r3). 소켓 연결은 credential·스키마·
+  마이그레이션 상태를 보지 않아, **DB 준비 문제로 인한 실패가 설계 변경의 실패로
+  오인된다.** T1이 `select(Product).limit(1) + commit()`까지 하므로 판정도 **"그 쿼리가
+  실제로 되는가"**여야 한다 — 모듈 로드 시 `asyncio.run()`으로 동일 쿼리를 1회 시도해
+  성공한 경우에만 실행하고, 실패 사유(`OperationalError` 메시지 등)를 스킵 메시지에 담는다
 - **구현 완료 판정은 로컬 DB에서 T1이 실제로 `passed`한 것을 근거로만 한다.**
   스킵 결과를 통과로 보고하지 않는다 ([[feedback_zero_results_mean_broken_not_absent]])
 
@@ -240,6 +275,25 @@ VENV=/Users/Mung/dev/compa/backend/.venv/bin/python
 5. 재시작 후 **최소 20분 관찰**하고 `worker.err.log`의 태스크별 성공/실패를 §1 표와
    같은 형식으로 재집계해 보고. `another operation is in progress`가 재시작 시각 이후로
    0건이어야 한다
+
+   **관찰 창에 무엇이 실제로 뜨는가 (감사 r3 지적 — beat 주기 실측)**: 20분 창은
+   태스크를 전부 못 본다. `beat_schedule`(`tasks/__init__.py:24`, Asia/Seoul) 기준:
+
+   | 태스크 | 주기 | 20분 창 | 60분 창 |
+   |---|---|:-:|:-:|
+   | `collect_reddit_signals` | 매시 :05 | 조건부 | ✅ |
+   | `classify_pending` | 매시 :15 | 조건부 | ✅ |
+   | `collect_slickdeals_signals` | 매시 :25, :55 | 조건부 | ✅ |
+   | `extract_social_posts` | 매시 :45 | 조건부 | ✅ |
+   | `purge_expired_social_posts` | 매시 :50 | 조건부 | ✅ |
+   | `collect_social_for_products` | 6h (:30) | ❌ | 조건부 |
+   | `match_pending_products` | 6h (:40) | ❌ | 조건부 |
+   | `collect_all_products` | 일 1회 03:00 KST | ❌ | ❌ |
+
+   위 **매시 5종이 §1 실패 259건 중 242건(93%)**을 차지한다. 따라서 판정은
+   **최소 1시간(정시 경계 1회 포함)** 관찰로 이 5종 전부를 확인하는 것을 기준으로 한다.
+   6h·일간 태스크가 창에 안 들어오면 **"안 돌았다"가 아니라 "관찰 창 밖"**으로 쓰고
+   다음 예정 시각을 명시한다 ([[feedback_zero_results_mean_broken_not_absent]])
    — 태스크가 안 떠서 실패가 0인 것과 구별할 것: 성공 건수가 실제로 증가해야 한다
      ([[feedback_zero_results_mean_broken_not_absent]])
 
@@ -263,6 +317,17 @@ grep -c "too many connections\|remaining connection slots" \
   /Users/Mung/dev/compa/ops/logs/*.err.log
 ```
 
+**로그 집계는 반드시 재시작 시점 이후로 한정한다 (감사 r3)**. 기존 로그에 이미
+`another operation is in progress`가 1,000건 있으므로 전체 grep은 **즉시 오탐**이다.
+kickstart **직전에 바이트 오프셋을 저장**하고 그 이후만 센다:
+
+```bash
+LOG=/Users/Mung/dev/compa/ops/logs/worker.err.log
+OFFSET=$(wc -c < "$LOG")          # ← kickstart 직전에 실행
+# ... kickstart + 관찰 ...
+tail -c +$((OFFSET+1)) "$LOG" | grep -c "another operation is in progress"
+```
+
 **즉시 롤백 조건 (하나라도 해당)**:
 - `too many connections` 또는 `remaining connection slots` 로그 1건 이상
 - compa 커넥션 피크가 **80 이상** (97 대비 안전마진 소진)
@@ -281,5 +346,6 @@ grep -c "too many connections\|remaining connection slots" \
 - **CI에 postgres 서비스 추가** — §6 표대로 live PG 의존 테스트 4개가 skip 가드 없이
   존재해 CI backend 잡이 이미 녹색일 수 없다. 이 설계 이전부터의 상태이며 CI 워크플로
   변경은 별건이다. 핸드오프에 후속으로 남긴다
-- **API 프로세스의 NullPool 전환** — §5.1 게이트. Celery 전용 엔진 분리 또는 팬아웃
-  세마포어가 선행돼야 하며 사용자 판단 사항
+- **`_BROWSER_SEMAPHORE` 루프 고착** — §3.1. 같은 계열의 잠복 버그이나 대상 파일이
+  `collector.py`이고 현재 발화 불가(enabled ∩ browser = 1 < 5)라 이 레이어에서 제외.
+  `enabled_scrapers=all` 전환 전에 반드시 선행할 것. 핸드오프에 후속으로 등록
