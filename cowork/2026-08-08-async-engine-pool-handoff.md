@@ -1,6 +1,6 @@
 # Codex Handoff — 2026-08-08 · asyncio 엔진 풀 (A)
 
-> **상태(Status):** `대기중 / pending`
+> **상태(Status):** `완료 / done`
 > _(Executor: 시작 시 `진행중 / in-progress`, 완료 시 `검토대기 / review-pending`.
 >  `완료 / done`은 리뷰어만 커밋 후 설정.)_
 >
@@ -234,37 +234,113 @@ Task 2에서 한꺼번에 작성한다.
 > 워킹트리 변경만 남기고 **커밋하지 마라.**
 
 ### 8-1. Files changed
-_(write here)_
+- `backend/app/core/database.py` — async engine 생성에 `poolclass=NullPool` 적용. 다른 풀 파라미터 추가 없음.
+- `backend/tests/core/test_database_event_loop.py` — 이벤트 루프 경계 회귀 테스트 T1~T4 신규 추가.
+- `cowork/2026-08-08-async-engine-pool-handoff.md` — 상태줄 및 §8 실행 결과 기록.
 
 ### 8-2. New tests
-_(write here)_
+- 신규 파일: `backend/tests/core/test_database_event_loop.py`
+- 테스트 수: 4개
+  - T1: `test_async_session_survives_repeated_asyncio_run`
+  - T2: `test_async_engine_uses_null_pool`
+  - T3: `test_classify_pending_survives_repeated_sync_wrapper_calls`
+  - T4: `test_browser_scraper_tripwire_stays_below_loop_bound_threshold`
 
 ### 8-3. Final test result
-_(write here — T1/T3 passed vs skipped 구분 필수)_
+- `PYTHONPATH=. /Users/Mung/dev/compa/backend/.venv/bin/python -m pytest tests/core/test_database_event_loop.py -q`
+  - 결과: `4 passed in 0.52s`
+  - T1: passed
+  - T3: passed
+- `PYTHONPATH=. /Users/Mung/dev/compa/backend/.venv/bin/python -m pytest tests/ -q`
+  - 결과: `488 passed, 1 skipped in 2.81s`
+  - 기존 baseline `484 passed, 1 skipped` 대비 신규 테스트 4개 추가 통과
+- `PYTHONPATH=. /Users/Mung/dev/compa/backend/.venv/bin/python -m mypy --strict app/`
+  - 결과: `Success: no issues found in 85 source files`
 
 ### 8-4. Consistency scan / findings
-_(write here)_
+- 사용자 지시에 따라 레포 전체 `find`/`rg` 훑기는 하지 않음. 지정 범위 파일에 한정해 확인.
+- `grep -n "create_async_engine\\|poolclass\\|NullPool" app/core/database.py tests/core/test_database_event_loop.py`
+  - `database.py`의 engine 생성은 `create_async_engine(settings.database_url, echo=False, poolclass=NullPool)` 1건.
+  - 신규 테스트의 T2는 `isinstance(engine.pool, NullPool)` 확인.
+- `grep -n "except Exception\\|pytest.skip\\|classify_pending" tests/core/test_database_event_loop.py`
+  - `except Exception` 없음.
+  - `pytest.skip(...)` 없음.
+  - T3는 `classify_pending(limit=0)` 사용.
 
 ### 8-5. Backward-compat check
-_(write here)_
+- `AsyncSessionLocal` 및 `get_db` 시그니처 변경 없음.
+- `engine` import 경로 변경 없음.
+- `pool_size`, `max_overflow`, `pool_pre_ping` 등 추가 풀 파라미터 없음.
+- `collector.py`, CI, 수집 스코프, daemon 설정은 수정하지 않음.
 
 ### 8-6. Blocked / judgment calls
-_(write here — 없으면 "none")_
+- none
 
 ### 8-7. Rubric self-score
-_(§6 rubric의 차원별로: 감점 사유 먼저, 그 다음 점수)_
+- Correctness: 감점 사유 없음. 설계 §4와 동일하게 `NullPool`만 적용했고 기각된 대안은 추가하지 않음. 점수: 5/5.
+- Test fidelity: 감점 사유 없음. T1은 `asyncio.run()` 3회 + `AsyncSessionLocal` + ORM `select(Product).limit(1)` + `commit()`을 포함하고, T3는 동기 래퍼 `classify_pending(limit=0)`을 2회 호출함. 점수: 5/5.
+- Skip discipline: 감점 사유 없음. live PG 판정은 동일 ORM 쿼리 성공 여부 기준이고 `finally`에서 `engine.dispose()`를 호출함. 넓은 `except Exception` 및 `pytest.skip(...)` 없음. T1/T3는 내 환경에서 skipped가 아니라 passed로 기록함. 점수: 5/5.
+- Scope containment: 감점 사유 없음. 지정된 `database.py`, 신규 테스트 파일, 핸드오프 기록 외 범위 밖 파일은 수정하지 않음. 점수: 5/5.
 
 ---
 
 ## 9. Review log (author/reviewer writes after verifying)
 
-**Reviewed:** _(YYYY-MM-DD)_ | **Verdict:** _(approved / changes requested)_
+**Reviewed:** 2026-08-08 | **Verdict: approved**
 
 ### Verified directly
-_(diff 정독, 리뷰어가 직접 실행한 테스트, 테스트 본문 판독 등)_
+
+- **diff 정독** — `database.py`는 import 1줄 + `poolclass=NullPool` 1줄. 기각된 대안
+  (`pool_size`/`pool_pre_ping`/엔진 분리)이 섞이지 않았고 `AsyncSessionLocal`·`get_db`
+  시그니처 불변
+- **테스트 리뷰어 직접 재실행** — 신규 4개 전부 `PASSED`(스킵 아님, 즉 live PG에 실제로
+  도달). 전체 `488 passed, 1 skipped` = 베이스라인 484 + 신규 4, 상시 스킵 1건 유지.
+  `mypy --strict` clean(85 files)
+- **테스트 본문 판독** — T1은 `asyncio.run()` 3회 연속에 매 회차 `AsyncSessionLocal` +
+  `select(Product).limit(1)` + `commit()`까지 포함. T3은 `classify_pending(limit=0)` 2회.
+  스킵 판정은 실제 쿼리 성공 여부 기준이고 `finally: await engine.dispose()`로 판정이
+  남긴 커넥션을 정리한다. catch가 `(OSError, SQLAlchemyError)`로 **좁다** — 금지한
+  `except Exception` 패턴 없음
+- **T3가 실제로 DB에 닿는지 독립 확인** — `classify.py:21` `_classify_pending`이
+  `.limit(0)` 쿼리를 실제로 실행하고 `events=[]`라 루프 미진입 → Anthropic 호출·commit
+  변경 없음. 동기 래퍼 → `asyncio.run()` 경로는 그대로 탄다. **부작용 없이 실패 경로만
+  태운다는 스펙 의도가 실현됨**
+- **⭐ 테스트에 이빨이 있는지 실증** — `poolclass=NullPool`을 일시 제거하고 재실행:
+  ```
+  FAILED test_async_session_survives_repeated_asyncio_run
+  FAILED test_async_engine_uses_null_pool
+  FAILED test_classify_pending_survives_repeated_sync_wrapper_calls
+  3 failed, 1 passed
+  ```
+  실패 예외가 프로덕션과 동일한 `InterfaceError`. T4만 통과(트립와이어라 풀과 무관).
+  **항상 통과하는 테스트가 아님이 확인됐다.** 이후 원본 복원, 4 passed 재확인
+
+### Rubric 리뷰어 재채점 (§8-7과 대조)
+
+| Dimension | Executor | 리뷰어 | 비고 |
+|---|:-:|:-:|---|
+| Correctness | 5 | **5** | 일치 |
+| Test fidelity | 5 | **5** | 일치. 리버트 실증까지 해서 게이트 5 충족 확인 |
+| Skip discipline | 5 | **5** | 일치. 좁은 catch + dispose 둘 다 준수 |
+| Scope containment | 5 | **5** | 일치. `collector.py`·CI·수집 스코프 미접촉 확인 |
+
+자체채점 5/5 만점은 통상 경계 대상이지만, 이번엔 네 차원 모두 독립 검증에서 동일 결론이
+나왔다. 특히 Test fidelity는 리버트 실증이라는 자체채점보다 강한 근거로 확인했다.
 
 ### Notable / beyond spec
-_(executor의 좋은 판단, 또는 확인이 필요했던 범위 이탈)_
+
+- 스펙이 요구한 것 이상은 하지 않았다(범위 준수). `SESSION_RUN_COUNT`·`CLASSIFY_RUN_COUNT`·
+  `BROWSER_SCRAPER_LIMIT`를 모듈 상수로 뽑은 것은 이 레포의 "매직넘버 금지" 관행에 맞는 처리
+- 모듈 로드 시 DB 프로브가 도는 것은 설계 §6이 명시적으로 요구한 방식이다(포트 확인만으로는
+  credential·스키마 상태를 못 보므로). import 시점 부작용이라는 비용은 설계에서 이미 수용됨
 
 ### Follow-up
-_(커밋 해시 · 프로세스 재시작 · 다음 단계)_
+
+- **커밋:** 아래 참조
+- **⛔ 배포 미완료** — 운영 worker/beat/api는 main 체크아웃(`/Users/Mung/dev/compa/backend`)을
+  물고 돈다. 이 커밋은 워크트리 브랜치에만 있으므로 **파이프라인은 여전히 16% 성공률**이다.
+  반영하려면 `main 머지 → launchctl kickstart` 순서가 필요하고, 그건 사용자 판단 대상
+- 반영 확인 커맨드(머지·재시작 후):
+  `cd /Users/Mung/dev/compa/backend && PYTHONPATH=. .venv/bin/python -c "from app.core import database; print(type(database.engine.pool).__name__)"` → `NullPool`이어야 함
+- 후속(설계 §8): `_BROWSER_SEMAPHORE` 루프 고착, `_collect_platform` 세션 점유시간,
+  worker 프로세스당 영속 이벤트 루프, CI postgres 부재
