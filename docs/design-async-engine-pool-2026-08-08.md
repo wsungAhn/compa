@@ -124,20 +124,47 @@ FastAPI `get_db`는 요청당 세션 1개라 **요청당 +5.5ms**다. 이 서비
 | 현재 평시 사용 | 8 (compa 3) | 라이브 측정 |
 
 **변경 전 상한**: 15 × 3 프로세스 = 45.
-**변경 후 최악**: worker 2 × 29 = **58** + API 동시요청 수.
-58 < 97이므로 **현 구성에선 헤드룸이 있다.** 단 현행 QueuePool이 29폭 팬아웃을 15개씩
+**변경 후 최악**: worker 2 × 29 = **58** (동시성이 2라 이보다 커질 수 없다 — 가장 넓은
+팬아웃이 29이므로 다른 beat 태스크가 겹쳐도 상한은 그대로다).
+58 < 97이므로 **worker만 보면 헤드룸이 있다.** 단 현행 QueuePool이 29폭 팬아웃을 15개씩
 파도로 끊어 처리하던 것이 NullPool에선 29개가 동시에 열린다 — 실병렬성이 올라가는
 부수효과이자 이 항목의 위험이다.
 
-**부채 트리거 (수치로 고정)**: ① worker `--concurrency`를 3 이상으로 올리거나
-② `SCRAPERS` 레지스트리가 40개를 넘거나 ③ uvicorn `--workers`를 도입하면
-58 → 97 여유가 사라진다. **그때가 Celery 전용 엔진 분리 시점이다.** 지금 나누는 것은
-측정된 헤드룸을 두고 하는 추측 최적화다.
+### 5.1 API 프로세스도 29폭으로 연다 (감사 r2에서 발견 — r1 계산 누락)
+
+r1의 "API는 요청당 세션 1개(+5.5ms)"는 **틀렸다.** 실측으로 정정한다:
+
+| API 경로 | 세션 폭 | 근거 |
+|---|---:|---|
+| 일반 조회 (`get_db`) | 1 | 요청당 1세션 — r1 서술 유효 |
+| `collect_fast` 인라인 (`products.py:163`) | **0** | `FAST_SCRAPERS`가 **빈 집합**(`collector.py:87`) → `stale` 비어 즉시 `return []`. 팬아웃 없음 |
+| **백그라운드 수집** (`products.py:174` → `_collect_in_background` → `collect_on_demand`) | **29** | `background_tasks.add_task`로 응답 후 API 프로세스 안에서 실행. `collector.py:363` 팬아웃 29 |
+
+즉 **NullPool을 문 API 프로세스는 백그라운드 수집 1건당 커넥션 29개를 연다.**
+`_collecting_queries`가 같은 쿼리는 중복 차단하지만(`products.py:65`), 서로 다른 쿼리
+N건은 동시 실행된다 → **29N**.
+
+**정정된 최악 계산**: worker 58 + API 29N.
+**N ≥ 2면 58 + 58 = 116 > 97 → `too many connections`.**
+
+**이 관찰 창에서는 터지지 않는다**: §7의 재시작 대상은 worker/beat뿐이고 **API는
+재시작하지 않는다**(사용자 승인 범위). 재시작 전까지 API 프로세스는 구코드(QueuePool,
+상한 15)를 물고 돌므로 창 안 최악은 58 + 15 = **73 < 97**이다.
+
+> ⚠️ **API 재시작 게이트 (Gate Before Irreversible)**: API 프로세스가 재시작되는
+> 순간(수동 kickstart·머신 재부팅 포함) 이 계산은 116으로 바뀐다. **API를 재시작하기
+> 전에 아래 둘 중 하나를 반드시 선행할 것** — ① Celery 전용 엔진 분리(§5 대안표) 또는
+> ② `collect_on_demand` 팬아웃에 세마포어 상한. 이 문서 범위 밖이며 사용자 판단 사항.
+
+**부채 트리거 (수치로 고정)**: ① **API 프로세스 재시작** (위 게이트, 가장 먼저 온다)
+② worker `--concurrency`를 3 이상 ③ `SCRAPERS` 레지스트리 40개 초과
+④ uvicorn `--workers` 도입. **그때가 Celery 전용 엔진 분리 시점이다.**
 
 **검토했으나 채택하지 않은 대안**:
 
 | 대안 | 왜 안 했나 |
 |---|---|
+| 프로세스 role/env로 `poolclass`만 분기 (`AsyncSessionLocal` 이름 유지) | **감사 r2 제안 — 이번 레이어에선 기각, 단 §5.1 게이트의 지정 해법으로 승격.** 기각 사유: ① 역할 판별에 `com.compa.worker.plist`에 env를 심어야 하는데 **프로덕션 설정 파일 수정은 이 세션 금지 범위** ② env가 안 실린 채 배포되면 워커가 조용히 QueuePool로 돌아가 이 P0가 **무증상 재발**한다(아래 `dispose()` 행과 같은 실패 양식) ③ 관찰 창 안에서는 73 < 97로 사는 것이 없다. **API 재시작 시점에 이 안을 채택한다** |
 | Celery 전용 엔진 분리 (API는 풀 유지) | **감사 r1 재검토 후에도 기각.** "분기를 `database.py` 안에 가두면 된다"는 반론은 절반만 맞다 — `CelerySessionLocal`을 만들어도 **11개 `asyncio.run()` 호출지점이 각자 옳은 sessionmaker를 골라야** 하고(§2), 새 태스크가 `AsyncSessionLocal`을 그냥 쓰면 이 P0가 조용히 재발한다. 아래 `dispose()` 행과 같은 실패 양식이다. 게다가 위 실측대로 58 < 97로 헤드룸이 확인됐으므로 지금 분리해서 사는 것이 없다. 트리거(①②③) 도달 시 재검토 |
 | 태스크마다 `await engine.dispose()` | 11개 호출지점 전부 수정해야 하고, 새 태스크를 추가할 때마다 잊으면 재발한다. 한 줄로 구조적으로 막는 쪽이 낫다 |
 | `pool_pre_ping=True` | 죽은 루프 문제를 못 고친다. ping 자체가 같은 커넥션에서 나가므로 똑같이 터진다 |
@@ -158,14 +185,32 @@ FastAPI `get_db`는 요청당 세션 1개라 **요청당 +5.5ms**다. 이 서비
 안 본다. 실패한 프로덕션 경로와 같아지도록 **`AsyncSessionLocal` + ORM 쿼리
 (`select(Product).limit(1)`) + `commit()`**까지 한 회차에 포함한다.
 
-**T1의 DB 의존성 — 스킵이 은폐가 되지 않게 (감사 r1 반영)**: T1은 실제 PG가 필요하다.
-`.github/workflows/ci.yml`에는 **postgres 서비스가 없다** — 즉 CI에서 T1은 항상 스킵되고
-T2(타입 어서션)만 남는다. 이 사실을 문서에 못 박아 둔다:
+**T1의 DB 의존성 — 스킵이 은폐가 되지 않게 (감사 r1 반영, r2에서 정정)**: T1은 실제
+PG가 필요하고 `.github/workflows/ci.yml`에는 **postgres 서비스가 없다.**
+
+r1은 여기서 "그러니 CI에선 T1만 스킵된다"고 썼는데 **전제가 틀렸다.** r2 실측:
+
+| 파일 | live PG 사용 | skip 가드 |
+|---|---|---:|
+| `tests/tasks/test_sale_windows.py` | `AsyncSessionLocal, engine` 직접 import | **0** |
+| `tests/tasks/test_match_products.py` | `AsyncSessionLocal` | **0** |
+| `tests/api/test_feedback.py` | `AsyncSessionLocal` | **0** |
+| `tests/api/test_admin.py` | `AsyncSessionLocal` | **0** |
+| `tests/tasks/test_reddit_retention.py` | `AsyncSessionLocal` | 1 |
+
+**즉 이 스위트는 이미 live PG 없이는 통과할 수 없고, CI backend 잡은 현재 녹색일 수
+없다.** 이는 이 설계 이전부터 있던 레포 상태이며 **범위 밖**이다(§8). 다만 "베이스라인
+484 passed"가 **로컬(PG 있음) 수치**라는 점은 명시해 둔다.
+
+따라서 T1의 방침:
 
 - 스킵 조건은 `pytest.mark.skipif`로 두되 **스킵 사유 문자열에 "requires live PG"를 명시**
+- **판정 술어는 collection time에 안전한 동기 함수여야 한다**(감사 r2). async 엔진을
+  `skipif` 안에서 만들면 import 시점 부작용이 생긴다. `socket.create_connection(
+  (host, port), timeout=0.5)` 성공 여부 같은 **동기 소켓 확인** 또는 명시적 env 플래그로
+  판단하고, 판정 헬퍼는 테스트 파일 안에 둔다(새 모듈 만들지 않는다)
 - **구현 완료 판정은 로컬 DB에서 T1이 실제로 `passed`한 것을 근거로만 한다.**
   스킵 결과를 통과로 보고하지 않는다 ([[feedback_zero_results_mean_broken_not_absent]])
-- CI에 PG 서비스를 붙이는 것은 이 문서 범위 밖(§8) — CI 워크플로 변경은 별건
 
 베이스라인: 484 passed, 1 skipped (2026-08-07 워크트리 실측).
 
@@ -186,6 +231,12 @@ VENV=/Users/Mung/dev/compa/backend/.venv/bin/python
 3. 재현 스크립트 재실행 → `asyncio.run()` 6연속 전부 성공
 4. **worker/beat 재시작** (사용자 승인됨, 2026-08-08) —
    `launchctl kickstart -k gui/$(id -u)/com.compa.worker` / `.beat`
+   **API는 재시작하지 않는다.** 이 변경은 전역(`database.py`)이라 API에도 적용되지만,
+   재시작 전까지 API 프로세스는 구코드(QueuePool)를 물고 돈다 — 따라서 §5의 API
+   latency(+5.5ms)·커넥션 영향은 **이번 관찰 창에서 검증되지 않는다**(감사 r2 지적).
+   이는 의도된 것이다: §5.1 게이트가 해소되기 전에는 API를 NullPool로 올리면 안 된다.
+   파일만 고치면 떠 있는 프로세스는 구코드를 계속 돌린다는 점을 역이용한 셈이나,
+   **머신 재부팅이 이 가정을 깬다** — §5.1 게이트 참조
 5. 재시작 후 **최소 20분 관찰**하고 `worker.err.log`의 태스크별 성공/실패를 §1 표와
    같은 형식으로 재집계해 보고. `another operation is in progress`가 재시작 시각 이후로
    0건이어야 한다
@@ -198,11 +249,18 @@ VENV=/Users/Mung/dev/compa/backend/.venv/bin/python
 
 **같이 볼 지표** (§5의 커넥션 상한 제거가 실제로 문제가 되는지):
 
+`count(*)` 1회는 순간값이라 피크를 못 잡는다(감사 r2). 관찰 창 20분 동안 **주기
+샘플링해 최댓값**을 남긴다:
+
 ```bash
-# 관찰 창 동안 compa 커넥션 피크 — 58을 넘는지, 97에 근접하는지
-psql -U compa -d compa -c \
-  "select count(*) from pg_stat_activity where datname='compa'"
-grep -c "too many connections" /Users/Mung/dev/compa/ops/logs/*.err.log
+# 20분간 5초 간격으로 compa 커넥션 수를 샘플링 → 최댓값 기록
+for i in $(seq 1 240); do
+  psql -U compa -d compa -tAc \
+    "select count(*) from pg_stat_activity where datname='compa'"
+  sleep 5
+done | sort -n | tail -1   # ← 이 값이 피크
+grep -c "too many connections\|remaining connection slots" \
+  /Users/Mung/dev/compa/ops/logs/*.err.log
 ```
 
 **즉시 롤백 조건 (하나라도 해당)**:
@@ -220,3 +278,8 @@ grep -c "too many connections" /Users/Mung/dev/compa/ops/logs/*.err.log
 - `alembic/env.py` — 별도 동기 엔진, 무관
 - 수집 스코프 P0 — `design-daily-collect-brand-sweep-2026-08-07.md` 담당. 이 문서가
   먼저 랜딩된 뒤 진행
+- **CI에 postgres 서비스 추가** — §6 표대로 live PG 의존 테스트 4개가 skip 가드 없이
+  존재해 CI backend 잡이 이미 녹색일 수 없다. 이 설계 이전부터의 상태이며 CI 워크플로
+  변경은 별건이다. 핸드오프에 후속으로 남긴다
+- **API 프로세스의 NullPool 전환** — §5.1 게이트. Celery 전용 엔진 분리 또는 팬아웃
+  세마포어가 선행돼야 하며 사용자 판단 사항
