@@ -335,11 +335,45 @@ none
 
 ### Follow-up
 
-- 커밋: 아래 참조
-- **미배포** — main 머지 + `launchctl kickstart` 필요. A와 동일한 배포 게이트를 거칠 것
-  (운영은 main 체크아웃을 문다)
-- 라이브 스모크는 설계 §10의 **사전값 기반 4단계 판정**으로 — `inserted > 0`은 그날
-  첫 실행에서만 성립한다
+- 커밋 `16a316b` → main 머지 `8af2b79` (`--no-ff`), 롤백 태그 `pre-brandsweep-merge-20260808`
+
+### 배포·스모크 결과 (2026-08-08 14:45~14:47 PDT)
+
+**배포 게이트** — 운영 cwd/venv에서 런타임 확인 6항목 전부 통과:
+`_collect_all`에 브랜드 스윕 · `rollback` 존재 · `name_kr` 필터 제거 ·
+`persist_events_for_product` 존재 · `find_exact_for_sweep` 존재 · `_save_events` 제거.
+worker/beat/api 재시작 14:45:55 (기동 시각으로 확인 — PID가 wraparound로 낮게 나와
+번호만으로는 판별 불가였다).
+
+**라이브 스모크** (설계 §10 사전값 기반 4단계):
+
+```
+brand catalog sweep: 26 brands ok=26 fail=0 | products matched=644 updated=151 skipped=1746 | events inserted=198
+```
+
+| 판정 기준 | 결과 |
+|---|---|
+| `fail == 0` | ✅ 26/26 |
+| `matched ≈ 647`(사전 예측) | ✅ **644** |
+| **`products` 증가 없음** | ✅ **836 → 836** (핵심 불변식) |
+| 사전값 554 ≠ 0 → `inserted==0`도 정상 | 실제로는 **198** 삽입 |
+| 소요 | **26초** |
+
+### ⚠️ 첫 실행에서 감사 r2-P3가 발화했다 — Merit 카탈로그가 실제로 잘리고 있다
+
+```
+WARNING Merit 공홈 products.json returned exactly 250 products; pagination may be truncating catalog
+```
+
+**리뷰어 실물 확인**: `meritbeauty.com/products.json?limit=250` → 250개,
+`&page=2` → **18개 더 있음**. 총 268개 중 **18개가 지금 누락 중**이다.
+
+2026-08-07 실측 때 Merit은 155개였다 — 그 사이 카탈로그가 250을 넘었다.
+감사 r2가 "지금은 안 걸리지만 넘으면 조용히 잘린다"고 지적했고 리뷰어가
+"경계 warning을 이번 범위에 넣자"고 반영했는데, **하루 만에 실제로 걸렸다.**
+warning이 없었으면 아무도 몰랐을 것이다.
+
+**후속(§7 pagination)이 가설에서 실측 이슈로 승격됐다.** 다음 세션 우선순위.
 
 ## 10. 수정 요청 (리뷰어, 2026-08-08) — **Verdict: changes requested**
 
