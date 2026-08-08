@@ -195,8 +195,39 @@ async def _find_exact_for_sweep(
 - 못 찾으면 `None` → `skipped` 계수. **추측해서 붙이지 않는다**
 - `find_matching_product`는 **건드리지 않는다** — 사용자 검색 경로는 그 유연함이 맞다.
   스윕만 다른 계약을 쓴다
+- **다중 후보 처리 (감사 r3 P2)**: `Product`에는 `(brand, name_en)` 유니크 제약이 없고,
+  `seed_catalog`의 중복 확인도 `name_en`만 본다(`catalog.py:49`) — 같은 brand +
+  normalized `name_en` 행이 2개 이상 존재할 수 있다.
+  **계약: 후보 0개면 `None`, 정확히 1개면 그것, 2개 이상이면 `warning` 후 `None`**(=`skipped`).
+  `scalar_one_or_none()`로 예외를 내지 않는다 — 카탈로그 한 건 때문에 브랜드 전체가
+  죽으면 안 된다. T14가 검증한다
 
 이게 더 단순하고, 더 싸고, 더 안전하다. LLM 호출 0.
+
+#### 4.2.-1 ⛔ "26개"는 설정에 달려 있다 — 0개면 조용히 아무것도 안 한다 (감사 r3 P1)
+
+`get_enabled_scrapers()`는 `settings.enabled_scrapers`에 **없거나 오타 난 이름을 조용히
+무시한다**(`collector.py:77`). 따라서 `enabled_scrapers ∩ BRAND_SCRAPERS`가 0이면 이
+태스크는 **0콜·0저장으로 정상 종료**한다.
+
+실측(2026-08-08):
+
+| 출처 | 값 | 결과 |
+|---|---|---|
+| 라이브 `settings.enabled_scrapers` | `'Sephora,Amazon US,Rakuten,brands'` (config.py 기본값) | ∩ = **26개 ✅** |
+| `backend/.env` | `ENABLED_SCRAPERS` **없음** → 기본값 사용 | 정상 |
+| `backend/.env.example` | `ENABLED_SCRAPERS=네이버쇼핑,Rakuten` | ⚠️ **`brands` 없음** |
+
+**지금은 정상이지만 함정이 놓여 있다**: `.env.example`을 복사해 `.env`를 만들면 브랜드가
+0개가 되고, 게다가 거기 적힌 `네이버쇼핑`은 **API가 2026-07에 종료된 플랫폼**이다.
+
+**반영 2가지**:
+1. `_collect_all()` 시작 시 대상 브랜드 수가 **0이면 `logger.error` + 즉시 반환**한다.
+   조용한 0건은 성공으로 보고하지 않는다
+2. `backend/.env.example`의 `ENABLED_SCRAPERS`를 현행 기본값과 일치시킨다
+   (**이 설계 범위에 포함** — 한 줄이고, 안 고치면 다음 배포자가 같은 함정을 밟는다)
+
+라이브 스모크 선행조건에도 "대상 브랜드 수 > 0" 확인을 넣는다(§10).
 
 #### 4.2.0 ⚠️ 이 변경은 기존 동작을 하나 **없앤다** (감사 r2 P2 — 명시적 수용)
 
@@ -227,6 +258,10 @@ async def _find_exact_for_sweep(
 "250 미만이라 안전하다"는 이 설계의 전제가 깨진 것이고, 경고가 없으면 잘린 카탈로그를
 정상으로 착각한다. T12가 이를 검증한다.
 
+**구현 위치 (감사 r3 P3)**: `parse_products()`는 payload를 받아 events만 돌려주므로
+호출부에는 raw `payload["products"]` 길이가 남지 않는다. 이 warning은
+**`ShopifyBrandScraper.scrape()`가 `parse_products()`를 부르기 직전**에 남긴다.
+
 ### 4.3 공유 헬퍼 추출 (Tier 2 워크플로 B — DRY)
 
 **r1 초안의 계약 모순 (감사 r2 P1 — 정정)**: r1에서 §4.2 호출부에 엄격 매처를 넣으면서
@@ -251,6 +286,18 @@ async def persist_events_for_product(
 - 반환값은 **insert된 행 수(int)** 하나뿐 — §4.4의 반환값 정의와 단일 계약으로 맞는다.
   현행 `_save_events`는 반환값이 없고 `on_conflict_do_nothing`이라, 삽입 여부를 알려면
   이 헬퍼가 세야 한다
+- **⛔ 승계하면 안 되는 기존 버그 — dedup key 불일치 (감사 r3 P2, 실측 확인)**:
+  DB 유니크 인덱스는 `COALESCE(size_ml, -1)`을 포함하는데
+  (`backend/alembic/versions/d1e2f3a4b5c6_dedup_by_size.py`), `_is_duplicate`가 쓰는
+  `_event_signature`는 `(event_name, sale_price, original_price, start_date)`뿐이라
+  **`size_ml`이 빠져 있다**(`collector.py:132`). 같은 상품·플랫폼·날짜에 **가격이 같은
+  다른 용량**이 오면 DB는 허용해야 하는데 precheck가 먼저 중복으로 버린다.
+  공홈 스윕은 variant별(용량별) 이벤트를 대량으로 밀어넣으므로 노출 빈도가 급증한다 —
+  기존 버그지만 **이번 범위에서 같이 고친다**.
+  (a) `_event_signature`에 `size_ml` 추가, 또는 (b) precheck를 없애고
+  `INSERT ... ON CONFLICT DO NOTHING RETURNING id`로 실제 삽입 수를 세기.
+  **(b)를 권장한다** — dedup 진실을 DB 한 곳에만 두면 두 정의가 다시 어긋날 수 없고,
+  §4.4가 요구하는 실제 insert 수도 같은 쿼리로 얻는다. T15가 검증
 
 **호출부 분담**:
 
@@ -329,6 +376,28 @@ except Exception as exc:
 
 이 판정을 헬퍼로 두고 §6 T5가 검증한다.
 
+### 5.1.1 ⛔ 브랜드 예외를 잡으면 반드시 `rollback` 후 계속한다 (감사 r3 P1)
+
+"한 브랜드가 실패해도 나머지 진행"은 **DB 세션 상태를 되돌려야만** 성립한다.
+`persist_events_for_product`나 `commit()` 중 DB 예외가 나면 SQLAlchemy 세션은
+**실패 상태로 고착**되고, 그 뒤 모든 브랜드의 저장이 연쇄 실패한다 — 로그에는
+"1개 브랜드 실패"로 보이지만 실제로는 그 시점 이후 전부 죽는다.
+
+```python
+for platform_name in targets:
+    try:
+        ...
+    except Exception as exc:
+        await db.rollback()          # ← 이게 없으면 이후 브랜드가 전부 죽는다
+        fail += 1
+        logger.warning("brand %s failed: %s", platform_name, exc)
+        continue
+```
+
+**T4를 강화한다**: "예외 후 다음 브랜드가 진행된다"로는 부족하고,
+**"DB 저장 예외 후 다음 브랜드의 저장이 실제로 성공한다"**까지 검증해야 한다.
+rollback을 빼도 전자는 통과하기 때문이다.
+
 ### 5.2 집계 로그
 
 ```
@@ -352,7 +421,7 @@ INFO  brand catalog sweep: 26 brands ok=N fail=M | products matched=211 skipped=
 | T1 | `name_kr=None`인 상품이 갱신 대상에 **포함**된다 | **이 P0의 본질** |
 | T2 | 브랜드당 `scrape()` 호출이 **정확히 1회** (call count assert) | 상품별 재호출 재발 — 호출 수를 세지 않으면 안 보인다 |
 | T3 | DB에 없는 카탈로그 상품은 저장되지 않고 `skipped`로 계수된다 | 카탈로그 8배 폭증 |
-| T4 | 한 브랜드가 예외를 던져도 나머지가 진행되고, 그 사실이 로깅된다 | 조용한 전량 실패 |
+| T4 | 한 브랜드가 **DB 저장 예외**를 낸 뒤 **다음 브랜드의 저장이 실제로 성공**한다 | **감사 r3 P1.** rollback 누락 시 이후 전량 연쇄 실패 |
 | **T5** | **`confidence=0.0` sentinel 1건만 돌아온 브랜드가 `fail`로 계수된다** (예외 아님) | **감사 r1 P1.** 403/500에도 `ok=26 fail=0`으로 보고되는 위장 |
 | **T5b** | `confidence>0` 이벤트가 0건인 브랜드도 `fail`로 계수된다 | 엔드포인트 폐쇄(빈 응답) 위장 |
 | T6 | `product_name`이 빈 문자열/공백인 이벤트는 저장되지 않는다 | 셀렉터 파손 시 정크 행 |
@@ -363,6 +432,9 @@ INFO  brand catalog sweep: 26 brands ok=N fail=M | products matched=211 skipped=
 | **T11** | `collect_all_products`가 Sephora/Amazon US/Rakuten을 **호출하지 않는다** | **감사 r2 P2.** §4.2.0의 의도된 동작 제거를 고정 |
 | **T12** | `products` 길이가 정확히 250이면 warning이 남는다 | **감사 r2 P3.** 잘린 카탈로그를 정상으로 착각 |
 | **T13** | platform 행이 없는 브랜드는 `fail`로 계수되고 warning이 남는다 | **감사 r2 P2.** 조용히 0건 저장 |
+| **T14** | 같은 brand + normalized `name_en` 행이 2개면 `warning` 후 `skipped` (예외 아님) | **감사 r3 P2.** 임의 매칭·브랜드 전체 사망 |
+| **T15** | 가격·날짜가 같고 **`size_ml`만 다른** 두 이벤트가 **둘 다 저장**된다 | **감사 r3 P2.** dedup key 불일치로 용량 variant 유실 |
+| **T16** | 대상 브랜드가 0개면 `logger.error` + 반환 0, 성공으로 보고 안 함 | **감사 r3 P1.** 설정 오류 시 조용한 0건 |
 
 T5/T7/T8이 이번 감사에서 새로 추가된 핵심이다. 특히 **T8은 "안 하는 것"을 검증**하는
 테스트라 빠뜨리기 쉽다 — 호출이 일어나도 결과는 그럴듯해 보이고 비용만 조용히 나간다.
@@ -439,7 +511,7 @@ T5/T7/T8이 이번 감사에서 새로 추가된 핵심이다. 특히 **T8은 "�
 
 ## 10. 검증 절차 (Verification Before Done)
 
-1. `pytest tests/ -q` — **488 passed, 1 skipped**(A 랜딩 후 베이스라인) 유지 + 신규 **14케이스**(T1~T13 + T5b)
+1. `pytest tests/ -q` — **488 passed, 1 skipped**(A 랜딩 후 베이스라인) 유지 + 신규 **17케이스**(T1~T16 + T5b)
 2. `mypy --strict app/` — clean
 3. **라이브 스모크**: 워크트리에서 `_collect_all()` 1회 실행 후
    - **events inserted > 0** 확인 (§4.4 반환값 정의). "갱신 상품 수"로 세면 중복만
