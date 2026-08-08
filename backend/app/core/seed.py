@@ -25,7 +25,7 @@ PLATFORMS = [
 ]
 
 # 브랜드 공홈은 스크래퍼 레지스트리에서 파생한다 — 브랜드를 늘릴 때 시드를 같이
-# 고치는 걸 잊으면 _get_platform이 None을 반환해 수집이 조용히 스킵된다.
+# 고치는 걸 잊으면 get_platform이 None을 반환해 수집이 조용히 스킵된다.
 PLATFORMS += [
     {"name": name, "country": "US", "url": f"https://{domain}", "scrape_method": "official_api"}
     for name, domain, _brand in BRANDS

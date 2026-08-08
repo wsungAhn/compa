@@ -7,12 +7,12 @@ from datetime import datetime, timedelta, timezone
 from app.core.config import settings
 
 from deep_translator import GoogleTranslator
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.classifier import classify_rule_based
-from app.ai.matcher import get_or_create_product
+from app.ai.matcher import get_or_create_product, normalize_name
 from app.core.database import AsyncSessionLocal
 from app.core.url_safety import safe_url
 from app.models.platform import Platform
@@ -129,42 +129,6 @@ def _classify_event_type(s: ScrapedEvent) -> str | None:
     return None
 
 
-def _event_signature(s: ScrapedEvent) -> tuple[str | None, float | None, float | None, object]:
-    return (s.event_name, s.sale_price, s.original_price, s.start_date)
-
-
-async def _is_duplicate(
-    db: AsyncSession,
-    product: Product,
-    platform: Platform,
-    s: ScrapedEvent,
-) -> bool:
-    cutoff = datetime.now(timezone.utc) - timedelta(days=7)
-    event_name, sale_price, original_price, start_date = _event_signature(s)
-
-    conditions = [
-        SaleEvent.product_id == product.id,
-        SaleEvent.platform_id == platform.id,
-        SaleEvent.event_name == event_name,
-        SaleEvent.start_date == start_date,
-        SaleEvent.deleted_at.is_(None),
-        SaleEvent.created_at >= cutoff,
-    ]
-
-    if sale_price is None:
-        conditions.append(SaleEvent.sale_price.is_(None))
-    else:
-        conditions.append(SaleEvent.sale_price == sale_price)
-
-    if original_price is None:
-        conditions.append(SaleEvent.original_price.is_(None))
-    else:
-        conditions.append(SaleEvent.original_price == original_price)
-
-    result = await db.execute(select(SaleEvent).where(*conditions).limit(1))
-    return result.scalar_one_or_none() is not None
-
-
 async def _fresh_platforms(db: AsyncSession, product: Product) -> set[str]:
     """24h TTL 내에 수집된 플랫폼 이름 집합 반환."""
     cutoff = datetime.now(timezone.utc) - timedelta(hours=CACHE_TTL_HOURS)
@@ -177,22 +141,69 @@ async def _fresh_platforms(db: AsyncSession, product: Product) -> set[str]:
     return {row[0] for row in result.all()}
 
 
-async def _get_platform(db: AsyncSession, name: str) -> Platform | None:
+async def get_platform(db: AsyncSession, name: str) -> Platform | None:
     result = await db.execute(select(Platform).where(Platform.name == name))
     return result.scalar_one_or_none()
 
 
-async def _save_events(
+async def find_exact_for_sweep(
+    db: AsyncSession,
+    name: str,
+    brand: str | None,
+) -> Product | None:
+    """스윕 전용 엄격 매처 — 브랜드 exact + name_en normalized exact만 허용."""
+    if not brand or not name.strip():
+        return None
+
+    brand_lower = brand.strip().lower()
+    normalized_name = normalize_name(name)
+
+    result = await db.execute(
+        select(Product).where(
+            Product.deleted_at.is_(None),
+            Product.brand.is_not(None),
+            func.lower(Product.brand) == brand_lower,
+        )
+    )
+    candidates = [
+        candidate
+        for candidate in result.scalars().all()
+        if candidate.name_en and normalize_name(candidate.name_en) == normalized_name
+    ]
+
+    if len(candidates) == 1:
+        return candidates[0]
+    if len(candidates) > 1:
+        _logger.warning(
+            "sweep exact match ambiguous: brand=%s name=%s candidates=%d",
+            brand,
+            name,
+            len(candidates),
+        )
+    return None
+
+
+def group_events_by_product_name(events: list[ScrapedEvent]) -> dict[str, list[ScrapedEvent]]:
+    """이름이 있는 이벤트만 상품명으로 묶는다."""
+    grouped: dict[str, list[ScrapedEvent]] = {}
+    for event in events:
+        name = event.product_name.strip()
+        if not name:
+            continue
+        grouped.setdefault(name, []).append(event)
+    return grouped
+
+
+async def persist_events_for_product(
     db: AsyncSession,
     product: Product,
     platform: Platform,
     scraped: list[ScrapedEvent],
-) -> None:
+) -> int:
+    """한 상품의 이벤트를 저장하고 실제 insert된 행 수를 반환한다."""
+    inserted = 0
     for s in scraped:
         if s.confidence == 0.0:
-            continue
-
-        if await _is_duplicate(db, product, platform, s):
             continue
 
         event_type = _classify_event_type(s)
@@ -216,9 +227,11 @@ async def _save_events(
             size_ml=s.size_ml,
             is_bundle=_is_bundle(s.product_name),
             raw_text=s.raw_text,
-        ).on_conflict_do_nothing()
-        await db.execute(stmt)
+        ).on_conflict_do_nothing().returning(SaleEvent.id)
+        result = await db.execute(stmt)
+        inserted += len(result.scalars().all())
     await db.commit()
+    return inserted
 
 
 def _get_platform_country(platform_name: str) -> str:
@@ -262,7 +275,7 @@ async def _collect_platform(
         if not product:
             return collected_product_ids
 
-        platform = await _get_platform(db, platform_name)
+        platform = await get_platform(db, platform_name)
         if not platform:
             return collected_product_ids
 
@@ -285,21 +298,20 @@ async def _collect_platform(
             else:
                 scraped_events = await scraper.scrape(translated_query)
 
-            by_product: dict[str, list[ScrapedEvent]] = {}
-            for s in scraped_events:
-                # A nameless event means the scraper's selector broke, not that a
-                # product has no name — storing it creates a junk product row that
-                # every later search and comparison inherits.
-                if s.confidence > 0 and s.product_name and s.product_name.strip():
-                    by_product.setdefault(s.product_name, []).append(s)
+            by_product = {
+                product_name: events
+                for product_name, events in group_events_by_product_name(scraped_events).items()
+                if any(event.confidence > 0 for event in events)
+            }
 
             for product_name, events in by_product.items():
                 brand = events[0].brand if events else None
                 prod = await get_or_create_product(db, product_name, brand, platform_country)
-                await _save_events(db, prod, platform, events)
+                await persist_events_for_product(db, prod, platform, events)
                 collected_product_ids.add(prod.id)
 
         except Exception as exc:
+            await db.rollback()
             _logger.warning("Platform %s scrape failed: %s", platform_name, exc)
     return collected_product_ids
 

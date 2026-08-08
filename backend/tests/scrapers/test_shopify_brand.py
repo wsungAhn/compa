@@ -121,7 +121,7 @@ def test_registry_has_no_duplicate_domains() -> None:
 
 
 def test_seed_covers_every_brand_platform() -> None:
-    """시드에 없는 플랫폼은 _get_platform이 None을 반환해 수집이 조용히 스킵된다."""
+    """시드에 없는 플랫폼은 get_platform이 None을 반환해 수집이 조용히 스킵된다."""
     from app.core.seed import PLATFORMS
 
     seeded = {p["name"] for p in PLATFORMS}

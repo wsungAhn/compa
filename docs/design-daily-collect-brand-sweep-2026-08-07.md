@@ -2,7 +2,14 @@
 
 - 작성: 2026-08-07 PDT · Mac Studio (`mac.lan`)
 - Tier: **2** (`review-tiers.md:63` — 새 데이터 흐름 도입 + 일일 persistence 동작 변경)
-- 대상 파일: `app/tasks/collect.py`, `app/scrapers/collector.py`, `tests/tasks/test_collect.py`(신규)
+- 대상 파일 (**전부 `backend/` 아래다** — 감사 r1 P2: 초안이 `app/...`로만 적어 레포
+  루트로 오해될 수 있었다): `backend/app/tasks/collect.py`,
+  `backend/app/scrapers/collector.py`, `backend/tests/tasks/test_collect.py`(신규),
+  `backend/app/scrapers/brands/shopify.py`(§4.2.2의 250 경계 warning),
+  `backend/.env.example`(§4.2.-1의 stale 설정 정정).
+  참고: 기존 매처는 `backend/app/ai/matcher.py`다 (`app/scrapers/matcher.py`는
+  **존재하지 않는다**). 단 이번에 만드는 스윕 전용 매처는 거기가 아니라
+  `collector.py`에 둔다 — §4.2.1 참조
 - 워크트리: `.worktrees/collect-daily-scope` (브랜치 `design/collect-daily-scope`)
 
 ---
@@ -23,13 +30,16 @@ select(distinct(Product.name_kr)).where(
 `name_kr`이 있는 상품이 4개뿐이다. 나머지 290개(브랜드 공홈 시딩 269개 `name_en`,
 라쿠텐 매칭 21개 `name_jp`)는 **영원히 갱신되지 않는다.**
 
-> **선행 조건 (2026-08-08 추가)**: 이 수정보다 `design-async-engine-pool-2026-08-08.md`가
-> **먼저** 랜딩돼야 한다. `collect_all_products`는 현재 성공 0 / 실패 2 — 이벤트 루프와
-> 커넥션 풀 불일치로 태스크가 실행 자체를 못 한다. 스코프를 고쳐도 돌지 않는다.
+> **선행 조건 — 해결됨 (2026-08-08)**: `design-async-engine-pool-2026-08-08.md`(NullPool)가
+> 커밋 `36f2448`로 구현·리뷰되고 `c2bcc7c`로 main 머지·배포됐다. `collect_all_products`가
+> 실행 불가였던 원인은 제거됐다. 이 문서는 이제 독립적으로 진행 가능하다.
 >
-> **수치 갱신 (2026-08-08 재실측)**: 활성 상품 294 → **303**, `name_kr` 보유 4 (1.3%),
-> `name_en` 278, `name_jp` 21. Path A 커버리지 211/294 → **211/303 (69.6%)**.
-> 아래 표는 08-07 시점 값이며 구현 직전에 다시 실측할 것.
+> **수치 갱신 (2026-08-08 09시 재실측, 감사 r1 P2)**: 활성 상품 **339**
+> (`name_kr` 4 · `name_en` 314 · `name_jp` 21 · `name_cn` 0), `sale_events` 156.
+> Path A 커버리지 **211/339 (62.2%)**.
+> **분모가 계속 자란다**: 08-07 294 → 08-08 04시 303 → 09시 339. 분자 211(registry
+> brand exact)은 세 시점 동일. **구현 직전에 다시 재고, 검증 기준도 그때 값으로 잡는다** —
+> 아래 본문의 294/303 표기는 작성 시점 스냅샷이다.
 
 ### 실측 (2026-08-07, 라이브 DB)
 
@@ -57,7 +67,7 @@ Sephora   1
 
 - 레포 내 검색: `cross_search_symbols("seed_catalog")` → 빈 결과(compa 미색인). grep 폴백 → `scrape("")` 호출부 1건(`app/scrapers/catalog.py:43`), `_save_events` 호출부 1건(`app/scrapers/collector.py:299`), 일일 수집 태스크 테스트 **0건**. 재사용 가능한 기존 자산 확인 — 새 스크래퍼 불요
 - 외부 선행작업: camelcamelcamel/Keepa 계열 가격추적기의 벌크 카탈로그 폴링 패턴 — 상품별 검색이 아니라 판매자 피드를 주기 폴링. **코드 채택 없음(패턴만 참고)이라 라이선스·커밋일 검토 불요**. Shopify `/products.json`은 플랫폼 공개 표준 엔드포인트로 이미 `shopify.py`가 사용 중
-- 결론: **재사용** — `ShopifyBrandScraper.scrape("")` + `_save_events`/`find_matching_product`(전부 기존)를 잇는 배선만 추가. `_collect_platform` 내부 저장 블록은 헬퍼로 추출해 공유
+- 결론: **부분 재사용** — `ShopifyBrandScraper.scrape("")`와 `_save_events`의 저장 로직은 재사용하고, `_collect_platform` 내부 저장 블록은 헬퍼로 추출해 공유한다. **단 `find_matching_product`는 스윕에서 쓰지 않는다** — 사용자 검색 경로에서만 기존대로 유지한다(감사 r1에서 LLM 팬아웃 확인, §4.2.1). 스윕은 전용 엄격 매처를 쓴다
 
 상세는 아래.
 
@@ -140,39 +150,232 @@ polypoly/agent_hub/openscience)에 없어 색인 대상이 아니다. 따라서 
 
 ```
 for platform_name in (enabled_scrapers ∩ BRAND_SCRAPERS):     # 26회
-    events = await scraper.scrape("")                          # 카탈로그 전체
+    events = await scraper.scrape("")                          # 첫 250건 (§4.2.2)
+    if is_scraper_failure(events):                             # §5.1 — sentinel 판별
+        fail += 1;  continue
+    platform = await _get_platform(db, platform_name)
+    if platform is None:                                       # §4.3.1
+        fail += 1;  warn(platform_name);  continue
     for product_name, group in group_by_name(events):
-        product = await find_matching_product(...)             # 생성하지 않는다
+        product = await _find_exact_for_sweep(db, product_name, scraper_cls.BRAND)  # §4.2.1
         if product is None:
             skipped += 1;  continue
-        await _save_events(db, product, platform, group)
+        matched_products += 1                                  # 매칭 성공 (2회차에도 211)
+        inserted_here = await persist_events_for_product(db, product, platform, group)
+        if inserted_here: updated_products += 1                # 실제 insert 발생 (2회차엔 0)
+        inserted += inserted_here
 ```
 
 - HTTP 콜 **26회/일** (현행 116회에서 감소)
-- 커버리지 **211/294 (71.8%)** — 잔여 83개는 브랜드 NULL 51 + 해시브랜드 32
-- 상품 **생성 없음** — `get_or_create_product`가 아니라 `find_matching_product`
-  (`matcher.py`, 기존 함수)를 쓴다. 매칭 실패는 `skipped` 카운터로 관측한다
+- 커버리지 **211/339 (62.2%)** — 2026-08-08 재실측. 잔여 128개는 브랜드 NULL·해시브랜드·
+  라쿠텐 JP 등. **분모는 계속 늘어난다**(08-07 294 → 08-08 04시 303 → 09시 339) —
+  구현 직전에 다시 잰다. 분자 211(registry brand exact 기준)은 세 시점 모두 동일
+
+#### 4.2.1 ⛔ 스윕은 `find_matching_product`를 쓰면 안 된다 (감사 r1 P1, 실물 확인)
+
+**초안의 치명적 오류**: `find_matching_product`를 단순 조회로 가정했으나 아니다
+(`backend/app/ai/matcher.py:109`). 3단 전략이다:
+
+| 단계 | 동작 | 스윕에서의 문제 |
+|---|---|---|
+| 1 | country 컬럼 normalized exact | 문제 없음 — 이것만 필요하다 |
+| 2 | 같은 브랜드 후보가 **정확히 1개**면 `_same_product_evidence` 토큰 겹침 휴리스틱 | 신규 상품이 **엉뚱한 기존 행에 붙는다** |
+| 3 | 브랜드 후보가 **여럿**이면 `_ask_claude_for_match` — **Claude API 호출** | 치명적 |
+
+DB 실측: Laneige 79 · Tatcha 68 · Beauty of Joseon 63개. 카탈로그 2,388건을 훑으면
+exact가 안 맞는 대다수가 **Stage 3로 떨어져 상품마다 Claude를 부른다** — 일일 수집
+1회에 수천 건. 비용·지연·rate limit 전부 터진다. `create_missing=False`는 **생성만**
+막을 뿐 오매칭과 LLM 팬아웃은 못 막는다.
+
+**정정**: 스윕 전용 엄격 매처를 이 설계 범위에 새로 둔다.
+
+```python
+async def _find_exact_for_sweep(
+    db: AsyncSession, name: str, brand: str | None
+) -> Product | None:
+    """브랜드 exact + name_en normalized exact 일치만 반환. 휴리스틱·LLM 호출 없음."""
+```
+
+**구현 단계를 고정한다 (감사 r6 P2)**: `normalize_name()`은 HTML 태그 제거·소문자화·
+공백 collapse까지 한다. 따라서 `func.lower(Product.name_en) == normalized_input`처럼
+DB에서 바로 비교하면 **normalized로는 같은 값이 후보에서 빠진다**(원본에 태그·중복 공백이
+있으면). 반대로 전 행을 훑으면 비효율이다. 순서를 못 박는다:
+
+1. `lower(Product.brand) == lower(brand)` **AND `deleted_at IS NULL`**로 DB에서 후보를 좁힌다
+2. 후보들을 **Python에서** `normalize_name(c.name_en) == normalize_name(name)`으로 비교
+3. 일치 0개 → `None` · 1개 → 그것 · **2개 이상 → `warning` 후 `None`**
+
+테스트는 대소문자·중복 공백·HTML 태그(`<b>`)가 섞인 이름이 정상 매칭되는지 포함한다(T14).
+
+**배치 (감사 r5 P2)**: 이 함수는 **`backend/app/scrapers/collector.py`의 private helper**로
+둔다. `app/ai/matcher.py`에 넣지 않는다 — 거기는 "유연한 크로스언어 매칭"이 주제이고,
+같은 파일에 두면 다음 사람이 둘을 헷갈리거나 통합하려 든다. 스윕 전용 계약임을 위치로도
+드러낸다.
+
+- 판정은 **`normalize_name(name_en) == normalize_name(입력)` AND `lower(brand) == lower(입력)`** 둘 다
+- **`brand` 인자의 출처를 고정한다 (감사 r4 P2)**: `scraper_cls.BRAND`를 쓴다.
+  `events[0].brand`도 실무상 같은 값이지만(`parse_products`가 `self.BRAND`를 넣는다),
+  이벤트가 비어 있거나 파서가 바뀌면 깨진다. **스크래퍼 클래스가 브랜드의 정본**이다
+- 못 찾으면 `None` → `skipped` 계수. **추측해서 붙이지 않는다**
+- `find_matching_product`는 **건드리지 않는다** — 사용자 검색 경로는 그 유연함이 맞다.
+  스윕만 다른 계약을 쓴다
+- **다중 후보 처리 (감사 r3 P2)**: `Product`에는 `(brand, name_en)` 유니크 제약이 없고,
+  `seed_catalog`의 중복 확인도 `name_en`만 본다(`catalog.py:49`) — 같은 brand +
+  normalized `name_en` 행이 2개 이상 존재할 수 있다.
+  **계약: 후보 0개면 `None`, 정확히 1개면 그것, 2개 이상이면 `warning` 후 `None`**(=`skipped`).
+  `scalar_one_or_none()`로 예외를 내지 않는다 — 카탈로그 한 건 때문에 브랜드 전체가
+  죽으면 안 된다. T14가 검증한다
+
+이게 더 단순하고, 더 싸고, 더 안전하다. LLM 호출 0.
+
+#### 4.2.-1 ⛔ "26개"는 설정에 달려 있다 — 0개면 조용히 아무것도 안 한다 (감사 r3 P1)
+
+`get_enabled_scrapers()`는 `settings.enabled_scrapers`에 **없거나 오타 난 이름을 조용히
+무시한다**(`collector.py:77`). 따라서 `enabled_scrapers ∩ BRAND_SCRAPERS`가 0이면 이
+태스크는 **0콜·0저장으로 정상 종료**한다.
+
+실측(2026-08-08):
+
+| 출처 | 값 | 결과 |
+|---|---|---|
+| 라이브 `settings.enabled_scrapers` | `'Sephora,Amazon US,Rakuten,brands'` (config.py 기본값) | ∩ = **26개 ✅** |
+| `backend/.env` | `ENABLED_SCRAPERS` **없음** → 기본값 사용 | 정상 |
+| `backend/.env.example` | `ENABLED_SCRAPERS=네이버쇼핑,Rakuten` | ⚠️ **`brands` 없음** |
+
+**지금은 정상이지만 함정이 놓여 있다**: `.env.example`을 복사해 `.env`를 만들면 브랜드가
+0개가 되고, 게다가 거기 적힌 `네이버쇼핑`은 **API가 2026-07에 종료된 플랫폼**이다.
+
+**반영 2가지**:
+1. `_collect_all()` 시작 시 대상 브랜드 수가 **0이면 `logger.error` + 즉시 반환**한다.
+   조용한 0건은 성공으로 보고하지 않는다
+2. `backend/.env.example`의 `ENABLED_SCRAPERS`를 현행 기본값과 일치시킨다
+   (**이 설계 범위에 포함** — 한 줄이고, 안 고치면 다음 배포자가 같은 함정을 밟는다)
+
+라이브 스모크 선행조건에도 "대상 브랜드 수 > 0" 확인을 넣는다(§10).
+
+#### 4.2.0 ⚠️ 이 변경은 기존 동작을 하나 **없앤다** (감사 r2 P2 — 명시적 수용)
+
+`collect_all_products`를 브랜드 스윕 전용으로 바꾸면, 현재 `name_kr` 보유 4개 상품에
+대해 매일 돌던 **Sephora/Amazon US/Rakuten 검색 갱신이 사라진다**(4 × 29 = 116콜 → 0).
+
+**이것을 의도된 동작 변경으로 수용한다**는 것을 acceptance에 못 박는다. 근거:
+
+- 그 4개 중 2개는 `name_kr`에 영어가 들어간 오염 행이다(`'SK-II Facial Treatment
+  Essence'`, `'starter ritual'`) — 한국어 검색어로 아마존/라쿠텐을 치는 셈이라 원래
+  매칭률이 낮았다
+- 검색 경로 자체는 **없어지지 않는다.** 사용자 검색(`collect_on_demand`)과
+  `run_collection_slow`는 그대로다. 사라지는 건 *일일 자동* 검색 갱신뿐이다
+- 검색 기반 일일 갱신의 재도입은 §7-1(정규 제품명 확보 선행)에 걸려 있다
+
+**수용 기준에 포함**: 구현 후 `collect_all_products`가 Sephora/Amazon/Rakuten을
+호출하지 않음을 테스트로 고정한다(T11).
+
+#### 4.2.2 `scrape("")`는 카탈로그 "전체"가 아니다 (감사 r1 P2)
+
+`shopify.py:21` `_LIMIT = 250`, `:113`이 `?limit=250` 한 페이지만 요청하고 **pagination이
+없다.** 실측 최대가 Westman Atelier 232건이라 지금은 안 걸리지만, 250을 넘는 브랜드가
+생기면 조용히 잘린다. 이 설계는 **"각 브랜드 첫 250건"**으로 범위를 한정하고, pagination은
+§7 후속으로 둔다. 문서 다른 곳의 "카탈로그 전체" 표현도 이 뜻이다.
+
+**경계 관측을 이번 범위에 넣는다 (감사 r2 P3)**: pagination을 미루더라도, 한 브랜드의
+`payload['products']` 길이가 **정확히 250이면 `logger.warning`**을 남긴다. 그 순간
+"250 미만이라 안전하다"는 이 설계의 전제가 깨진 것이고, 경고가 없으면 잘린 카탈로그를
+정상으로 착각한다. T12가 이를 검증한다.
+
+**구현 위치 (감사 r3 P3)**: `parse_products()`는 payload를 받아 events만 돌려주므로
+호출부에는 raw `payload["products"]` 길이가 남지 않는다. 이 warning은
+**`ShopifyBrandScraper.scrape()`가 `parse_products()`를 부르기 직전**에 남긴다.
 
 ### 4.3 공유 헬퍼 추출 (Tier 2 워크플로 B — DRY)
 
-`collector.py:288-300`의 "이벤트를 상품명으로 묶어 저장" 블록을 추출한다:
+**r1 초안의 계약 모순 (감사 r2 P1 — 정정)**: r1에서 §4.2 호출부에 엄격 매처를 넣으면서
+§4.3 헬퍼는 `create_missing` 플래그를 그대로 뒀다. 그러면 **매칭이 두 곳에 존재**하고,
+구현자가 헬퍼 안에서 다시 `get_or_create_product`/`find_matching_product`를 부르기 쉬워
+r1이 막은 LLM 팬아웃·오매칭이 그대로 재도입된다. 반환값 계약도 §4.4(실제 insert 수)와
+어긋났다.
+
+**정정 — 헬퍼는 "저장만" 한다. 매칭은 호출부에서 끝낸다.**
 
 ```python
-async def persist_scraped(
-    db, platform, scraped, country, *, create_missing: bool
-) -> tuple[set[uuid.UUID], int]:
-    """스크랩 이벤트를 상품별로 묶어 저장. (저장된 product_id 집합, 스킵 수) 반환.
+async def persist_events_for_product(
+    db: AsyncSession, product: Product, platform: Platform, events: list[ScrapedEvent]
+) -> int:
+    """한 상품의 이벤트를 저장하고 **실제 insert된 행 수**를 반환한다.
 
-    create_missing=False면 기존 상품만 갱신한다 — 카탈로그 스윕은 브랜드 전량을
-    받아오므로 생성을 허용하면 한 번에 2,388행이 들어온다(2026-08-07 실측).
+    매칭하지 않는다 — 호출부가 이미 확정한 product를 받는다.
     """
 ```
 
-- `_collect_platform`은 `create_missing=True`로 호출 (동작 불변)
-- Path A는 `create_missing=False`로 호출
+- `create_missing` 플래그는 **없앤다.** 매칭 정책이 호출부에 있으므로 불필요하다
+- 반환값은 **insert된 행 수(int)** 하나뿐 — §4.4의 반환값 정의와 단일 계약으로 맞는다.
+  현행 `_save_events`는 반환값이 없고 `on_conflict_do_nothing`이라, 삽입 여부를 알려면
+  이 헬퍼가 세야 한다
+- **⛔ 승계하면 안 되는 기존 버그 — dedup key 불일치 (감사 r3 P2, 실측 확인)**:
+  DB 유니크 인덱스는 `COALESCE(size_ml, -1)`을 포함하는데
+  (`backend/alembic/versions/d1e2f3a4b5c6_dedup_by_size.py`), `_is_duplicate`가 쓰는
+  `_event_signature`는 `(event_name, sale_price, original_price, start_date)`뿐이라
+  **`size_ml`이 빠져 있다**(`collector.py:132`). 같은 상품·플랫폼·날짜에 **가격이 같은
+  다른 용량**이 오면 DB는 허용해야 하는데 precheck가 먼저 중복으로 버린다.
+  공홈 스윕은 variant별(용량별) 이벤트를 대량으로 밀어넣으므로 노출 빈도가 급증한다 —
+  기존 버그지만 **이번 범위에서 같이 고친다**.
+  (a) `_event_signature`에 `size_ml` 추가, 또는 (b) precheck를 없애고
+  `INSERT ... ON CONFLICT DO NOTHING RETURNING id`로 실제 삽입 수를 세기.
+  **(b)를 권장한다** — dedup 진실을 DB 한 곳에만 두면 두 정의가 다시 어긋날 수 없고,
+  §4.4가 요구하는 실제 insert 수도 같은 쿼리로 얻는다. T15가 검증
 
-이름 없는 이벤트를 거르는 가드(`collector.py:293`, 셀렉터 파손 시 정크 상품 생성 방지)는
-헬퍼 안으로 그대로 옮긴다.
+**⛔ 바뀌는 건 중복 판정 방식뿐이다 — 나머지 저장 계약은 전량 승계한다 (감사 r4 P1)**
+
+r3의 "precheck 제거" 권고를 "저장 헬퍼를 새로 만든다"로 읽으면 구현자가 기존 필드
+매핑과 가드를 빠뜨린다. `_save_events`(`collector.py:191-221`)가 지금 하는 일 **전부**를
+그대로 옮긴다:
+
+| 항목 | 현행 | 승계 |
+|---|---|---|
+| `confidence == 0.0` 이벤트 스킵 | `:192` | **필수** |
+| `event_type` = `_classify_event_type(s)` | `:198` | 필수 |
+| `source_url` = `safe_url(s.source_url)` | `:212` | 필수 (URL 안전화) |
+| `needs_review` = `s.confidence < 0.7` | `:214` | 필수 |
+| `is_bundle` = `_is_bundle(s.product_name)` | `:217` | 필수 |
+| `currency` = `s.currency or "KRW"` | `:210` | 필수 |
+| `scraped_name` / `size_ml` / `raw_text` | `:216-218` | 필수 |
+| `on_conflict_do_nothing()` | `:219` | 필수 |
+| `_is_duplicate` precheck | `:195` | **제거** (이것만 바뀐다) |
+
+T10·T15가 이 필드들을 **실제로 검증**한다 — "기존 동작 불변"이라는 문구만으로는 부족하다.
+
+**호출부 분담**:
+
+| 호출부 | 매칭 방법 | 근거 |
+|---|---|---|
+| `_collect_platform` (사용자 검색 경로) | 기존 `get_or_create_product` 그대로 | 동작 불변 |
+| Path A (스윕) | `_find_exact_for_sweep` (§4.2.1) | LLM 0, 생성 0 |
+
+**⛔ 두 호출부는 반환값을 다르게 쓴다 — 섞으면 검색이 깨진다 (감사 r6 P1)**
+
+새 헬퍼가 `inserted count`를 돌려주므로, 구현자가 **양쪽 다** `inserted > 0`일 때만
+product를 계수하기 쉽다. 그러면 사용자 검색 경로에 회귀가 생긴다:
+
+| 호출부 | product id 수집 조건 | 이유 |
+|---|---|---|
+| `_collect_platform` | **insert 수와 무관하게 항상 추가** (`collector.py:300` 현행) | 오늘 이미 수집돼 중복만 나온 상품도 **검색 결과에는 나와야 한다** |
+| Path A | `inserted > 0`인 상품만 `updated` 계수 | 반환값이 "실제 갱신"을 뜻해야 검증이 성립(§4.4) |
+
+T17이 이를 고정한다: **중복 이벤트만 발생한 경우에도 `_collect_platform`이 그 product를
+반환한다.**
+
+이름 없는 이벤트를 거르는 가드(`collector.py:293`, 셀렉터 파손 시 정크 상품 생성 방지)와
+"상품명으로 묶기"는 두 호출부가 모두 쓰므로 별도 순수 함수로 분리한다
+(`group_events_by_product_name(events) -> dict[str, list[ScrapedEvent]]`).
+
+### 4.3.1 platform 행이 없으면 조용히 0건이 된다 (감사 r2 P2)
+
+`_get_platform`(`collector.py:180`)이 `None`을 반환하면 `_collect_platform:265-267`은
+**조용히 return한다.** 브랜드를 새로 추가하고 `platforms` seed를 안 넣으면 26개 스크랩이
+전부 성공해도 저장은 0건인데 로그는 정상으로 보인다.
+
+- 실측(2026-08-08): 공홈 26개 **전부 platform 행 보유** → 지금은 발화하지 않는다
+- 그래도 **`fail`로 계수하고 브랜드명과 함께 warning**한다(§5.1의 sentinel 실패와 별개 사유)
+- 라이브 스모크의 **선행조건**으로 "26개 platform 행 존재"를 먼저 확인한다
 
 ### 4.4 `_collect_all` 재작성
 
@@ -185,7 +388,15 @@ async def _collect_all() -> int:
     """
 ```
 
-반환값은 **갱신된 상품 수(int)** 유지 — Celery beat 시그니처 불변.
+**반환값 정의 (감사 r1 P2 — 초안은 "갱신된 상품 수"라고만 써 모호했다)**:
+`_collect_all()`은 **신규 `SaleEvent`가 1건 이상 실제로 insert된 상품의 수**를 반환한다.
+Celery beat 시그니처(int)는 불변.
+
+왜 이 정의여야 하나: `_save_events`는 `on_conflict_do_nothing`이고 `_is_duplicate`로
+거르므로 **같은 날 두 번째 실행은 insert가 0건**이다. "매칭된 상품 수"를 세면 그때도
+211이 나와 "정상 동작"으로 보인다 — 검증이 무의미해진다. 따라서 `persist_events_for_product`가
+**실제 insert 건수**를 반환하도록 바꾸고(현재 `_save_events`는 반환값 없음), 그 값이
+0보다 큰 상품만 계수한다.
 
 ---
 
@@ -198,33 +409,115 @@ except Exception:
     continue          # ← 무엇이 몇 번 실패했는지 알 수 없다
 ```
 
-신규 코드는 브랜드 단위로 `try/except` + `logger.warning(브랜드명, 예외)` + 실패 카운트를
-집계해 완료 시 1줄로 남긴다:
+### 5.1 ⛔ 스크래퍼 실패는 예외로 오지 않는다 (감사 r1 P1, 실물 확인)
+
+`ShopifyBrandScraper.scrape()`는 HTTP/JSON 실패를 **내부에서 삼키고**
+`confidence=0.0` sentinel 이벤트 1건을 반환한다(`backend/app/scrapers/brands/shopify.py:134`):
+
+```python
+except Exception as exc:
+    logger.warning("%s products.json failed: %s", self.PLATFORM_NAME, exc)
+    return [ScrapedEvent(product_name=query, confidence=0.0, raw_text=f"{url}: {exc}")]
+```
+
+빈 응답(엔드포인트 폐쇄)도 같은 형태의 sentinel로 온다(`:146`).
+
+**따라서 브랜드 단위 `try/except`만으로는 실패를 못 센다.** 403/500/JSON 파손이 나도
+예외가 안 올라와 `ok=26 fail=0`으로 보고된다 — 26개 브랜드가 전부 죽어도 로그는 정상이다.
+(실측 배경: Drunk Elephant 410, Fresh·YTTP 403 — 엔드포인트를 닫는 브랜드가 실제로 있다.)
+
+**판정 규칙**: 브랜드 결과가 아래 중 하나면 **실패**로 센다.
+
+- 이벤트가 1건뿐이고 그 `confidence == 0.0` (sentinel)
+- `confidence > 0`인 이벤트가 0건
+
+이 판정을 헬퍼로 두고 §6 T5가 검증한다.
+
+### 5.1.1 ⛔ 브랜드 예외를 잡으면 반드시 `rollback` 후 계속한다 (감사 r3 P1)
+
+"한 브랜드가 실패해도 나머지 진행"은 **DB 세션 상태를 되돌려야만** 성립한다.
+`persist_events_for_product`나 `commit()` 중 DB 예외가 나면 SQLAlchemy 세션은
+**실패 상태로 고착**되고, 그 뒤 모든 브랜드의 저장이 연쇄 실패한다 — 로그에는
+"1개 브랜드 실패"로 보이지만 실제로는 그 시점 이후 전부 죽는다.
+
+```python
+for platform_name in targets:
+    try:
+        ...
+    except Exception as exc:
+        await db.rollback()          # ← 이게 없으면 이후 브랜드가 전부 죽는다
+        fail += 1
+        logger.warning("brand %s failed: %s", platform_name, exc)
+        continue
+```
+
+**commit 경계 — 브랜드 단위 atomic이 아니다 (감사 r4 P2)**: 기존 `_save_events`는
+**상품 단위로 `commit()`**한다(`collector.py:221`). 이 계약을 **그대로 유지한다**
+(헬퍼에서 commit을 빼면 `_collect_platform`의 사용자 검색 경로 계약이 바뀐다).
+
+따라서 브랜드 루프 중간에 예외가 나면 **그 브랜드의 앞선 상품들은 이미 커밋돼 있고**,
+`rollback()`은 실패한 statement 이후의 세션 상태만 회복한다. 이는 **의도된 동작**이다 —
+가격 이력은 append-only라 부분 수집이 부분 손실보다 낫다. T4/T10은 이 기준으로 고정한다.
+
+**T4를 강화한다**: "예외 후 다음 브랜드가 진행된다"로는 부족하고,
+**"DB 저장 예외 후 다음 브랜드의 저장이 실제로 성공한다"**까지 검증해야 한다.
+rollback을 빼도 전자는 통과하기 때문이다.
+
+### 5.2 집계 로그
 
 ```
-INFO  brand catalog sweep: 26 brands ok=26 fail=0 | products updated=211 skipped=2177 | events saved=N
+INFO  brand catalog sweep: 26 brands ok=N fail=M | products matched=211 updated=U skipped=2177 | events inserted=K
 ```
 
-`skipped`가 크게 나오는 것은 정상이다(카탈로그 2,388 중 DB에 있는 211만 갱신).
-이 수치가 관측되어야 §7-2 판단이 가능하다.
+- **세 카운터는 서로 다른 것을 센다 (감사 r5 P2)** — 구현자가 섞지 않도록 명시:
+  - `matched` = 엄격 매처가 기존 상품을 찾은 그룹 수. **2회차에도 211**
+  - `updated` = 그중 **실제 insert가 1건 이상** 발생한 상품 수. **2회차엔 0이 정상**
+  - `skipped` = 매칭 실패 그룹 수(카탈로그 2,388 중 DB에 없는 나머지)
+  `_collect_all()`의 반환값은 `updated`다(§4.4)
+- `fail`은 §5.1 판정 기준이며 브랜드명·사유를 `logger.warning`으로 남긴다
+- `events inserted`가 §4.4의 반환값 근거다. **두 번째 실행에서 0이 나오는 것이 정상**이라는
+  점을 로그를 읽는 사람이 알 수 있게 한다
 
 ---
 
 ## 6. 테스트 계획 (Tier 2 워크플로 D)
 
-`tests/tasks/test_collect.py` 신규. 기존 `tests/scrapers/test_catalog_seed.py`의
-`FakeSession`/`_fake_registry` 패턴을 그대로 따른다.
+`tests/tasks/test_collect.py` 신규. 대부분은 기존 `tests/scrapers/test_catalog_seed.py`의
+`FakeSession`/`_fake_registry` 패턴을 따른다.
+
+**단 T9·T15는 FakeSession으로 검증할 수 없다 (감사 r6 P2)**: 이 둘의 핵심은 PostgreSQL의
+`ON CONFLICT DO NOTHING RETURNING id`와 `uq_sale_events_dedup` 유니크 인덱스의 **실제
+동작**이다. 단순 fake는 `.returning()` 누락·conflict key 오해·insert count 계산 오류를
+전부 통과시킨다. 따라서 **T9·T15는 live PG 대상 테스트로 작성**하고, A(NullPool)에서
+쓴 것과 같은 skip 판정(실제 쿼리 성공 여부 + `engine.dispose()`)을 재사용한다
+(`tests/core/test_database_event_loop.py` 참조). 스킵을 통과로 보고하지 않는다.
 
 | # | 케이스 | 방어하는 회귀 |
 |---|---|---|
 | T1 | `name_kr=None`인 상품이 갱신 대상에 **포함**된다 | **이 P0의 본질** |
 | T2 | 브랜드당 `scrape()` 호출이 **정확히 1회** (call count assert) | 상품별 재호출 재발 — 호출 수를 세지 않으면 안 보인다 |
 | T3 | DB에 없는 카탈로그 상품은 저장되지 않고 `skipped`로 계수된다 | 카탈로그 8배 폭증 |
-| T4 | 한 브랜드가 예외를 던져도 나머지 25개가 진행되고, 그 사실이 로깅된다 | 조용한 전량 실패 |
-| T5 | `product_name`이 빈 문자열/공백인 이벤트는 저장되지 않는다 | 셀렉터 파손 시 정크 행 |
-| T6 | `create_missing=True` 경로(`_collect_platform`)의 기존 동작이 불변 | 헬퍼 추출 회귀 |
+| T4 | 한 브랜드가 **DB 저장 예외**를 낸 뒤 **다음 브랜드의 저장이 실제로 성공**한다 | **감사 r3 P1.** rollback 누락 시 이후 전량 연쇄 실패 |
+| **T5** | **`confidence=0.0` sentinel 1건만 돌아온 브랜드가 `fail`로 계수된다** (예외 아님) | **감사 r1 P1.** 403/500에도 `ok=26 fail=0`으로 보고되는 위장 |
+| **T5b** | `confidence>0` 이벤트가 0건인 브랜드도 `fail`로 계수된다 | 엔드포인트 폐쇄(빈 응답) 위장 |
+| T6 | `product_name`이 빈 문자열/공백인 이벤트는 저장되지 않는다 | 셀렉터 파손 시 정크 행 |
+| **T7** | **브랜드는 같지만 이름이 다른 카탈로그 상품이 기존 행에 붙지 않는다**(`skipped`) | **감사 r1 P1.** `find_matching_product` Stage 2/3의 오매칭·LLM 팬아웃 |
+| **T8** | 스윕 경로에서 `_ask_claude_for_match`가 **한 번도 호출되지 않는다** (monkeypatch로 감시) | 일일 수천 건 Claude 호출 |
+| **T9** | 두 번째 연속 실행에서 `events inserted == 0`이고 반환값도 0 | §4.4 반환값 정의 — "매칭 수"로 퇴화하면 검증이 무의미해진다 |
+| T10 | `_collect_platform`(사용자 검색 경로) 불변 — **저장 필드 전량 검증**: `confidence=0` 스킵 · `event_type` · `safe_url` · `needs_review` · `is_bundle` · `currency` 기본값 | **감사 r4 P1.** "동작 불변" 문구만으론 필드 누락을 못 잡는다 |
+| **T11** | `collect_all_products`가 Sephora/Amazon US/Rakuten을 **호출하지 않는다** | **감사 r2 P2.** §4.2.0의 의도된 동작 제거를 고정 |
+| **T12** | `products` 길이가 정확히 250이면 warning이 남는다 | **감사 r2 P3.** 잘린 카탈로그를 정상으로 착각 |
+| **T13** | platform 행이 없는 브랜드는 `fail`로 계수되고 warning이 남는다 | **감사 r2 P2.** 조용히 0건 저장 |
+| **T14** | 같은 brand + normalized `name_en` 행이 2개면 `warning` 후 `skipped` (예외 아님) | **감사 r3 P2.** 임의 매칭·브랜드 전체 사망 |
+| **T15** | 가격·날짜가 같고 **`size_ml`만 다른** 두 이벤트가 **둘 다 저장**된다 | **감사 r3 P2.** dedup key 불일치로 용량 variant 유실 |
+| **T16** | 대상 브랜드가 0개면 `logger.error` + 반환 0, 성공으로 보고 안 함 | **감사 r3 P1.** 설정 오류 시 조용한 0건 |
+| **T17** | 중복 이벤트만 발생해 `inserted=0`이어도 `_collect_platform`이 그 product를 **반환한다** | **감사 r6 P1.** 헬퍼 반환값 변경이 사용자 검색 결과를 지우는 회귀 |
 
-베이스라인: 현재 `484 passed` (직전 세션 실측). 머지 전 `pytest -q` + `mypy --strict app/` 필수.
+T5/T7/T8이 이번 감사에서 새로 추가된 핵심이다. 특히 **T8은 "안 하는 것"을 검증**하는
+테스트라 빠뜨리기 쉽다 — 호출이 일어나도 결과는 그럴듯해 보이고 비용만 조용히 나간다.
+
+베이스라인: **488 passed, 1 skipped** (2026-08-08, A 랜딩 후 실측 — 484 + A 신규 4).
+머지 전 `pytest -q` + `mypy --strict app/` 필수.
 
 ---
 
@@ -259,7 +552,12 @@ INFO  brand catalog sweep: 26 brands ok=26 fail=0 | products updated=211 skipped
 
 ## 8. 설계 부채 트레이드오프 (Tier 2 워크플로 C)
 
-**`create_missing=False`를 택한 대가**: 브랜드 공홈에 새로 올라온 상품은 `seed_catalog`를
+> **용어 정정 (감사 r5 P1)**: r2에서 `create_missing` 플래그 자체를 없앴다(매칭이 호출부로
+> 갔으므로 불필요). 아래 서술은 그 이전 표현이 남아 있던 것으로, 현재 계약은
+> **"Path A = 엄격 exact 매칭 + 생성 없음"**이다. `create_missing`이라는 인자는 존재하지
+> 않는다.
+
+**"생성 없음"을 택한 대가**: 브랜드 공홈에 새로 올라온 상품은 `seed_catalog`를
 수동 실행하기 전까지 추적되지 않는다.
 
 **그 대신 얻는 것**: 일일 태스크가 카탈로그 크기를 바꾸지 않는다는 불변식. 카탈로그
@@ -268,8 +566,10 @@ INFO  brand catalog sweep: 26 brands ok=26 fail=0 | products updated=211 skipped
 되돌리기 쉽다.
 
 **부채가 되는 조건**: §7-2에서 "정본을 products에 넣는다"로 결정되면 이 플래그는
-불필요해진다. 그때 `create_missing` 인자를 제거하는 것이 Delete, Don't Deprecate에
-맞는 처리다.
+불필요해진다. 그때는 스윕도 `get_or_create_product` 계열로 통합하고 `_find_exact_for_sweep`를
+삭제하는 것이 Delete, Don't Deprecate에 맞는 처리다 — 단 그 시점엔 §4.2.1의 LLM 팬아웃
+문제를 먼저 해결해야 한다(정본 카탈로그가 생기면 exact 매칭률이 올라가 Stage 3 진입이
+줄어든다는 것이 §7-2의 기대다).
 
 ---
 
@@ -278,13 +578,15 @@ INFO  brand catalog sweep: 26 brands ok=26 fail=0 | products updated=211 skipped
 | | 현행 | 변경 후 |
 |---|---|---|
 | HTTP 콜/일 | 4 상품 × 29 플랫폼 = 116 | **26** |
-| 실효 커버리지 | 4 상품 | **211 상품** |
-| (참고) 필터만 제거했을 때 | 294 × 29 = **8,526** | — |
+| 실효 커버리지 | 4 상품 | **211 상품** (활성 339 중 62.2%) |
+| **Claude API 호출/일** | 0 | **0** — §4.2.1의 엄격 매처를 쓸 때만 |
+| (참고) 필터만 제거했을 때 | 339 × 29 = **9,831** | — |
+| (참고) `find_matching_product`를 그대로 썼을 때 | — | **수천 건 Claude 호출** (§4.2.1) |
 
-- `_save_events`가 이벤트마다 `_is_duplicate` 쿼리를 1회 돈다 → 2,745 이벤트 기준
-  N+1. 단 §4.2에서 DB에 없는 상품은 `_save_events`에 도달하지 않으므로 실제 쿼리는
-  211개 상품에 걸린 이벤트로 한정된다. 현 규모에서 최적화 불요, 정본 레이어에서
-  전량 저장으로 바뀌면 재검토.
+- **precheck 제거로 N+1이 사라진다 (감사 r4 P3 — §4.3 권고와 일치시킴)**: 현행
+  `_save_events`는 이벤트마다 `_is_duplicate` 쿼리를 1회 돌지만(N+1), 새 헬퍼는
+  `INSERT ... ON CONFLICT DO NOTHING RETURNING id` 한 번으로 중복 판정과 삽입 수
+  계산을 동시에 한다. 이벤트당 SELECT가 없어진다.
 - `_is_duplicate`는 `start_date`를 시그니처에 포함하고 공홈 이벤트는
   `start_date=date.today()`(`shopify.py:88`)라 **매일 새 행이 쌓인다**. 이는 가격
   이력 축적이라는 의도된 동작이다. 211상품 기준 연 ~7만 행 규모.
@@ -293,10 +595,19 @@ INFO  brand catalog sweep: 26 brands ok=26 fail=0 | products updated=211 skipped
 
 ## 10. 검증 절차 (Verification Before Done)
 
-1. `pytest tests/ -q` — 484 passed 유지 + 신규 6케이스
+1. `pytest tests/ -q` — **488 passed, 1 skipped**(A 랜딩 후 베이스라인) 유지 + 신규 **18케이스**(T1~T17 + T5b)
 2. `mypy --strict app/` — clean
 3. **라이브 스모크**: 워크트리에서 `_collect_all()` 1회 실행 후
-   - 갱신 상품 수 ≥ 200 확인
-   - `products` 행 수가 294에서 **증가하지 않았음** 확인 (T3의 라이브 대응)
+   - **재실행 가능한 기준으로 판정한다 (감사 r6 P2)**. `events inserted > 0`은 그날 첫
+     실행에서만 성립한다 — 스모크를 한 번 더 돌리거나 beat가 먼저 돌았으면 정상 구현도
+     0이 나온다. 판정은 다음 순서로:
+     1. 스모크 직전 `SELECT count(*) FROM sale_events WHERE start_date = CURRENT_DATE
+        AND platform_id IN (공홈 26개)` 를 세어 **사전값**을 잡는다
+     2. 사전값이 **0이면**: `inserted > 0` 이어야 한다
+     3. 사전값이 **0이 아니면**(이미 오늘 돌았음): `inserted == 0`이어도 정상.
+        대신 `matched ≈ 211`과 `products` 행 수 무증가로 판정한다
+     4. 어느 경우든 `fail == 0`, `skipped`가 카탈로그 규모와 맞는지 확인
+   - `products` 행 수가 **직전 측정값에서 증가하지 않았음** 확인 (T3의 라이브 대응).
+     294는 08-07 스냅샷이라 쓰면 안 된다 — 스모크 직전에 세고 그 값과 대조한다 (감사 r1 P2)
    - `sale_events` 신규 행의 `platform` 분포가 공홈 26곳에 걸쳐 있는지 확인
 4. 머지 후 Celery beat 재시작 — 파일만 고치면 떠 있는 워커는 구코드를 물고 돈다
