@@ -4,8 +4,12 @@
 - Tier: **2** (`review-tiers.md:63` — 새 데이터 흐름 도입 + 일일 persistence 동작 변경)
 - 대상 파일 (**전부 `backend/` 아래다** — 감사 r1 P2: 초안이 `app/...`로만 적어 레포
   루트로 오해될 수 있었다): `backend/app/tasks/collect.py`,
-  `backend/app/scrapers/collector.py`, `backend/tests/tasks/test_collect.py`(신규).
-  매처는 `backend/app/ai/matcher.py`다 (`app/scrapers/matcher.py`는 **존재하지 않는다**)
+  `backend/app/scrapers/collector.py`, `backend/tests/tasks/test_collect.py`(신규),
+  `backend/app/scrapers/brands/shopify.py`(§4.2.2의 250 경계 warning),
+  `backend/.env.example`(§4.2.-1의 stale 설정 정정).
+  참고: 기존 매처는 `backend/app/ai/matcher.py`다 (`app/scrapers/matcher.py`는
+  **존재하지 않는다**). 단 이번에 만드는 스윕 전용 매처는 거기가 아니라
+  `collector.py`에 둔다 — §4.2.1 참조
 - 워크트리: `.worktrees/collect-daily-scope` (브랜치 `design/collect-daily-scope`)
 
 ---
@@ -63,7 +67,7 @@ Sephora   1
 
 - 레포 내 검색: `cross_search_symbols("seed_catalog")` → 빈 결과(compa 미색인). grep 폴백 → `scrape("")` 호출부 1건(`app/scrapers/catalog.py:43`), `_save_events` 호출부 1건(`app/scrapers/collector.py:299`), 일일 수집 태스크 테스트 **0건**. 재사용 가능한 기존 자산 확인 — 새 스크래퍼 불요
 - 외부 선행작업: camelcamelcamel/Keepa 계열 가격추적기의 벌크 카탈로그 폴링 패턴 — 상품별 검색이 아니라 판매자 피드를 주기 폴링. **코드 채택 없음(패턴만 참고)이라 라이선스·커밋일 검토 불요**. Shopify `/products.json`은 플랫폼 공개 표준 엔드포인트로 이미 `shopify.py`가 사용 중
-- 결론: **재사용** — `ShopifyBrandScraper.scrape("")` + `_save_events`/`find_matching_product`(전부 기존)를 잇는 배선만 추가. `_collect_platform` 내부 저장 블록은 헬퍼로 추출해 공유
+- 결론: **부분 재사용** — `ShopifyBrandScraper.scrape("")`와 `_save_events`의 저장 로직은 재사용하고, `_collect_platform` 내부 저장 블록은 헬퍼로 추출해 공유한다. **단 `find_matching_product`는 스윕에서 쓰지 않는다** — 사용자 검색 경로에서만 기존대로 유지한다(감사 r1에서 LLM 팬아웃 확인, §4.2.1). 스윕은 전용 엄격 매처를 쓴다
 
 상세는 아래.
 
@@ -156,8 +160,9 @@ for platform_name in (enabled_scrapers ∩ BRAND_SCRAPERS):     # 26회
         product = await _find_exact_for_sweep(db, product_name, scraper_cls.BRAND)  # §4.2.1
         if product is None:
             skipped += 1;  continue
+        matched_products += 1                                  # 매칭 성공 (2회차에도 211)
         inserted_here = await persist_events_for_product(db, product, platform, group)
-        if inserted_here: updated_products += 1
+        if inserted_here: updated_products += 1                # 실제 insert 발생 (2회차엔 0)
         inserted += inserted_here
 ```
 
@@ -190,6 +195,11 @@ async def _find_exact_for_sweep(
 ) -> Product | None:
     """브랜드 exact + name_en normalized exact 일치만 반환. 휴리스틱·LLM 호출 없음."""
 ```
+
+**배치 (감사 r5 P2)**: 이 함수는 **`backend/app/scrapers/collector.py`의 private helper**로
+둔다. `app/ai/matcher.py`에 넣지 않는다 — 거기는 "유연한 크로스언어 매칭"이 주제이고,
+같은 파일에 두면 다음 사람이 둘을 헷갈리거나 통합하려 든다. 스윕 전용 계약임을 위치로도
+드러낸다.
 
 - 판정은 **`normalize_name(name_en) == normalize_name(입력)` AND `lower(brand) == lower(입력)`** 둘 다
 - **`brand` 인자의 출처를 고정한다 (감사 r4 P2)**: `scraper_cls.BRAND`를 쓴다.
@@ -435,7 +445,11 @@ rollback을 빼도 전자는 통과하기 때문이다.
 INFO  brand catalog sweep: 26 brands ok=N fail=M | products matched=211 skipped=2177 | events inserted=K
 ```
 
-- `skipped`가 크게 나오는 것은 정상이다(카탈로그 2,388 중 DB에 있는 211만 갱신)
+- **세 카운터는 서로 다른 것을 센다 (감사 r5 P2)** — 구현자가 섞지 않도록 명시:
+  - `matched` = 엄격 매처가 기존 상품을 찾은 그룹 수. **2회차에도 211**
+  - `updated` = 그중 **실제 insert가 1건 이상** 발생한 상품 수. **2회차엔 0이 정상**
+  - `skipped` = 매칭 실패 그룹 수(카탈로그 2,388 중 DB에 없는 나머지)
+  `_collect_all()`의 반환값은 `updated`다(§4.4)
 - `fail`은 §5.1 판정 기준이며 브랜드명·사유를 `logger.warning`으로 남긴다
 - `events inserted`가 §4.4의 반환값 근거다. **두 번째 실행에서 0이 나오는 것이 정상**이라는
   점을 로그를 읽는 사람이 알 수 있게 한다
@@ -506,7 +520,12 @@ T5/T7/T8이 이번 감사에서 새로 추가된 핵심이다. 특히 **T8은 "�
 
 ## 8. 설계 부채 트레이드오프 (Tier 2 워크플로 C)
 
-**`create_missing=False`를 택한 대가**: 브랜드 공홈에 새로 올라온 상품은 `seed_catalog`를
+> **용어 정정 (감사 r5 P1)**: r2에서 `create_missing` 플래그 자체를 없앴다(매칭이 호출부로
+> 갔으므로 불필요). 아래 서술은 그 이전 표현이 남아 있던 것으로, 현재 계약은
+> **"Path A = 엄격 exact 매칭 + 생성 없음"**이다. `create_missing`이라는 인자는 존재하지
+> 않는다.
+
+**"생성 없음"을 택한 대가**: 브랜드 공홈에 새로 올라온 상품은 `seed_catalog`를
 수동 실행하기 전까지 추적되지 않는다.
 
 **그 대신 얻는 것**: 일일 태스크가 카탈로그 크기를 바꾸지 않는다는 불변식. 카탈로그
@@ -515,8 +534,10 @@ T5/T7/T8이 이번 감사에서 새로 추가된 핵심이다. 특히 **T8은 "�
 되돌리기 쉽다.
 
 **부채가 되는 조건**: §7-2에서 "정본을 products에 넣는다"로 결정되면 이 플래그는
-불필요해진다. 그때 `create_missing` 인자를 제거하는 것이 Delete, Don't Deprecate에
-맞는 처리다.
+불필요해진다. 그때는 스윕도 `get_or_create_product` 계열로 통합하고 `_find_exact_for_sweep`를
+삭제하는 것이 Delete, Don't Deprecate에 맞는 처리다 — 단 그 시점엔 §4.2.1의 LLM 팬아웃
+문제를 먼저 해결해야 한다(정본 카탈로그가 생기면 exact 매칭률이 올라가 Stage 3 진입이
+줄어든다는 것이 §7-2의 기대다).
 
 ---
 
