@@ -344,3 +344,56 @@ Task 2에서 한꺼번에 작성한다.
   `cd /Users/Mung/dev/compa/backend && PYTHONPATH=. .venv/bin/python -c "from app.core import database; print(type(database.engine.pool).__name__)"` → `NullPool`이어야 함
 - 후속(설계 §8): `_BROWSER_SEMAPHORE` 루프 고착, `_collect_platform` 세션 점유시간,
   worker 프로세스당 영속 이벤트 루프, CI postgres 부재
+
+
+---
+
+## 10. Phase 4 결과 — 배포·재시작·관찰 (리뷰어, 2026-08-08)
+
+### 배포 게이트 통과
+
+운영 서비스(worker/beat/api)는 **main 체크아웃**을 물고 돈다(`WorkingDirectory=
+/Users/Mung/dev/compa/backend`, 실행 바이너리도 main venv). 따라서 워크트리 커밋만으로는
+반영되지 않는다 — 감사 r5가 이 P0를 잡았다.
+
+1. main 머지: `c2bcc7c` (`--no-ff`), 롤백 태그 `pre-nullpool-merge-20260808`
+2. **운영 cwd/venv에서 런타임 확인**:
+   ```
+   모듈: /Users/Mung/dev/compa/backend/app/core/database.py
+   풀 타입: NullPool          ← 실제 반영 확인
+   ```
+3. `launchctl kickstart -k` worker/beat/api — 09:10 PDT
+
+### 관찰 결과 (09:10 → 10:06, 56분)
+
+로그 오프셋을 재시작 직전(2,721,643 bytes)에 마킹하고 그 이후만 집계했다 —
+기존 로그에 `another operation` 1,000건이 있어 전체 grep은 100% 오탐이다.
+
+| 태스크 | 수정 후 | 수정 전 |
+|---|---|---|
+| `purge_expired_social_posts` | 1/1 | 0/44 = **0%** |
+| `classify_pending` | 1/1 | 3/57 = 5% |
+| `extract_social_posts` | 1/1 | 5/58 = 9% |
+| `collect_slickdeals_signals` | 2/2 | 23/86 = 27% |
+| `collect_reddit_signals` | 1/1 | 17/45 = 38% |
+| **합계** | **6 / 0 = 100%** | 48 / 259 = **16%** |
+
+- **`another operation is in progress`: 0건** — 이 버그를 정의하던 오류 서명이 사라졌다
+- 성공 건수가 실제로 증가했다(실패 0 + 성공 0인 "또 다른 고장"과 구별됨)
+- `purge_expired_social_posts`는 **44회 시도해 한 번도 성공한 적 없던 태스크**다
+
+**판정: 복구 확인.** n=6으로 표본은 작으나 5종 태스크 전부이고, 전부 수정 전 최저
+성공률 구간이었으며, 원인 오류 서명이 0건이다.
+
+### 미해결로 남기는 것 — `RuntimeError: Event loop is closed` 6건
+
+재시작 **전 0건 → 후 6건**. 트레이스백은 `AsyncClient.aclose()`가 **루프 종료 후 실행된
+미회수 Task**(`Task exception was never retrieved`)에서 난다. 직전 줄에 HTTP 요청이
+**200으로 성공**했고 태스크도 `succeeded`로 잡히므로 **기능 손실이 아니라 teardown 잡음**이다.
+
+**원인 미확정**: NullPool이 GC/종료 순서를 바꿔 생긴 것인지, 태스크가 이제 끝까지 돌면서
+원래 있던 것이 드러난 것인지 **가르지 못했다**. 레포의 httpx 클라이언트는 전부
+`async with`으로 스코프가 잡혀 있어 모듈 레벨 누수는 아니다.
+
+설계 §3.1이 예고한 "루프에 묶인 전역 객체" 계열과 같은 종류일 가능성이 있다.
+**후속 조사 대상**으로 남긴다 — 지금 추측으로 고치지 않는다.
