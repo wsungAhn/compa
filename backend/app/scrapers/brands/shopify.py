@@ -141,6 +141,14 @@ class ShopifyBrandScraper(BaseScraper):
                 )
             ]
 
+        products = payload.get("products") or []
+        if len(products) == _LIMIT:
+            logger.warning(
+                "%s products.json returned exactly %d products; pagination may be truncating catalog",
+                self.PLATFORM_NAME,
+                _LIMIT,
+            )
+
         events = parse_products(payload, query, self.BRAND, base_url)
         if not events and not payload.get("products"):
             # 빈 응답은 "할인 없음"이 아니라 엔드포인트가 닫혔다는 뜻이다.

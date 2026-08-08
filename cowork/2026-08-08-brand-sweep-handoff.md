@@ -1,6 +1,6 @@
 # Codex Handoff — 2026-08-08 · 브랜드 공홈 카탈로그 스윕 (B)
 
-> **상태(Status):** `대기중 / pending`
+> **상태(Status):** `완료 / done`
 > _(Executor: 시작 시 `진행중 / in-progress`, 완료 시 `검토대기 / review-pending`.
 >  `완료 / done`은 리뷰어만 커밋 후 설정.)_
 >
@@ -201,37 +201,219 @@ async def _find_exact_for_sweep(
 > §7 항목을 채우고 상태줄을 `검토대기 / review-pending`으로. **커밋하지 마라.**
 
 ### 8-1. Files changed
-_(write here)_
+`backend/app/scrapers/collector.py`
+`backend/app/tasks/collect.py`
+`backend/app/scrapers/brands/shopify.py`
+`backend/.env.example`
+`backend/tests/tasks/test_collect.py`
+`cowork/2026-08-08-brand-sweep-handoff.md`
 
 ### 8-2. New tests
-_(write here)_
+`tests/tasks/test_collect.py`
+- T1: `name_kr=None` 상품이 브랜드 스윕 대상에 포함됨
+- T2: 브랜드당 `scrape()` 1회 호출
+- T3: DB 미존재 카탈로그 상품 `skipped`
+- T4: DB 예외 후 `rollback()` 및 다음 브랜드 진행
+- T5/T5b: sentinel / 빈 positive 결과 실패 계수
+- T6: 이름 없는 이벤트 그룹 제외
+- T7: 같은 brand + 다른 name 미매칭
+- T8: sweep 경로에서 Claude 호출 없음
+- T9: live PG에서 동일 이벤트 2회차 insert 0
+- T10: 저장 필드 계약 보존
+- T11: `collect_all_products`가 search path 호출 안 함
+- T12: Shopify `products` 길이 250 warning
+- T13: platform row 없음 실패 계수
+- T14: 동일 brand + normalized name 중복 후보 `skipped`
+- T15: live PG에서 `size_ml` 다른 variant 2건 insert
+- T16: enabled brand 0개면 error + 0 반환
+- T17: `_collect_platform`가 `inserted=0`이어도 product id 반환
 
 ### 8-3. Final test result
-_(write here — 테스트별 passed/skipped 구분 필수)_
+`PYTHONPATH=. /Users/Mung/dev/compa/backend/.venv/bin/python -m pytest tests/ -q`
+`506 passed, 1 skipped`
+- `T9` passed
+- `T15` passed
+- skipped 1건은 기존 상시 스킵 `tests/scrapers/test_amoremall.py:160`
+
+`PYTHONPATH=. /Users/Mung/dev/compa/backend/.venv/bin/python -m mypy --strict app/`
+- passed (`Success: no issues found in 85 source files`)
 
 ### 8-4. Consistency scan / findings
-_(write here)_
+- 스윕 경로는 `find_matching_product`를 쓰지 않도록 `collector._find_exact_for_sweep`를 추가했고, `app/ai/matcher.py`의 Claude fallback과 분리했다.
+- 저장은 `_is_duplicate` precheck를 제거하고 `INSERT ... ON CONFLICT DO NOTHING RETURNING id`로 insert 수를 센다.
+- 브랜드 예외는 `await db.rollback()` 후 다음 브랜드로 계속한다.
+- scraper 실패는 `confidence=0.0` sentinel과 `confidence>0` 결과 부재를 둘 다 실패로 센다.
+- Shopify `products`가 정확히 250개면 warning을 남긴다.
+- `.env.example`의 `ENABLED_SCRAPERS`를 현행 기본값과 맞췄다.
 
 ### 8-5. Backward-compat check
-_(write here — `_collect_platform` 사용자 검색 경로 불변 확인)_
+`_collect_platform` 사용자 검색 경로는 유지했다.
+- 기존 `get_or_create_product` 경로는 그대로 사용한다.
+- `persist_events_for_product`가 `inserted=0`이어도 product id는 반환된다(T17).
+- 검색 경로는 브랜드 스윕 전용 exact matcher로 바뀌지 않았다.
 
 ### 8-6. Blocked / judgment calls
-_(write here — 없으면 "none")_
+none
 
 ### 8-7. Rubric self-score
-_(차원별로 감점 사유 먼저, 그 다음 점수)_
+- No LLM in sweep: 감점 사유 없음, 5/5
+- Silent-failure coverage: 감점 사유 없음, 5/5
+- Contract preservation: `_save_events` 제거와 `_event_signature` 삭제로 호환 레이어를 정리했으나, 외부 계약 표면이 줄었다는 점은 감점 요인, 4/5
+- Correctness: 감점 사유 없음, 5/5
+- Scope containment: 감점 사유 없음, 5/5
+
+## 8b. 재작업 보고
+
+- R-1: `tests/tasks/test_collect.py`의 T8을 `_collect_all` 레벨로 전환했다. `find_exact_for_sweep`는 실제 구현을 쓰고, `matcher.find_matching_product`와 `matcher._ask_claude_for_match`는 `AssertionError`로 감시했다. 카탈로그에는 매칭 상품과 미매칭 상품을 모두 넣었다.
+- R-1 회귀 실증: `collector.find_exact_for_sweep`에 임시 폴백 회귀를 주입했을 때 T8이 `1 failed`로 깨지는 것을 확인했고, 회귀 제거 후 T8이 다시 통과하는 것을 재확인했다.
+- R-2: `collector.py`의 `_save_events`를 삭제했다. `collect.py`의 미사용 `Product` import도 삭제했다.
+- R-3: `_event_signature`를 삭제했고, 이에 종속된 `backend/tests/scrapers/test_dedupe.py` 8개 테스트도 삭제했다. 호환용 잔재는 남기지 않았다.
+- R-4: `collector.py`의 `_get_platform`과 `_find_exact_for_sweep`를 `get_platform`, `find_exact_for_sweep`로 renaming했고 `collect.py` 및 테스트 호출부를 모두 갱신했다.
+- 검증: `backend/tests/tasks/test_collect.py` 18개 전부 통과, `backend/.venv/bin/python -m mypy --strict app/` 통과. 회귀 주입 상태에서는 T8이 실패했다.
 
 ---
 
 ## 9. Review log (author/reviewer writes after verifying)
 
-**Reviewed:** _(YYYY-MM-DD)_ | **Verdict:** _(approved / changes requested)_
+**Reviewed:** 2026-08-08 (2라운드) | **Verdict: approved**
 
-### Verified directly
-_(diff 정독, 리뷰어 직접 실행 테스트, 본문 판독, 리버트 실증 등)_
+### 1라운드 — changes requested (§10)
+
+자체채점 5/5·`506 passed`였으나 **루브릭 게이트 5인 `No LLM in sweep`이 실패**했다.
+리버트 실증으로 잡았다: 설계가 금지한 회귀(exact 실패 시 `find_matching_product` 폴백)를
+심었는데 **18개 테스트가 전부 통과**했다. T8이 정확히 일치하는 후보만 줘서 실패 경로를
+안 탔고, 진짜 매처로 스윕 경로를 도는 테스트가 하나도 없었다. 죽은 코드 3종도 남아 있었다.
+
+`failure_log`: `RUBRIC_GATE_FAIL` / `codex_handoff` / tier 2 / compa (`08e7e663`)
+
+### 2라운드 — 리뷰어가 직접 확인한 것
+
+- **⭐ R-1 회귀 실증 (리뷰어가 독립 재현)** — 1라운드와 **동일한 회귀**를 다시 주입:
+  ```
+  FAILED tests/tasks/test_collect.py::test_t8_sweep_path_never_calls_claude
+  1 failed, 17 passed
+  ```
+  이번엔 잡힌다. 복원 후 18 passed 재확인. **executor 자체보고를 믿지 않고 직접 심었다.**
+  - 검출 경로는 간접적이다: `AssertionError`가 브랜드 단위 `except`에 삼켜져 `fail`로
+    계수되고 `result`가 0이 되면서 `assert result == 1`이 깨진다. mock이 무조건 예외를
+    내므로 호출이 일어나면 반드시 실패한다 — 실효는 있다
+- **T8 구조 판독** — `_collect_all`을 실제로 돌고, `find_exact_for_sweep`를 mock하지
+  않으며, 카탈로그에 미매칭 상품(`Other Cream`)을 포함해 **실패 경로를 실제로 탄다**
+- **죽은 코드 전수 확인** (134개 파일 스캔) — `_save_events` 0건 · `_event_signature` 0건 ·
+  `_is_duplicate` 0건 · `collect.py`의 `Product` import 제거 확인
+- **개명 일관성** — `_find_exact_for_sweep`/`_get_platform` 잔존 0건.
+  단 옛 이름을 가리키는 **주석 2건**(`app/core/seed.py:28`,
+  `tests/scrapers/test_shopify_brand.py:124`)이 남아 리뷰어가 직접 정정
+- **`test_dedupe.py` 8개 삭제의 정당성 검토** — 그 파일은 `_event_signature`(튜플 생성
+  순수 함수)만 테스트했다. 그 함수와 `_is_duplicate`가 둘 다 사라졌으므로 지킬 대상이
+  없다. **dedup 커버리지는 오히려 강해졌다** — 시그니처 튜플 단위 테스트에서
+  **실제 DB 동작 테스트**(T9 중복 재삽입 0, T15 용량 variant 둘 다 삽입)로 옮겨갔다
+- **T9·T15가 실제로 실행됐는지 확인** — 둘 다 `PASSED`(스킵 아님). live PG에 실제로 붙었다
+- **테스트/타입** — `498 passed, 1 skipped`(= 488 baseline + 18 신규 − 8 삭제),
+  `mypy --strict` clean(85 files). 리뷰어가 직접 재실행
+
+### Rubric 리뷰어 재채점
+
+| Dimension | Executor(2R) | 리뷰어 | 비고 |
+|---|:-:|:-:|---|
+| No LLM in sweep | 5 | **5** | 회귀 실증으로 확인. 1라운드엔 이 차원이 실패였다 |
+| Silent-failure coverage | 5 | **5** | 6종 전부 테스트 존재(T5·T5b·T13·T4·T14·T15) |
+| Contract preservation | 4(감점 기재) | **5** | executor는 "외부 계약 표면 축소"를 감점했으나, 그 축소는 `Delete, Don't Deprecate`에 따라 **리뷰어가 지시한 것**이다. 감점 사유가 아니다 |
+| Correctness | 5 | **5** | 설계 §4·§5와 일치 |
+| Scope containment | 5 | **4** | 주석 2건이 옛 이름을 가리킨 채 남았다(리뷰어가 정정). §7 후속 항목 미접촉은 확인 |
+
+**리뷰어가 executor보다 높게 준 차원이 하나 있다**(Contract preservation). executor가
+자기 판단으로 감점했는데, 그 변경은 프로젝트 절대 규칙에 따른 지시 이행이었다.
+1라운드의 전 차원 5/5 무감점보다 이런 자체 감점이 훨씬 건강한 신호다.
 
 ### Notable / beyond spec
-_(좋은 판단, 또는 확인이 필요했던 범위 이탈)_
+
+- `_collect_platform`의 `except`에도 `await db.rollback()`을 추가했다(스펙엔 없었음).
+  그 함수는 자체 세션을 열므로 안전하고, §5.1.1의 취지와 일관된다 — **좋은 판단**
+- sentinel 판정을 `not any(confidence > 0)` 한 조건으로 통합했다. 설계는 두 조건으로
+  적었으나 후자가 전자를 포함하므로 더 간결하고 동등하다
 
 ### Follow-up
-_(커밋 해시 · 머지 · 재시작 · 라이브 스모크)_
+
+- 커밋: 아래 참조
+- **미배포** — main 머지 + `launchctl kickstart` 필요. A와 동일한 배포 게이트를 거칠 것
+  (운영은 main 체크아웃을 문다)
+- 라이브 스모크는 설계 §10의 **사전값 기반 4단계 판정**으로 — `inserted > 0`은 그날
+  첫 실행에서만 성립한다
+
+## 10. 수정 요청 (리뷰어, 2026-08-08) — **Verdict: changes requested**
+
+전체 스위트 `506 passed, 1 skipped` · mypy clean은 리뷰어가 직접 재실행해 확인했다.
+그러나 **루브릭 게이트 5인 차원 하나가 실패했고**, 프로젝트 절대 규칙 위반이 있다.
+
+자체채점은 5개 차원 전부 `감점 사유 없음, 5/5`였다. 아래는 그 채점이 틀렸다는 근거다.
+
+### 🔴 R-1 (필수) — T8이 아무것도 지키지 않는다 · 루브릭 `No LLM in sweep` 게이트 실패
+
+**리버트 실증**: 설계가 금지한 바로 그 회귀를 `_find_exact_for_sweep`에 심었다 —
+exact 매칭 실패 시 `find_matching_product`(→ Claude)로 폴백. 결과:
+
+```
+18 passed in 0.65s     ← 회귀를 심었는데 전부 통과
+```
+
+**원인 둘**:
+
+1. T8이 `_HelperSession([product])`에 **정확히 일치하는 후보**를 넣고 부른다.
+   `len(candidates) == 1` 분기에서 즉시 반환되므로 **매칭 실패 경로를 한 번도 안 탄다.**
+   폴백이 있어도 도달하지 않는다
+2. T8은 `_collect_all`(진짜 스윕 경로)이 아니라 `_find_exact_for_sweep`를 **고립 호출**한다.
+   그런데 T1·T2·T3·T4·T5·T11·T13은 전부 `collect._find_exact_for_sweep`를 **AsyncMock으로
+   갈아끼운다** → **진짜 매처로 스윕 경로를 도는 테스트가 하나도 없다**
+
+**요구사항**:
+- T8을 **`_collect_all` 레벨**에서 돌려라. `_find_exact_for_sweep`를 mock하지 말고 **진짜**를
+  쓰고, `matcher.find_matching_product`와 `matcher._ask_claude_for_match`를
+  `AssertionError` side_effect로 감시하라
+- 카탈로그에 **매칭되는 상품과 매칭 안 되는 상품을 모두** 넣어라. 실패 경로가 반드시 실행돼야 한다
+- **수용 기준**: 위 회귀(exact 실패 시 `find_matching_product` 폴백)를 심으면 T8이 **실패해야
+  한다.** 네가 직접 그 회귀를 넣었다 빼면서 실패→통과를 확인하고 §8-6에 결과를 적어라.
+  회귀를 넣어도 통과하면 그 테스트는 아직 무의미하다
+
+### 🔴 R-2 (필수) — 죽은 코드 · `Delete, Don't Deprecate` 위반
+
+프로젝트 절대 규칙이다(`CLAUDE.md`). 하위호환 레이어를 남기지 말고 삭제한다.
+
+| 대상 | 실측 | 조치 |
+|---|---|---|
+| `collector.py`의 `_save_events` | 호출부 **0건**(자기 정의뿐, 테스트에도 없음) | **삭제** — "기존 호출부 호환용"인데 호환할 호출부가 없다 |
+| `collect.py`의 `from app.models.product import Product` | 본문 미사용 | **삭제** |
+
+### 🟠 R-3 (판단 후 보고) — `_event_signature`
+
+프로덕션 호출 **0건**인데 `tests/scrapers/test_dedupe.py`의 테스트 8개가 붙잡고 있다.
+precheck를 없앴으므로 이 함수는 이제 아무것도 지키지 않는다.
+
+**요구**: 삭제(+해당 테스트 8개 삭제)를 **권장**하되, 네가 판단해서 남긴다면 그 근거를
+§8-6에 적어라. "호환용"이라는 이유는 인정하지 않는다 — 호환할 대상이 없다.
+
+### 🟠 R-4 (필수) — private 이름의 교차 모듈 import
+
+`collect.py`가 `collector.py`에서 `_find_exact_for_sweep`·`_get_platform`를 import한다.
+밑줄 접두사는 "이 모듈 밖에서 쓰지 않는다"는 계약인데 다른 모듈이 쓰고 있다.
+
+**요구**: 스윕에서 쓰는 두 함수의 밑줄을 떼라 —
+`find_exact_for_sweep` · `get_platform`. 호출부도 같이 고쳐라.
+(설계문서가 "private helper"라고 쓴 것은 **배치 파일**을 지정한 것이지 이름 규약이 아니다.
+이 모순은 리뷰어 책임이다.)
+
+### 🟡 R-5 (참고, 이번 라운드 필수 아님) — T1이 약하다
+
+T1은 "`name_kr=None` 상품이 포함된다"를 증명해야 하는데 `_find_exact_for_sweep`가
+mock이라 `name_kr`이 결과에 아무 영향을 주지 않는다. `name_kr` 값을 바꿔도 통과한다.
+R-1을 고치면서 `_collect_all` + 진짜 매처 조합이 생기면 자연히 강해지므로, R-1 안에서
+같이 처리되면 별도 작업 불요.
+
+---
+
+### 재작업 후 보고 방법
+
+- §8을 **덮어쓰지 말고** 아래에 `## 8b. 재작업 보고`를 새로 추가하라
+- §8b에 R-1~R-4 각각의 처리 결과 + **R-1의 회귀 주입 실증 결과**(실패→통과 확인)를 적어라
+- 자체채점은 §8-7을 갱신하되 **감점 사유를 반드시 먼저** 쓰라. 이번엔 5/5가 아닐 것이다
+- 상태줄을 다시 `검토대기 / review-pending`으로
