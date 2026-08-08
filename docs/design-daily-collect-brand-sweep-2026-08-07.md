@@ -153,7 +153,7 @@ for platform_name in (enabled_scrapers ∩ BRAND_SCRAPERS):     # 26회
     if platform is None:                                       # §4.3.1
         fail += 1;  warn(platform_name);  continue
     for product_name, group in group_by_name(events):
-        product = await _find_exact_for_sweep(db, product_name, brand)   # §4.2.1
+        product = await _find_exact_for_sweep(db, product_name, scraper_cls.BRAND)  # §4.2.1
         if product is None:
             skipped += 1;  continue
         inserted_here = await persist_events_for_product(db, product, platform, group)
@@ -192,6 +192,9 @@ async def _find_exact_for_sweep(
 ```
 
 - 판정은 **`normalize_name(name_en) == normalize_name(입력)` AND `lower(brand) == lower(입력)`** 둘 다
+- **`brand` 인자의 출처를 고정한다 (감사 r4 P2)**: `scraper_cls.BRAND`를 쓴다.
+  `events[0].brand`도 실무상 같은 값이지만(`parse_products`가 `self.BRAND`를 넣는다),
+  이벤트가 비어 있거나 파서가 바뀌면 깨진다. **스크래퍼 클래스가 브랜드의 정본**이다
 - 못 찾으면 `None` → `skipped` 계수. **추측해서 붙이지 않는다**
 - `find_matching_product`는 **건드리지 않는다** — 사용자 검색 경로는 그 유연함이 맞다.
   스윕만 다른 계약을 쓴다
@@ -299,6 +302,26 @@ async def persist_events_for_product(
   **(b)를 권장한다** — dedup 진실을 DB 한 곳에만 두면 두 정의가 다시 어긋날 수 없고,
   §4.4가 요구하는 실제 insert 수도 같은 쿼리로 얻는다. T15가 검증
 
+**⛔ 바뀌는 건 중복 판정 방식뿐이다 — 나머지 저장 계약은 전량 승계한다 (감사 r4 P1)**
+
+r3의 "precheck 제거" 권고를 "저장 헬퍼를 새로 만든다"로 읽으면 구현자가 기존 필드
+매핑과 가드를 빠뜨린다. `_save_events`(`collector.py:191-221`)가 지금 하는 일 **전부**를
+그대로 옮긴다:
+
+| 항목 | 현행 | 승계 |
+|---|---|---|
+| `confidence == 0.0` 이벤트 스킵 | `:192` | **필수** |
+| `event_type` = `_classify_event_type(s)` | `:198` | 필수 |
+| `source_url` = `safe_url(s.source_url)` | `:212` | 필수 (URL 안전화) |
+| `needs_review` = `s.confidence < 0.7` | `:214` | 필수 |
+| `is_bundle` = `_is_bundle(s.product_name)` | `:217` | 필수 |
+| `currency` = `s.currency or "KRW"` | `:210` | 필수 |
+| `scraped_name` / `size_ml` / `raw_text` | `:216-218` | 필수 |
+| `on_conflict_do_nothing()` | `:219` | 필수 |
+| `_is_duplicate` precheck | `:195` | **제거** (이것만 바뀐다) |
+
+T10·T15가 이 필드들을 **실제로 검증**한다 — "기존 동작 불변"이라는 문구만으로는 부족하다.
+
 **호출부 분담**:
 
 | 호출부 | 매칭 방법 | 근거 |
@@ -394,6 +417,14 @@ for platform_name in targets:
         continue
 ```
 
+**commit 경계 — 브랜드 단위 atomic이 아니다 (감사 r4 P2)**: 기존 `_save_events`는
+**상품 단위로 `commit()`**한다(`collector.py:221`). 이 계약을 **그대로 유지한다**
+(헬퍼에서 commit을 빼면 `_collect_platform`의 사용자 검색 경로 계약이 바뀐다).
+
+따라서 브랜드 루프 중간에 예외가 나면 **그 브랜드의 앞선 상품들은 이미 커밋돼 있고**,
+`rollback()`은 실패한 statement 이후의 세션 상태만 회복한다. 이는 **의도된 동작**이다 —
+가격 이력은 append-only라 부분 수집이 부분 손실보다 낫다. T4/T10은 이 기준으로 고정한다.
+
 **T4를 강화한다**: "예외 후 다음 브랜드가 진행된다"로는 부족하고,
 **"DB 저장 예외 후 다음 브랜드의 저장이 실제로 성공한다"**까지 검증해야 한다.
 rollback을 빼도 전자는 통과하기 때문이다.
@@ -428,7 +459,7 @@ INFO  brand catalog sweep: 26 brands ok=N fail=M | products matched=211 skipped=
 | **T7** | **브랜드는 같지만 이름이 다른 카탈로그 상품이 기존 행에 붙지 않는다**(`skipped`) | **감사 r1 P1.** `find_matching_product` Stage 2/3의 오매칭·LLM 팬아웃 |
 | **T8** | 스윕 경로에서 `_ask_claude_for_match`가 **한 번도 호출되지 않는다** (monkeypatch로 감시) | 일일 수천 건 Claude 호출 |
 | **T9** | 두 번째 연속 실행에서 `events inserted == 0`이고 반환값도 0 | §4.4 반환값 정의 — "매칭 수"로 퇴화하면 검증이 무의미해진다 |
-| T10 | `_collect_platform`(사용자 검색 경로)의 기존 동작이 불변 | 헬퍼 추출 회귀 |
+| T10 | `_collect_platform`(사용자 검색 경로) 불변 — **저장 필드 전량 검증**: `confidence=0` 스킵 · `event_type` · `safe_url` · `needs_review` · `is_bundle` · `currency` 기본값 | **감사 r4 P1.** "동작 불변" 문구만으론 필드 누락을 못 잡는다 |
 | **T11** | `collect_all_products`가 Sephora/Amazon US/Rakuten을 **호출하지 않는다** | **감사 r2 P2.** §4.2.0의 의도된 동작 제거를 고정 |
 | **T12** | `products` 길이가 정확히 250이면 warning이 남는다 | **감사 r2 P3.** 잘린 카탈로그를 정상으로 착각 |
 | **T13** | platform 행이 없는 브랜드는 `fail`로 계수되고 warning이 남는다 | **감사 r2 P2.** 조용히 0건 저장 |
@@ -499,10 +530,10 @@ T5/T7/T8이 이번 감사에서 새로 추가된 핵심이다. 특히 **T8은 "�
 | (참고) 필터만 제거했을 때 | 339 × 29 = **9,831** | — |
 | (참고) `find_matching_product`를 그대로 썼을 때 | — | **수천 건 Claude 호출** (§4.2.1) |
 
-- `_save_events`가 이벤트마다 `_is_duplicate` 쿼리를 1회 돈다 → 2,745 이벤트 기준
-  N+1. 단 §4.2에서 DB에 없는 상품은 `_save_events`에 도달하지 않으므로 실제 쿼리는
-  211개 상품에 걸린 이벤트로 한정된다. 현 규모에서 최적화 불요, 정본 레이어에서
-  전량 저장으로 바뀌면 재검토.
+- **precheck 제거로 N+1이 사라진다 (감사 r4 P3 — §4.3 권고와 일치시킴)**: 현행
+  `_save_events`는 이벤트마다 `_is_duplicate` 쿼리를 1회 돌지만(N+1), 새 헬퍼는
+  `INSERT ... ON CONFLICT DO NOTHING RETURNING id` 한 번으로 중복 판정과 삽입 수
+  계산을 동시에 한다. 이벤트당 SELECT가 없어진다.
 - `_is_duplicate`는 `start_date`를 시그니처에 포함하고 공홈 이벤트는
   `start_date=date.today()`(`shopify.py:88`)라 **매일 새 행이 쌓인다**. 이는 가격
   이력 축적이라는 의도된 동작이다. 211상품 기준 연 ~7만 행 규모.
