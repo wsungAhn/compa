@@ -147,13 +147,18 @@ polypoly/agent_hub/openscience)에 없어 색인 대상이 아니다. 따라서 
 ```
 for platform_name in (enabled_scrapers ∩ BRAND_SCRAPERS):     # 26회
     events = await scraper.scrape("")                          # 첫 250건 (§4.2.2)
-    if is_scraper_failure(events):                             # §5 — sentinel 판별
+    if is_scraper_failure(events):                             # §5.1 — sentinel 판별
         fail += 1;  continue
+    platform = await _get_platform(db, platform_name)
+    if platform is None:                                       # §4.3.1
+        fail += 1;  warn(platform_name);  continue
     for product_name, group in group_by_name(events):
         product = await _find_exact_for_sweep(db, product_name, brand)   # §4.2.1
         if product is None:
             skipped += 1;  continue
-        inserted += await persist_scraped(...)
+        inserted_here = await persist_events_for_product(db, product, platform, group)
+        if inserted_here: updated_products += 1
+        inserted += inserted_here
 ```
 
 - HTTP 콜 **26회/일** (현행 116회에서 감소)
@@ -193,6 +198,23 @@ async def _find_exact_for_sweep(
 
 이게 더 단순하고, 더 싸고, 더 안전하다. LLM 호출 0.
 
+#### 4.2.0 ⚠️ 이 변경은 기존 동작을 하나 **없앤다** (감사 r2 P2 — 명시적 수용)
+
+`collect_all_products`를 브랜드 스윕 전용으로 바꾸면, 현재 `name_kr` 보유 4개 상품에
+대해 매일 돌던 **Sephora/Amazon US/Rakuten 검색 갱신이 사라진다**(4 × 29 = 116콜 → 0).
+
+**이것을 의도된 동작 변경으로 수용한다**는 것을 acceptance에 못 박는다. 근거:
+
+- 그 4개 중 2개는 `name_kr`에 영어가 들어간 오염 행이다(`'SK-II Facial Treatment
+  Essence'`, `'starter ritual'`) — 한국어 검색어로 아마존/라쿠텐을 치는 셈이라 원래
+  매칭률이 낮았다
+- 검색 경로 자체는 **없어지지 않는다.** 사용자 검색(`collect_on_demand`)과
+  `run_collection_slow`는 그대로다. 사라지는 건 *일일 자동* 검색 갱신뿐이다
+- 검색 기반 일일 갱신의 재도입은 §7-1(정규 제품명 확보 선행)에 걸려 있다
+
+**수용 기준에 포함**: 구현 후 `collect_all_products`가 Sephora/Amazon/Rakuten을
+호출하지 않음을 테스트로 고정한다(T11).
+
 #### 4.2.2 `scrape("")`는 카탈로그 "전체"가 아니다 (감사 r1 P2)
 
 `shopify.py:21` `_LIMIT = 250`, `:113`이 `?limit=250` 한 페이지만 요청하고 **pagination이
@@ -200,26 +222,56 @@ async def _find_exact_for_sweep(
 생기면 조용히 잘린다. 이 설계는 **"각 브랜드 첫 250건"**으로 범위를 한정하고, pagination은
 §7 후속으로 둔다. 문서 다른 곳의 "카탈로그 전체" 표현도 이 뜻이다.
 
+**경계 관측을 이번 범위에 넣는다 (감사 r2 P3)**: pagination을 미루더라도, 한 브랜드의
+`payload['products']` 길이가 **정확히 250이면 `logger.warning`**을 남긴다. 그 순간
+"250 미만이라 안전하다"는 이 설계의 전제가 깨진 것이고, 경고가 없으면 잘린 카탈로그를
+정상으로 착각한다. T12가 이를 검증한다.
+
 ### 4.3 공유 헬퍼 추출 (Tier 2 워크플로 B — DRY)
 
-`collector.py:288-300`의 "이벤트를 상품명으로 묶어 저장" 블록을 추출한다:
+**r1 초안의 계약 모순 (감사 r2 P1 — 정정)**: r1에서 §4.2 호출부에 엄격 매처를 넣으면서
+§4.3 헬퍼는 `create_missing` 플래그를 그대로 뒀다. 그러면 **매칭이 두 곳에 존재**하고,
+구현자가 헬퍼 안에서 다시 `get_or_create_product`/`find_matching_product`를 부르기 쉬워
+r1이 막은 LLM 팬아웃·오매칭이 그대로 재도입된다. 반환값 계약도 §4.4(실제 insert 수)와
+어긋났다.
+
+**정정 — 헬퍼는 "저장만" 한다. 매칭은 호출부에서 끝낸다.**
 
 ```python
-async def persist_scraped(
-    db, platform, scraped, country, *, create_missing: bool
-) -> tuple[set[uuid.UUID], int]:
-    """스크랩 이벤트를 상품별로 묶어 저장. (저장된 product_id 집합, 스킵 수) 반환.
+async def persist_events_for_product(
+    db: AsyncSession, product: Product, platform: Platform, events: list[ScrapedEvent]
+) -> int:
+    """한 상품의 이벤트를 저장하고 **실제 insert된 행 수**를 반환한다.
 
-    create_missing=False면 기존 상품만 갱신한다 — 카탈로그 스윕은 브랜드 전량을
-    받아오므로 생성을 허용하면 한 번에 2,388행이 들어온다(2026-08-07 실측).
+    매칭하지 않는다 — 호출부가 이미 확정한 product를 받는다.
     """
 ```
 
-- `_collect_platform`은 `create_missing=True`로 호출 (동작 불변)
-- Path A는 `create_missing=False`로 호출
+- `create_missing` 플래그는 **없앤다.** 매칭 정책이 호출부에 있으므로 불필요하다
+- 반환값은 **insert된 행 수(int)** 하나뿐 — §4.4의 반환값 정의와 단일 계약으로 맞는다.
+  현행 `_save_events`는 반환값이 없고 `on_conflict_do_nothing`이라, 삽입 여부를 알려면
+  이 헬퍼가 세야 한다
 
-이름 없는 이벤트를 거르는 가드(`collector.py:293`, 셀렉터 파손 시 정크 상품 생성 방지)는
-헬퍼 안으로 그대로 옮긴다.
+**호출부 분담**:
+
+| 호출부 | 매칭 방법 | 근거 |
+|---|---|---|
+| `_collect_platform` (사용자 검색 경로) | 기존 `get_or_create_product` 그대로 | 동작 불변 |
+| Path A (스윕) | `_find_exact_for_sweep` (§4.2.1) | LLM 0, 생성 0 |
+
+이름 없는 이벤트를 거르는 가드(`collector.py:293`, 셀렉터 파손 시 정크 상품 생성 방지)와
+"상품명으로 묶기"는 두 호출부가 모두 쓰므로 별도 순수 함수로 분리한다
+(`group_events_by_product_name(events) -> dict[str, list[ScrapedEvent]]`).
+
+### 4.3.1 platform 행이 없으면 조용히 0건이 된다 (감사 r2 P2)
+
+`_get_platform`(`collector.py:180`)이 `None`을 반환하면 `_collect_platform:265-267`은
+**조용히 return한다.** 브랜드를 새로 추가하고 `platforms` seed를 안 넣으면 26개 스크랩이
+전부 성공해도 저장은 0건인데 로그는 정상으로 보인다.
+
+- 실측(2026-08-08): 공홈 26개 **전부 platform 행 보유** → 지금은 발화하지 않는다
+- 그래도 **`fail`로 계수하고 브랜드명과 함께 warning**한다(§5.1의 sentinel 실패와 별개 사유)
+- 라이브 스모크의 **선행조건**으로 "26개 platform 행 존재"를 먼저 확인한다
 
 ### 4.4 `_collect_all` 재작성
 
@@ -307,7 +359,10 @@ INFO  brand catalog sweep: 26 brands ok=N fail=M | products matched=211 skipped=
 | **T7** | **브랜드는 같지만 이름이 다른 카탈로그 상품이 기존 행에 붙지 않는다**(`skipped`) | **감사 r1 P1.** `find_matching_product` Stage 2/3의 오매칭·LLM 팬아웃 |
 | **T8** | 스윕 경로에서 `_ask_claude_for_match`가 **한 번도 호출되지 않는다** (monkeypatch로 감시) | 일일 수천 건 Claude 호출 |
 | **T9** | 두 번째 연속 실행에서 `events inserted == 0`이고 반환값도 0 | §4.4 반환값 정의 — "매칭 수"로 퇴화하면 검증이 무의미해진다 |
-| T10 | `create_missing=True` 경로(`_collect_platform`)의 기존 동작이 불변 | 헬퍼 추출 회귀 |
+| T10 | `_collect_platform`(사용자 검색 경로)의 기존 동작이 불변 | 헬퍼 추출 회귀 |
+| **T11** | `collect_all_products`가 Sephora/Amazon US/Rakuten을 **호출하지 않는다** | **감사 r2 P2.** §4.2.0의 의도된 동작 제거를 고정 |
+| **T12** | `products` 길이가 정확히 250이면 warning이 남는다 | **감사 r2 P3.** 잘린 카탈로그를 정상으로 착각 |
+| **T13** | platform 행이 없는 브랜드는 `fail`로 계수되고 warning이 남는다 | **감사 r2 P2.** 조용히 0건 저장 |
 
 T5/T7/T8이 이번 감사에서 새로 추가된 핵심이다. 특히 **T8은 "안 하는 것"을 검증**하는
 테스트라 빠뜨리기 쉽다 — 호출이 일어나도 결과는 그럴듯해 보이고 비용만 조용히 나간다.
@@ -384,7 +439,7 @@ T5/T7/T8이 이번 감사에서 새로 추가된 핵심이다. 특히 **T8은 "�
 
 ## 10. 검증 절차 (Verification Before Done)
 
-1. `pytest tests/ -q` — 484 passed 유지 + 신규 6케이스
+1. `pytest tests/ -q` — **488 passed, 1 skipped**(A 랜딩 후 베이스라인) 유지 + 신규 **14케이스**(T1~T13 + T5b)
 2. `mypy --strict app/` — clean
 3. **라이브 스모크**: 워크트리에서 `_collect_all()` 1회 실행 후
    - **events inserted > 0** 확인 (§4.4 반환값 정의). "갱신 상품 수"로 세면 중복만
