@@ -162,7 +162,7 @@ r1의 "API는 요청당 세션 1개(+5.5ms)"는 **틀렸다.** 실측으로 정�
 
 | API 경로 | 세션 폭 | 근거 |
 |---|---:|---|
-| 일반 조회 (`get_db`) | 1 | 요청당 1세션 — r1 서술 유효 |
+| 일반 조회 (`get_db`) | 1 **+ 1** | 요청당 `get_db` 1개에 더해 `/search`는 **항상** `_log_search` 백그라운드 태스크가 새 `AsyncSessionLocal`을 연다(`products.py:30`). 순차일 수 있으나 다음 요청과 겹칠 수 있어 0으로 치지 않는다 (감사 r6) |
 | `collect_fast` 인라인 (`products.py:163`) | **0** | `FAST_SCRAPERS`가 **빈 집합**(`collector.py:87`) → `stale` 비어 즉시 `return []`. 팬아웃 없음 |
 | **백그라운드 수집** (`products.py:174` → `_collect_in_background` → `collect_on_demand`) | **29** | `background_tasks.add_task`로 응답 후 API 프로세스 안에서 실행. `collector.py:363` 팬아웃 29 |
 
@@ -197,6 +197,14 @@ Redis 장애 전환 구간에서 서로 다른 검색어 2건 이상이 겹치�
 **모니터링 트리거**: §7.1 샘플링에서 피크가 **80 이상**이거나 `too many connections`가
 1건이라도 나오면 즉시 §5 대안표의 role 분기 안으로 전환한다.
 
+**커넥션 "수"보다 "점유 시간"이 문제일 수 있다 (감사 r6)**: `_collect_platform`은
+세션을 연 채(`collector.py:257`) 외부 스크래퍼를 기다린다(`:281`). 즉 NullPool에서 29개
+커넥션이 **Playwright/httpx 대기 동안 수십 초씩 붙잡힌다.** QueuePool이라면 상한 15가
+자연스러운 백프레셔였다. 피크 수치가 낮아도 `pg_stat_activity`의
+`state='idle in transaction'` 체류가 길면 같은 위험이다 — §7.1 샘플링에서 함께 본다.
+근본 해법은 "조회 후 세션 닫고 → 스크랩 → 저장 시 새 세션"으로 구조를 바꾸는 것이며
+`collector.py` 수정이라 **범위 밖**(§8).
+
 **부채 트리거 (수치로 고정)**: ① worker `--concurrency`를 3 이상
 ② `SCRAPERS` 레지스트리 40개 초과 ③ uvicorn `--workers` 도입
 ④ `FAST_SCRAPERS`가 비어있지 않게 되어 인라인 팬아웃이 살아나는 경우.
@@ -209,6 +217,7 @@ Redis 장애 전환 구간에서 서로 다른 검색어 2건 이상이 겹치�
 | 프로세스 role/env로 `poolclass`만 분기 (`AsyncSessionLocal` 이름 유지) | **감사 r2 제안 — 이번 레이어에선 기각, 단 §5.1 게이트의 지정 해법으로 승격.** 기각 사유: ① 역할 판별에 `com.compa.worker.plist`에 env를 심어야 하는데 **프로덕션 설정 파일 수정은 이 세션 금지 범위** ② env가 안 실린 채 배포되면 워커가 조용히 QueuePool로 돌아가 이 P0가 **무증상 재발**한다(아래 `dispose()` 행과 같은 실패 양식) ③ 관찰 창 안에서는 73 < 97로 사는 것이 없다. **API 재시작 시점에 이 안을 채택한다** |
 | Celery 전용 엔진 분리 (API는 풀 유지) | **감사 r1 재검토 후에도 기각.** "분기를 `database.py` 안에 가두면 된다"는 반론은 절반만 맞다 — `CelerySessionLocal`을 만들어도 **11개 `asyncio.run()` 호출지점이 각자 옳은 sessionmaker를 골라야** 하고(§2), 새 태스크가 `AsyncSessionLocal`을 그냥 쓰면 이 P0가 조용히 재발한다. 아래 `dispose()` 행과 같은 실패 양식이다. 게다가 위 실측대로 58 < 97로 헤드룸이 확인됐으므로 지금 분리해서 사는 것이 없다. 트리거(①②③) 도달 시 재검토 |
 | 태스크마다 `await engine.dispose()` | 11개 호출지점 전부 수정해야 하고, 새 태스크를 추가할 때마다 잊으면 재발한다. 한 줄로 구조적으로 막는 쪽이 낫다 |
+| **worker 프로세스당 영속 이벤트 루프** (`asyncio.run()` 대신 공용 `run_async()`가 같은 루프 재사용) | **감사 r6이 제시한 유일한 신규 대안이고, 기술적으로 가장 강하다.** 루프가 하나면 QueuePool을 유지하면서 루프 불일치가 사라지고 **§3.1 세마포어 계열까지 같이 해소**된다. 그럼에도 이번 레이어에서 채택하지 않는 이유: ① 11개 호출지점 전부 교체가 필요해 "한 줄"과 위험도가 다르다 ② 영속 루프는 태스크가 남긴 상태(미완 태스크·닫히지 않은 리소스)가 **다음 태스크로 전이**되는 새 실패 양식을 연다 ③ NullPool은 실측 6/6으로 P0를 즉시 끝낸다(§4). **Working Skeleton First** — 지금은 P0를 멈추고, §3.1이 발화 조건에 가까워지면 이 안이 **지정 후속**이다 |
 | `pool_pre_ping=True` | 죽은 루프 문제를 못 고친다. ping 자체가 같은 커넥션에서 나가므로 똑같이 터진다 |
 
 **부채가 되는 조건**: API 트래픽이 늘어 +5.5ms나 PG `max_connections`가 문제가 되면
@@ -222,8 +231,22 @@ Redis 장애 전환 구간에서 서로 다른 검색어 2건 이상이 겹치�
 |---|---|---|
 | T1 | 같은 프로세스에서 `asyncio.run()`을 **3회 연속** 호출해 세션 쿼리가 전부 성공 | **이 P0의 본질.** 1회만 돌리는 테스트는 이 버그를 절대 못 잡는다 |
 | T2 | `engine.pool`이 `NullPool` 인스턴스 | 누가 풀을 되돌리면 즉시 실패 |
-| **T3** | **실제 Celery 태스크 래퍼**(`classify_pending()` 등 `asyncio.run()`을 부르는 동기 함수)를 같은 프로세스에서 **2회 연속** 호출해 전부 성공 | **감사 r5.** T1은 `AsyncSessionLocal`만 3회 돌려 "풀 회귀"는 잡지만, §1 실패표의 실제 경로인 **태스크 래퍼**(`collect.py:12`, `classify.py`, `reddit_signals.py`)는 안 덮는다. 장애가 난 그 함수를 그대로 두 번 부르는 것이 가장 가까운 재현이다 |
-| **T4** | `len(set(get_enabled_scrapers()) & set(_BROWSER_SCRAPERS)) < 5` | **감사 r4·r5.** §3.1 잠복 버그의 발화 조건을 테스트로 고정. 설정을 넓히는 변경이 **테스트 실패로 드러난다** — 사람이 기억하는 것에 의존하지 않는다. `collector.py`는 수정하지 않고 가드만 추가한다 |
+| **T3** | **`classify_pending(limit=0)`을 같은 프로세스에서 2회 연속** 호출해 전부 성공 | **감사 r5.** T1은 `AsyncSessionLocal`만 3회 돌려 "풀 회귀"는 잡지만, §1 실패표의 실제 경로인 **동기 래퍼 → `asyncio.run()`**(`classify.py:13`)은 안 덮는다 |
+| **T4** | `len(set(get_enabled_scrapers()) & set(_BROWSER_SCRAPERS)) < 5` | **감사 r4·r5.** §3.1 잠복 버그의 발화 조건을 고정하는 **트립와이어**(수정이 아니다). 설정을 넓히는 변경이 테스트 실패로 드러난다 |
+
+> ⚠️ **T3에서 부작용 있는 래퍼를 부르지 마라 (감사 r6 — 실측 확인)**:
+> `purge_expired_social_posts()`는 **하드 삭제**(`reddit_signals.py:140`),
+> `classify_pending()`은 기본 `limit=50`으로 실제 `SaleEvent`를 수정·commit하고
+> Anthropic 호출까지 갈 수 있다(`classify.py:47`), `run_collection_slow()`는 실제
+> 스크래퍼 팬아웃이다. **회귀 테스트가 운영 데이터를 지우면 안 된다.**
+> → `classify_pending(limit=0)`을 쓴다: 조회 0건이라 부작용이 없으면서
+> **동기 래퍼 → `asyncio.run()` → `AsyncSessionLocal` → 쿼리**라는 실패 경로는
+> 그대로 태운다. 이것이 무해함과 재현성을 동시에 만족하는 유일한 지점이다.
+
+**T4의 위치 — 문서 내 모순 정정 (감사 r6)**: r5에서 T4를 §6에 넣으면서 §8에는
+"후속 작업"으로 남겨 모순이 생겼다. 정리한다: **T4(가드 테스트)는 이번 범위에 포함**,
+**`collector.py` 실제 수정은 §8 후속**. T4는 버그를 고치지 않고 *발화 조건이 넓어지는
+순간을 실패로 드러낼 뿐*이며, 그 한계를 알고 넣는다.
 
 **T1 어서션 강도 (감사 r1 반영)**: `SELECT 1`은 체크아웃만 검증하고 ORM 트랜잭션 경로를
 안 본다. 실패한 프로덕션 경로와 같아지도록 **`AsyncSessionLocal` + ORM 쿼리
@@ -257,6 +280,9 @@ r1은 여기서 "그러니 CI에선 T1만 스킵된다"고 썼는데 **전제가
   오인된다.** T1이 `select(Product).limit(1) + commit()`까지 하므로 판정도 **"그 쿼리가
   실제로 되는가"**여야 한다 — 모듈 로드 시 `asyncio.run()`으로 동일 쿼리를 1회 시도해
   성공한 경우에만 실행하고, 실패 사유(`OperationalError` 메시지 등)를 스킵 메시지에 담는다
+- **판정 쿼리 직후 반드시 `await engine.dispose()` (감사 r6)**. 이 판정이 남긴 커넥션이
+  풀에 남으면 **바로 그 상태가 T1이 검사하려는 "루프 간 재사용"을 오염시킨다.** 판정
+  자체가 테스트를 무의미하게 만드는 자기부정을 피해야 한다
 - **구현 완료 판정은 로컬 DB에서 T1이 실제로 `passed`한 것을 근거로만 한다.**
   스킵 결과를 통과로 보고하지 않는다 ([[feedback_zero_results_mean_broken_not_absent]])
 
@@ -275,7 +301,10 @@ VENV=/Users/Mung/dev/compa/backend/.venv/bin/python
 ```
 
 1. `PYTHONPATH=. $VENV -m pytest tests/ -q` → 484+ passed
-2. `PYTHONPATH=. $VENV -m mypy --strict app/` → clean
+2. `PYTHONPATH=. $VENV -m mypy --strict app/` → clean.
+   **신규 테스트 파일도 함께 본다** (감사 r6 — `app/`만 대상이면 테스트에 넣은 skip 판정
+   헬퍼의 타입 문제를 놓친다):
+   `PYTHONPATH=. $VENV -m mypy --strict tests/core/test_database_event_loop.py`
 3. 재현 스크립트 재실행 → `asyncio.run()` 6연속 전부 성공
 ### 7.0 ⛔ 배포 경로 게이트 — 워크트리 수정은 운영에 반영되지 않는다 (감사 r5, 실측 확인)
 
@@ -402,8 +431,15 @@ tail -c +$((OFF_worker+1)) /Users/Mung/dev/compa/ops/logs/worker.err.log \
 - compa 커넥션 피크가 **80 이상** (97 대비 안전마진 소진)
 - API `p95` 체감 악화 — `api.err.log`에 타임아웃 신규 발생
 
-**롤백 방법**: 이 커밋 1개를 revert(변경이 `poolclass=NullPool` 한 줄이라 부분 롤백
-불요) 후 worker/beat/api kickstart. 백업 사본은 만들지 않는다 — git이 백업이다.
+**롤백 방법**: 변경이 `poolclass=NullPool` 한 줄이므로 해당 커밋을 revert한다.
+단 두 가지를 전제하지 않는다 (감사 r6):
+
+- **"커밋 1개 revert"는 머지 방식에 의존한다.** squash 머지면 revert 대상은 squash
+  커밋이고, 다른 변경이 함께 들어갔다면 `git revert -n` 후 `database.py`만 남긴다.
+  머지 시점에 실제 커밋 해시를 확인하고 적을 것
+- **재시작 범위는 승인 범위와 같다.** 이번 승인은 worker/beat뿐이다. **API는 public
+  entrypoint라 별도 승인 대상**이며 롤백 시에도 자동으로 포함시키지 않는다 — API가
+  아직 구코드면 애초에 되돌릴 것도 없다(§7.0)
 
 ## 8. 범위 밖
 
@@ -420,4 +456,9 @@ tail -c +$((OFF_worker+1)) /Users/Mung/dev/compa/ops/logs/worker.err.log \
   `enabled_scrapers=all` 전환 전에 반드시 선행할 것. 핸드오프에 후속으로 등록.
   **완료 조건은 "전환 전에 기억하기"가 아니라 자동으로 걸리는 가드여야 한다**(감사 r4)
   — 후속 작업에 `len(set(get_enabled_scrapers()) & set(_BROWSER_SCRAPERS)) < 5`를
-  검사하는 테스트를 포함시켜, 설정을 넓히는 변경이 테스트 실패로 드러나게 한다
+  검사하는 테스트를 포함시켜, 설정을 넓히는 변경이 테스트 실패로 드러나게 한다.
+  **가드 테스트(T4)는 §6대로 이번 범위에 넣고, `collector.py` 실제 수정만 여기 후속으로
+  남긴다** (감사 r6이 지적한 §6↔§8 모순 정정)
+- **`_collect_platform`의 세션 점유 시간 단축** — §5.1. 세션을 연 채 스크래퍼를 기다리는
+  구조를 "조회 → 세션 닫기 → 스크랩 → 새 세션으로 저장"으로 바꾼다. NullPool에서
+  커넥션 점유가 길어지는 문제의 근본 해법이며 `collector.py` 수정이라 범위 밖
