@@ -196,6 +196,17 @@ async def _find_exact_for_sweep(
     """브랜드 exact + name_en normalized exact 일치만 반환. 휴리스틱·LLM 호출 없음."""
 ```
 
+**구현 단계를 고정한다 (감사 r6 P2)**: `normalize_name()`은 HTML 태그 제거·소문자화·
+공백 collapse까지 한다. 따라서 `func.lower(Product.name_en) == normalized_input`처럼
+DB에서 바로 비교하면 **normalized로는 같은 값이 후보에서 빠진다**(원본에 태그·중복 공백이
+있으면). 반대로 전 행을 훑으면 비효율이다. 순서를 못 박는다:
+
+1. `lower(Product.brand) == lower(brand)` **AND `deleted_at IS NULL`**로 DB에서 후보를 좁힌다
+2. 후보들을 **Python에서** `normalize_name(c.name_en) == normalize_name(name)`으로 비교
+3. 일치 0개 → `None` · 1개 → 그것 · **2개 이상 → `warning` 후 `None`**
+
+테스트는 대소문자·중복 공백·HTML 태그(`<b>`)가 섞인 이름이 정상 매칭되는지 포함한다(T14).
+
 **배치 (감사 r5 P2)**: 이 함수는 **`backend/app/scrapers/collector.py`의 private helper**로
 둔다. `app/ai/matcher.py`에 넣지 않는다 — 거기는 "유연한 크로스언어 매칭"이 주제이고,
 같은 파일에 두면 다음 사람이 둘을 헷갈리거나 통합하려 든다. 스윕 전용 계약임을 위치로도
@@ -339,6 +350,19 @@ T10·T15가 이 필드들을 **실제로 검증**한다 — "기존 동작 불�
 | `_collect_platform` (사용자 검색 경로) | 기존 `get_or_create_product` 그대로 | 동작 불변 |
 | Path A (스윕) | `_find_exact_for_sweep` (§4.2.1) | LLM 0, 생성 0 |
 
+**⛔ 두 호출부는 반환값을 다르게 쓴다 — 섞으면 검색이 깨진다 (감사 r6 P1)**
+
+새 헬퍼가 `inserted count`를 돌려주므로, 구현자가 **양쪽 다** `inserted > 0`일 때만
+product를 계수하기 쉽다. 그러면 사용자 검색 경로에 회귀가 생긴다:
+
+| 호출부 | product id 수집 조건 | 이유 |
+|---|---|---|
+| `_collect_platform` | **insert 수와 무관하게 항상 추가** (`collector.py:300` 현행) | 오늘 이미 수집돼 중복만 나온 상품도 **검색 결과에는 나와야 한다** |
+| Path A | `inserted > 0`인 상품만 `updated` 계수 | 반환값이 "실제 갱신"을 뜻해야 검증이 성립(§4.4) |
+
+T17이 이를 고정한다: **중복 이벤트만 발생한 경우에도 `_collect_platform`이 그 product를
+반환한다.**
+
 이름 없는 이벤트를 거르는 가드(`collector.py:293`, 셀렉터 파손 시 정크 상품 생성 방지)와
 "상품명으로 묶기"는 두 호출부가 모두 쓰므로 별도 순수 함수로 분리한다
 (`group_events_by_product_name(events) -> dict[str, list[ScrapedEvent]]`).
@@ -370,7 +394,7 @@ Celery beat 시그니처(int)는 불변.
 
 왜 이 정의여야 하나: `_save_events`는 `on_conflict_do_nothing`이고 `_is_duplicate`로
 거르므로 **같은 날 두 번째 실행은 insert가 0건**이다. "매칭된 상품 수"를 세면 그때도
-211이 나와 "정상 동작"으로 보인다 — 검증이 무의미해진다. 따라서 `persist_scraped`가
+211이 나와 "정상 동작"으로 보인다 — 검증이 무의미해진다. 따라서 `persist_events_for_product`가
 **실제 insert 건수**를 반환하도록 바꾸고(현재 `_save_events`는 반환값 없음), 그 값이
 0보다 큰 상품만 계수한다.
 
@@ -442,7 +466,7 @@ rollback을 빼도 전자는 통과하기 때문이다.
 ### 5.2 집계 로그
 
 ```
-INFO  brand catalog sweep: 26 brands ok=N fail=M | products matched=211 skipped=2177 | events inserted=K
+INFO  brand catalog sweep: 26 brands ok=N fail=M | products matched=211 updated=U skipped=2177 | events inserted=K
 ```
 
 - **세 카운터는 서로 다른 것을 센다 (감사 r5 P2)** — 구현자가 섞지 않도록 명시:
@@ -458,8 +482,15 @@ INFO  brand catalog sweep: 26 brands ok=N fail=M | products matched=211 skipped=
 
 ## 6. 테스트 계획 (Tier 2 워크플로 D)
 
-`tests/tasks/test_collect.py` 신규. 기존 `tests/scrapers/test_catalog_seed.py`의
-`FakeSession`/`_fake_registry` 패턴을 그대로 따른다.
+`tests/tasks/test_collect.py` 신규. 대부분은 기존 `tests/scrapers/test_catalog_seed.py`의
+`FakeSession`/`_fake_registry` 패턴을 따른다.
+
+**단 T9·T15는 FakeSession으로 검증할 수 없다 (감사 r6 P2)**: 이 둘의 핵심은 PostgreSQL의
+`ON CONFLICT DO NOTHING RETURNING id`와 `uq_sale_events_dedup` 유니크 인덱스의 **실제
+동작**이다. 단순 fake는 `.returning()` 누락·conflict key 오해·insert count 계산 오류를
+전부 통과시킨다. 따라서 **T9·T15는 live PG 대상 테스트로 작성**하고, A(NullPool)에서
+쓴 것과 같은 skip 판정(실제 쿼리 성공 여부 + `engine.dispose()`)을 재사용한다
+(`tests/core/test_database_event_loop.py` 참조). 스킵을 통과로 보고하지 않는다.
 
 | # | 케이스 | 방어하는 회귀 |
 |---|---|---|
@@ -480,6 +511,7 @@ INFO  brand catalog sweep: 26 brands ok=N fail=M | products matched=211 skipped=
 | **T14** | 같은 brand + normalized `name_en` 행이 2개면 `warning` 후 `skipped` (예외 아님) | **감사 r3 P2.** 임의 매칭·브랜드 전체 사망 |
 | **T15** | 가격·날짜가 같고 **`size_ml`만 다른** 두 이벤트가 **둘 다 저장**된다 | **감사 r3 P2.** dedup key 불일치로 용량 variant 유실 |
 | **T16** | 대상 브랜드가 0개면 `logger.error` + 반환 0, 성공으로 보고 안 함 | **감사 r3 P1.** 설정 오류 시 조용한 0건 |
+| **T17** | 중복 이벤트만 발생해 `inserted=0`이어도 `_collect_platform`이 그 product를 **반환한다** | **감사 r6 P1.** 헬퍼 반환값 변경이 사용자 검색 결과를 지우는 회귀 |
 
 T5/T7/T8이 이번 감사에서 새로 추가된 핵심이다. 특히 **T8은 "안 하는 것"을 검증**하는
 테스트라 빠뜨리기 쉽다 — 호출이 일어나도 결과는 그럴듯해 보이고 비용만 조용히 나간다.
@@ -563,11 +595,18 @@ T5/T7/T8이 이번 감사에서 새로 추가된 핵심이다. 특히 **T8은 "�
 
 ## 10. 검증 절차 (Verification Before Done)
 
-1. `pytest tests/ -q` — **488 passed, 1 skipped**(A 랜딩 후 베이스라인) 유지 + 신규 **17케이스**(T1~T16 + T5b)
+1. `pytest tests/ -q` — **488 passed, 1 skipped**(A 랜딩 후 베이스라인) 유지 + 신규 **18케이스**(T1~T17 + T5b)
 2. `mypy --strict app/` — clean
 3. **라이브 스모크**: 워크트리에서 `_collect_all()` 1회 실행 후
-   - **events inserted > 0** 확인 (§4.4 반환값 정의). "갱신 상품 수"로 세면 중복만
-     쌓여도 211이 나온다 — 첫 실행에서만 유효한 지표다 (감사 r1 P2)
+   - **재실행 가능한 기준으로 판정한다 (감사 r6 P2)**. `events inserted > 0`은 그날 첫
+     실행에서만 성립한다 — 스모크를 한 번 더 돌리거나 beat가 먼저 돌았으면 정상 구현도
+     0이 나온다. 판정은 다음 순서로:
+     1. 스모크 직전 `SELECT count(*) FROM sale_events WHERE start_date = CURRENT_DATE
+        AND platform_id IN (공홈 26개)` 를 세어 **사전값**을 잡는다
+     2. 사전값이 **0이면**: `inserted > 0` 이어야 한다
+     3. 사전값이 **0이 아니면**(이미 오늘 돌았음): `inserted == 0`이어도 정상.
+        대신 `matched ≈ 211`과 `products` 행 수 무증가로 판정한다
+     4. 어느 경우든 `fail == 0`, `skipped`가 카탈로그 규모와 맞는지 확인
    - `products` 행 수가 **직전 측정값에서 증가하지 않았음** 확인 (T3의 라이브 대응).
      294는 08-07 스냅샷이라 쓰면 안 된다 — 스모크 직전에 세고 그 값과 대조한다 (감사 r1 P2)
    - `sale_events` 신규 행의 `platform` 분포가 공홈 26곳에 걸쳐 있는지 확인
