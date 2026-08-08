@@ -222,6 +222,8 @@ Redis 장애 전환 구간에서 서로 다른 검색어 2건 이상이 겹치�
 |---|---|---|
 | T1 | 같은 프로세스에서 `asyncio.run()`을 **3회 연속** 호출해 세션 쿼리가 전부 성공 | **이 P0의 본질.** 1회만 돌리는 테스트는 이 버그를 절대 못 잡는다 |
 | T2 | `engine.pool`이 `NullPool` 인스턴스 | 누가 풀을 되돌리면 즉시 실패 |
+| **T3** | **실제 Celery 태스크 래퍼**(`classify_pending()` 등 `asyncio.run()`을 부르는 동기 함수)를 같은 프로세스에서 **2회 연속** 호출해 전부 성공 | **감사 r5.** T1은 `AsyncSessionLocal`만 3회 돌려 "풀 회귀"는 잡지만, §1 실패표의 실제 경로인 **태스크 래퍼**(`collect.py:12`, `classify.py`, `reddit_signals.py`)는 안 덮는다. 장애가 난 그 함수를 그대로 두 번 부르는 것이 가장 가까운 재현이다 |
+| **T4** | `len(set(get_enabled_scrapers()) & set(_BROWSER_SCRAPERS)) < 5` | **감사 r4·r5.** §3.1 잠복 버그의 발화 조건을 테스트로 고정. 설정을 넓히는 변경이 **테스트 실패로 드러난다** — 사람이 기억하는 것에 의존하지 않는다. `collector.py`는 수정하지 않고 가드만 추가한다 |
 
 **T1 어서션 강도 (감사 r1 반영)**: `SELECT 1`은 체크아웃만 검증하고 ORM 트랜잭션 경로를
 안 본다. 실패한 프로덕션 경로와 같아지도록 **`AsyncSessionLocal` + ORM 쿼리
@@ -275,7 +277,40 @@ VENV=/Users/Mung/dev/compa/backend/.venv/bin/python
 1. `PYTHONPATH=. $VENV -m pytest tests/ -q` → 484+ passed
 2. `PYTHONPATH=. $VENV -m mypy --strict app/` → clean
 3. 재현 스크립트 재실행 → `asyncio.run()` 6연속 전부 성공
-4. **worker/beat 재시작** (사용자 승인됨, 2026-08-08) —
+### 7.0 ⛔ 배포 경로 게이트 — 워크트리 수정은 운영에 반영되지 않는다 (감사 r5, 실측 확인)
+
+**재시작보다 먼저 확인해야 하는 전제다. 이것이 안 맞으면 §7-4·5는 무의미하다.**
+
+| 항목 | 실측값 |
+|---|---|
+| `com.compa.worker.plist` `WorkingDirectory` | `/Users/Mung/dev/compa/backend` (**main 체크아웃**) |
+| `com.compa.beat.plist` `WorkingDirectory` | `/Users/Mung/dev/compa/backend` (**main 체크아웃**) |
+| 실행 바이너리 | `/Users/Mung/dev/compa/backend/.venv/bin/celery` (main venv) |
+| main 체크아웃 HEAD | `7fbbdb7` — `database.py`에 `NullPool` **없음** |
+| 이 수정이 사는 곳 | 워크트리 `.worktrees/collect-daily-scope`, 브랜치 `design/collect-daily-scope` |
+
+**따라서 워크트리에서 `database.py`를 고치고 `launchctl kickstart`를 해도 운영
+worker/beat는 여전히 main의 구코드를 import한다.** 관찰 결과가 나빠도 "수정이 틀렸다"와
+"수정이 배포되지 않았다"를 구분할 수 없다 —
+[[feedback_zero_results_mean_broken_not_absent]]의 배포판이다.
+
+**배포 전 필수 확인** (서비스와 같은 cwd·venv에서 런타임 import로 검증. mypy 통과는
+배포 검증을 대체하지 못한다 — 감사 r5):
+
+```bash
+cd /Users/Mung/dev/compa/backend
+PYTHONPATH=. .venv/bin/python -c "
+from app.core import database
+print(database.__file__)                    # ← 어느 체크아웃을 물었나
+print(type(database.engine.pool).__name__)  # ← NullPool이어야 한다
+"
+```
+
+> ⛔ **이 게이트는 main 체크아웃에 변경이 반영돼야만 열린다 = main 머지가 선행 조건.**
+> main 머지는 **사용자 승인 사항**이며 무인 세션 금지 범위다. 승인 전까지 §7-4·5는
+> **실행하지 않는다.** worker/beat 재시작 승인은 "머지 후"를 전제한 것이었다.
+
+4. **worker/beat 재시작** (사용자 승인됨, 2026-08-08 — **단 §7.0 게이트 통과 후**) —
    `launchctl kickstart -k gui/$(id -u)/com.compa.worker` / `.beat`
    **API는 이번 세션에서 재시작하지 않는다** (사용자 승인 범위가 worker/beat뿐).
    이 변경은 전역(`database.py`)이므로 API도 **다음 재시작 시점에 NullPool을 문다** —
@@ -341,8 +376,11 @@ for i in $(seq 1 720); do
     "select count(*) from pg_stat_activity where datname='compa'"
   sleep 5
 done | sort -n | tail -1   # ← 이 값이 피크
-grep -c "too many connections\|remaining connection slots" \
-  /Users/Mung/dev/compa/ops/logs/*.err.log
+# 커넥션 오류도 반드시 오프셋 이후로만 (감사 r5 — 아래 원칙을 이 줄에도 적용)
+for L in worker api beat; do
+  F=/Users/Mung/dev/compa/ops/logs/$L.err.log
+  tail -c +$((OFF_$L+1)) "$F" | grep -c "too many connections\|remaining connection slots"
+done
 ```
 
 **로그 집계는 반드시 재시작 시점 이후로 한정한다 (감사 r3)**. 기존 로그에 이미
@@ -350,10 +388,13 @@ grep -c "too many connections\|remaining connection slots" \
 kickstart **직전에 바이트 오프셋을 저장**하고 그 이후만 센다:
 
 ```bash
-LOG=/Users/Mung/dev/compa/ops/logs/worker.err.log
-OFFSET=$(wc -c < "$LOG")          # ← kickstart 직전에 실행
+# kickstart 직전에 worker/api/beat 3개 모두 오프셋 저장 (감사 r5)
+for L in worker api beat; do
+  eval "OFF_$L=$(wc -c < /Users/Mung/dev/compa/ops/logs/$L.err.log)"
+done
 # ... kickstart + 관찰 ...
-tail -c +$((OFFSET+1)) "$LOG" | grep -c "another operation is in progress"
+tail -c +$((OFF_worker+1)) /Users/Mung/dev/compa/ops/logs/worker.err.log \
+  | grep -c "another operation is in progress"
 ```
 
 **즉시 롤백 조건 (하나라도 해당)**:
