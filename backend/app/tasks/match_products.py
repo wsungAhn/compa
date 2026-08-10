@@ -1,5 +1,6 @@
 """Celery task for matching cross-currency products."""
 import asyncio
+import logging
 import uuid
 from typing import Optional
 
@@ -15,6 +16,8 @@ from app.models.product import Product
 from app.models.sale_event import SaleEvent
 from app.models.product_match_candidate import ProductMatchCandidate
 from app.tasks import celery
+
+_logger = logging.getLogger(__name__)
 
 
 def match_pending_products(limit: int = 50) -> int:
@@ -83,13 +86,15 @@ async def _match_orphan(db: AsyncSession, orphan: Product) -> None:
     """고아 1건을 처리 — 매칭되면 즉시 병합, 애매하면 candidate 행 생성, 후보
     없으면 아무것도 안 함(다음 배치가 다시 스캔)."""
     # 1. 번역
-    try:
-        translated = await asyncio.to_thread(
-            translate_for_matching, str(orphan.name_jp), "ja"
-        )
-    except Exception:
-        return  # 번역 실패 시 건너뜀
+    # 번역 실패는 배치 루프가 잡아 로그·집계한다. 건너뛴 고아는 다음 배치가
+    # 다시 스캔한다(의도된 재시도 — 로컬 번역이라 비용 없음).
+    translated = await asyncio.to_thread(
+        translate_for_matching, str(orphan.name_jp), "ja"
+    )
     if not translated:
+        # 예외 없이 빈 결과 — Ollama가 죽어 있으면 배치 전체가 조용히 0건이
+        # 되는데, 그걸 알 방법이 이 로그뿐이다.
+        _logger.warning("orphan translate returned empty: product=%s", orphan.id)
         return
 
     # 2. 같은 브랜드 후보들
@@ -242,12 +247,22 @@ async def _match_pending_products(limit: int = 50) -> int:
         orphans = list(result.scalars().all())
 
         count = 0
+        failed = 0
         for orphan in orphans:
             try:
                 await _match_orphan(db, orphan)
                 count += 1
-            except Exception:
-                continue  # 개별 실패가 배치를 안 죽임
+            except Exception as exc:
+                # 개별 실패가 배치를 안 죽임 — 단 실패를 0으로 둔갑시키지 않는다.
+                # 태스크 종료코드만 보던 관찰 게이트가 크레딧 전소 나흘을 놓친
+                # 사고(PRD §12-1)의 재발 방지: 실패 수를 반드시 로그에 남긴다.
+                failed += 1
+                _logger.warning(
+                    "orphan match failed (%s): product=%s", type(exc).__name__, orphan.id
+                )
+
+        if failed:
+            _logger.error("match_pending_products: %d/%d orphans failed", failed, len(orphans))
 
         await db.commit()
         return count

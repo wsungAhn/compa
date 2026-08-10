@@ -1,5 +1,6 @@
 """Celery task for classifying pending sale events."""
 import asyncio
+import logging
 
 from sqlalchemy import select
 
@@ -8,6 +9,8 @@ from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.models.sale_event import SaleEvent
 from app.tasks import celery
+
+_logger = logging.getLogger(__name__)
 
 
 def classify_pending(limit: int = 50) -> int:
@@ -37,6 +40,7 @@ async def _classify_pending(limit: int = 50) -> int:
         events: list[SaleEvent] = list(result.scalars().all())
 
         count = 0
+        failed = 0
         for event in events:
             try:
                 # Try rule-based classification first
@@ -94,9 +98,16 @@ async def _classify_pending(limit: int = 50) -> int:
                         event.needs_review = True
                     count += 1
 
-            except Exception:
-                # Swallow exceptions per spec, don't propagate
-                continue
+            except Exception as exc:
+                # 개별 실패가 배치를 안 죽임 — 단 침묵 금지. LLM 400이 "succeeded: 0"
+                # 으로 둔갑해 나흘을 숨었던 사고(PRD §12-1)의 재발 방지.
+                failed += 1
+                _logger.warning(
+                    "classify failed (%s): event=%s", type(exc).__name__, event.id
+                )
+
+        if failed:
+            _logger.error("classify_pending: %d/%d events failed", failed, len(events))
 
         # Commit once at the end
         await db.commit()

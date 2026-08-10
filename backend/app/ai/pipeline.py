@@ -31,9 +31,19 @@ SOCIAL_PLATFORM_NAME: dict[str, str] = {
 _NO_EVENTS_ERROR = "no extracted events"
 _NO_MATCHED_EVENTS_ERROR = "no extracted events matched post"
 
+# retry_count는 증가만 하고 상한이 없어서, 영영 매칭 안 되는 포스트가 매시간
+# extractor(LLM)를 다시 태웠다 — 크레딧 전소 사고의 ③번 루프. 시행 상한 도달
+# 시 영구 실패로 전이해 큐가 반드시 마르게 한다. 포스트 수명이 48h(purge)라
+# 시간당 1회 기준 5회면 일시 장애는 충분히 흡수한다.
+MAX_EXTRACT_ATTEMPTS = 5
+
 
 def _mark_retryable(post: SocialPost, error: str) -> None:
     retry_count = post.retry_count if isinstance(post.retry_count, int) else 0
+    if retry_count + 1 >= MAX_EXTRACT_ATTEMPTS:
+        _mark_permanent_failure(post, f"retry limit ({MAX_EXTRACT_ATTEMPTS}) reached: {error}")
+        post.retry_count = retry_count + 1
+        return
     post.processed = False
     post.failed = False
     post.retry_count = retry_count + 1

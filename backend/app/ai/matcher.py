@@ -1,9 +1,12 @@
 """Cross-country product matching — unify product names across KR/US/JP/CN."""
 import json
+import logging
 import re
 from typing import Any
 
 import anthropic
+
+_logger = logging.getLogger(__name__)
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -273,8 +276,18 @@ If input is ambiguous, return {{"match_id": null}}."""
                     return c
 
         return None
+    except anthropic.APIError as exc:
+        # API 실패와 "매칭 없음"이 둘 다 조용한 None이라, 크레딧 소진 중 400이
+        # 매 이벤트 신규 상품 생성(=중복)으로 둔갑해도 로그 한 줄 없었다
+        # (08-08 실측 382회). 동작은 보수적 유지(병합 안 함) — 침묵만 금지.
+        _logger.warning(
+            "Claude match unavailable (%s): creating unmatched product for name=%s brand=%s",
+            type(exc).__name__, name, brand,
+        )
+        return None
     except Exception:
-        # On any error, return None (defensive)
+        # 응답 파싱 실패(JSON 아님 등) — 매칭 포기, 신규 생성으로 폴백
+        _logger.warning("Claude match response unparseable for name=%s brand=%s", name, brand)
         return None
 
 
