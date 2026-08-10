@@ -27,9 +27,30 @@ _MARKER = "pytest-classify-guard"
 
 @pytest.fixture(autouse=True)
 async def _cleanup():
+    # _classify_pending은 큐 전체를 훑으므로 마커 행 밖의 실제 pending 행도
+    # 분류해버린다 — 2026-08-09 실증: 이 테스트(+회귀주입 런)가 라이브 DB의
+    # 현재가 500행을 surprise로 오염시켰다. 시작 전 상태를 스냅샷하고 끝나면
+    # 마커 밖 행을 원상 복구한다.
+    async with AsyncSessionLocal() as db:
+        rows = (
+            await db.execute(
+                select(SaleEvent.id, SaleEvent.event_type, SaleEvent.needs_review).where(
+                    SaleEvent.event_type.is_(None),
+                    SaleEvent.deleted_at.is_(None),
+                    SaleEvent.event_name.isnot(None),
+                )
+            )
+        ).all()
+        snapshot = {r.id: (r.event_type, r.needs_review) for r in rows}
     yield
     async with AsyncSessionLocal() as db:
         await db.execute(delete(SaleEvent).where(SaleEvent.event_name.like(f"{_MARKER}%")))
+        for row_id, (event_type, needs_review) in snapshot.items():
+            await db.execute(
+                SaleEvent.__table__.update()
+                .where(SaleEvent.id == row_id)
+                .values(event_type=event_type, needs_review=needs_review)
+            )
         await db.commit()
     await engine.dispose()
 
