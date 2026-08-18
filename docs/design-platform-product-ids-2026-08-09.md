@@ -1,4 +1,4 @@
-# 설계 — platform_product_ids (외부 상품 식별자 저장) — 2026-08-09 (v4, 2026-08-18 개정)
+# 설계 — platform_product_ids (외부 상품 식별자 저장) — 2026-08-09 (v5, 2026-08-18 개정 — 구현 착수 확정)
 
 - 작성: 2026-08-09 PDT · Mac Studio (`mac.lan`)
 - **개정 v2: 2026-08-18 · 랩탑(D:\dev\compa, Sonnet) · [예비 감사 R1](audit-platform-product-ids-2026-08-18-gemini-r1.md)
@@ -21,18 +21,37 @@
   주경로인 `tasks/collect.py:_collect_all`(브랜드 카탈로그 스윕)엔 fast-path가
   없음 — 전부 아래 4·5-3절에 반영. 문서 잔재(1·2·3절의 product.id/handle/onupdate
   표현)도 정리.
+- **개정 v5: 2026-08-18 · 랩탑(D:\dev\compa, Sonnet) · [Gemini 적대감사
+  R4](audit-platform-product-ids-2026-08-18-gemini-r4.md) 반영(판정:
+  NEEDS_REVISION — 단 "2건만 보완하면 즉시 착수 가능"으로 명시).** R4가
+  Codex 두 라운드가 놓친 신규 P0를 발견: 5-3절 upsert가 conflict된 기존
+  매핑을 무조건 신뢰했는데, 그 매핑이 가리키는 product가 소프트 삭제됐으면
+  매 수집마다 새 고아 Product가 생기고 이벤트는 계속 유령 상품에 붙는
+  무한루프가 생김 — "기존 매핑이 이긴다" 원칙에 "단, 살아있을 때만" 예외를
+  추가해 해소(5-3절 `upsert_platform_product_id` 전면 재작성). P1(공용
+  helper `resolve_product_by_external_id`의 다중 variant 순회·item_code
+  제외 계약 명시)도 반영. P2 2건(자체발견 2·3)은 8절에 후속 메모로 남김
+  — 구현 착수를 막는 수준은 아니라고 R4가 판단했고 Sonnet 자체 컨펌에서도
+  동의.
+  **자체 컨펌(Sonnet, 2026-08-18)**: R1→v2→R2→v3→R3→v4→R4로 이어진 4라운드
+  감사에서 두 감사자(Codex·Gemini)가 서로 다른 각도로 검증했고, 마지막
+  라운드(R4)는 핵심 아키텍처 4항목을 전부 "수용"으로 판정하며 신규 발견도
+  기존 설계를 뒤엎는 게 아니라 국소 수정(upsert 정책 1곳)으로 닫혔다 —
+  수렴 신호로 판단해 여기서 감사 라운드를 마감하고 구현 착수로 넘어감.
+  프로젝트 컨벤션상 실제 구현은 Codex(executor)가 수행 —
+  `cowork/2026-08-18-platform-product-ids-handoff.md` 참고.
 - Tier: **2** (`review-tiers.md` — 새 테이블+새 데이터 흐름 도입)
 - 감사 라운드: 예비 감사 R1(랩맥 Gemini) → v2 → Codex R2(NEEDS_REVISION) → v3 →
-  **Codex R3(2026-08-18) 완료, 판정 NEEDS_REVISION → 본 v4로 반영**.
-  **다음: 랩맥 Gemini로 v4 적대감사 재실행**(Codex 두 라운드 연속 수행 후
-  동일 감사자 사각지대 방지 — 감사자를 바꿔 독립적 시각으로 재검증, 착수 전 필수).
+  Codex R3(NEEDS_REVISION) → v4 → Gemini R4(NEEDS_REVISION, 국소 수정만) → v5 →
+  **Sonnet 자체 컨펌 완료 — 구현 착수 확정**.
 - 대상 파일(1단계 기준): `backend/alembic/versions/`(신규 마이그레이션),
   `backend/app/models/`(신규 모델 `platform_product_id.py`),
   **`backend/app/scrapers/base.py`(`ScrapedEvent`에 `external_id`/`id_type` 필드
-  추가 — R2 지적 1)**, **`backend/app/scrapers/collector.py`(`_collect_platform`
+  추가 — R2 지적 1)**, **`backend/app/scrapers/collector.py`(`resolve_product_by_external_id`/
+  `find_by_external_id`/`upsert_platform_product_id` 추가, `_collect_platform`
   fast-path 삽입 + `persist_events_for_product` 매핑 upsert·순서 고정 — R2 지적
-  2·3, R3 지적 1)**, **`backend/app/tasks/collect.py`(`_collect_all` 브랜드
-  카탈로그 스윕에도 동일 fast-path 적용 — R3 지적 2)**,
+  2·3, R3 지적 1, R4 자체발견 1)**, **`backend/app/tasks/collect.py`(`_collect_all`
+  브랜드 카탈로그 스윕에도 동일 fast-path 적용 — R3 지적 2)**,
   **`backend/app/ai/matcher.py`(Phase 2와 동시 수정 — v1의 "4단계로 지연" 방침
   폐기, 아래 4절 참고)**, `backend/app/tasks/match_products.py`(병합 시 매핑
   이전 — `_merge_products`가 이미 자동/수동 승인 양쪽에서 재사용되는 공유
@@ -233,11 +252,12 @@ FK, `id_type`, `last_seen_at` 포함한 v2 스키마). 아무 스크래퍼도 �
    루프 안에서 `external_id=str(variant.get("id"))`, `id_type="variant_id"`를
    `ScrapedEvent`에 채워 넣는다.
 3. **Fast-path 위치 — `collector.py:_collect_platform`, `get_or_create_product`
-   호출 직전(그룹당 1번, 현재 309행 자리)**: 그 그룹의 이벤트 중 `external_id`가
-   있는 것이 하나라도 있으면, 이름 매칭보다 먼저
-   `find_by_external_id(db, platform.id, external_id)`(5-3절)를 시도한다.
-   찾으면 그 `Product`를 그대로 쓰고 `get_or_create_product`(이름 매칭·LLM)를
-   **스킵**한다. 못 찾으면 기존대로 `get_or_create_product`로 폴백.
+   호출 직전(그룹당 1번, 현재 309행 자리)**: 공용 helper
+   `resolve_product_by_external_id(db, platform.id, events)`(5-3절 — 그룹의
+   모든 이벤트를 순회하며 `find_by_external_id` 시도, `item_code`는 건너뜀)를
+   먼저 호출한다. 찾으면 그 `Product`를 그대로 쓰고 `get_or_create_product`
+   (이름 매칭·LLM)를 **스킵**한다. 못 찾으면 기존대로 `get_or_create_product`로
+   폴백.
 4. **매핑 upsert 위치 및 순서 — `persist_events_for_product`, 이벤트별
    `SaleEvent` insert 각각의 직전([R3 지적 1] 반영 — v3는 "같은 루프 안"까지만
    말하고 순서를 안 고정해 잘못된 product_id로 먼저 저장될 여지가 있었다)**:
@@ -258,10 +278,9 @@ FK, `id_type`, `last_seen_at` 포함한 v2 스키마). 아무 스크래퍼도 �
    현재 `_collect_all`은 `product_name, group`마다 `find_exact_for_sweep(db,
    product_name, brand)`(엄격 이름매칭 전용, 실패 시 `skipped_groups += 1`
    하고 이벤트를 통째로 버림 — 신규 생성 안 함, 스윕의 의도된 설계)만 쓴다.
-   여기에 3번과 같은 fast-path를 **`find_exact_for_sweep` 호출 전에** 끼워
-   넣는다: 그룹의 이벤트 중 external_id가 있는 게 하나라도 있으면
-   `find_by_external_id`를 먼저 시도 → 찾으면 그 Product로 확정하고
-   `find_exact_for_sweep` 스킵 → 없으면 기존대로 `find_exact_for_sweep`
+   여기에 3번과 **같은 공용 helper** `resolve_product_by_external_id`를
+   `find_exact_for_sweep` 호출 **전에** 끼워 넣는다 → 찾으면 그 Product로
+   확정하고 `find_exact_for_sweep` 스킵 → 없으면 기존대로 `find_exact_for_sweep`
    (그래도 실패하면 기존과 동일하게 skip, 스윕은 여전히 신규 생성 안 함).
    이래야 상품명이 리브랜딩으로 바뀌어도(스윕이 원래 제일 취약한 지점)
    external_id로 계속 갱신된다 — 이게 이 설계의 핵심 동기(0. 문단)와
@@ -326,8 +345,8 @@ await db.execute(
 경로라면 재사용해야 한다"는 조건부 서술은 불필요했다(가정이 아니라 이미
 사실로 확인됨). 별도 작업 항목 아님 — 5-1절 구현이 곧 이 항목의 구현이다.
 
-### 5-3. [지적 5, P1 + R2 지적 4] 동시 쓰기는 upsert로, 단 product_id 불일치는
-조용히 덮지 않는다
+### 5-3. [지적 5, P1 + R2 지적 4 + R4 자체발견 1, P0] 동시 쓰기는 upsert로,
+단 product_id 불일치는 조용히 덮지 않는다 — 단 삭제된 상품은 예외
 
 v2는 conflict 시 `last_seen_at`만 갱신했는데, R2가 지적한 대로 이건 **관측
 갱신과 정합성 충돌을 구분하지 못한다.** 같은 `(platform_id, external_id)`가
@@ -335,39 +354,85 @@ v2는 conflict 시 `last_seen_at`만 갱신했는데, R2가 지적한 대로 이
 값 재관측"이 아니라 "둘 중 하나가 틀렸다"는 신호다(대개는 이름 매칭이 P2를
 잘못 새로 만든 경우). **정책: `product_id`가 다르면 upsert가 조용히 이기지
 않는다 — 기존 매핑의 product_id를 그대로 authoritative로 인정하고, 이번
-이벤트도 그 기존 product로 재귀속시킨다.** 새로 만들어진 P2가 이 이벤트
-때문에 생성됐을 뿐이라면 다음 배치 정리(`_match_pending_products`)에서
-빈 고아로 자연 정리된다 — 별도 조치 불필요.
+이벤트도 그 기존 product로 재귀속시킨다.**
+
+**v5 정정(R4 자체발견 1, P0)**: 위 정책에는 구멍이 있었다 — "기존 매핑의
+product_id가 authoritative"가 **그 product가 소프트 삭제된 경우에도** 무조건
+적용되면, `find_by_external_id`(활성 상품만 조회)는 매번 그 상품을 못 찾아
+`None`을 반환하고, 폴백으로 새 Product가 매번 생성되는데, upsert는 매번
+삭제된 옛 product_id를 반환해 SaleEvent가 계속 유령 상품에 붙는다 — **매
+수집마다 빈 고아 상품이 하나씩 늘어나는 무한루프.** 원인: 읽기 경로
+(`find_by_external_id`)는 `deleted_at IS NULL`을 걸러내는데 쓰기 경로
+(upsert)는 안 걸러냈다 — 이 비대칭이 버그다. **수정 정책: 기존 매핑이
+가리키는 product가 이미 삭제됐다면, 그때는 예외적으로 새 product_id가
+이긴다**(소유권 재할당) — "정합성 충돌 시 기존이 이긴다"는 원칙은 기존
+product가 **살아있을 때만** 적용된다.
 
 ```python
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 async def upsert_platform_product_id(
-    db: AsyncSession, product_id, platform_id, external_id: str, id_type: str
+    db: AsyncSession, product_id: uuid.UUID, platform_id: uuid.UUID,
+    external_id: str, id_type: str,
 ) -> uuid.UUID:
     """매핑을 upsert하고 최종적으로 authoritative한 product_id를 반환한다.
 
-    기존 매핑이 다른 product를 가리키면 그 기존 product_id가 이긴다
-    (R2 지적 4 — 조용한 재귀속 방지). 호출자는 반환값을 실제 저장에 쓸
-    product_id로 다시 사용해야 한다(자신이 넘긴 product_id를 그대로
-    믿지 말 것).
+    - 기존 매핑이 없으면: 그대로 insert.
+    - 기존 매핑이 있고 그 product가 살아있으면: product_id는 그대로 두고
+      last_seen_at만 갱신 — 기존 product_id가 이긴다(정합성 충돌 시 조용한
+      재귀속 방지, R2 지적 4).
+    - 기존 매핑이 있는데 그 product가 이미 소프트 삭제됐으면: 새
+      product_id로 소유권을 재할당한다(R4 자체발견 1 — 안 하면 매 수집마다
+      고아가 하나씩 늘어나는 무한루프가 생긴다).
+
+    호출자는 반환값을 실제 SaleEvent 저장에 쓸 product_id로 다시 사용해야
+    한다(자신이 넘긴 product_id를 그대로 믿지 말 것).
     """
+    existing = (
+        await db.execute(
+            select(PlatformProductId.product_id, Product.deleted_at)
+            .join(Product, Product.id == PlatformProductId.product_id)
+            .where(
+                PlatformProductId.platform_id == platform_id,
+                PlatformProductId.external_id == external_id,
+            )
+        )
+    ).first()
+
+    if existing is not None:
+        existing_product_id, deleted_at = existing
+        if deleted_at is None:
+            await db.execute(
+                update(PlatformProductId)
+                .where(
+                    PlatformProductId.platform_id == platform_id,
+                    PlatformProductId.external_id == external_id,
+                )
+                .values(last_seen_at=func.now())
+            )
+            return existing_product_id
+        # 기존 product가 삭제됨 — 새 product_id로 재할당.
+        await db.execute(
+            update(PlatformProductId)
+            .where(
+                PlatformProductId.platform_id == platform_id,
+                PlatformProductId.external_id == external_id,
+            )
+            .values(product_id=product_id, last_seen_at=func.now())
+        )
+        return product_id
+
     stmt = pg_insert(PlatformProductId).values(
         product_id=product_id, platform_id=platform_id,
         external_id=external_id, id_type=id_type,
-    )
-    stmt = stmt.on_conflict_do_update(
-        index_elements=["platform_id", "external_id"],
-        set_={"last_seen_at": func.now()},
-        # product_id는 갱신 대상에서 제외 — 기존 값이 그대로 유지된다.
-    ).returning(PlatformProductId.product_id)
-    result = await db.execute(stmt)
-    return result.scalar_one()
+    ).on_conflict_do_nothing(index_elements=["platform_id", "external_id"])
+    await db.execute(stmt)
+    return product_id
 
 
-async def find_by_external_id(db: AsyncSession, platform_id, external_id: str):
-    """O(1) fast-path — collector.py의 _collect_platform에서
-    get_or_create_product 호출 직전, 그룹당 1번 호출(4절 3번 참고)."""
+async def find_by_external_id(db: AsyncSession, platform_id: uuid.UUID, external_id: str) -> Product | None:
+    """external_id 하나로 활성 상품 조회. resolve_product_by_external_id가 호출한다."""
     result = await db.execute(
         select(Product)
         .join(PlatformProductId, PlatformProductId.product_id == Product.id)
@@ -378,11 +443,31 @@ async def find_by_external_id(db: AsyncSession, platform_id, external_id: str):
         )
     )
     return result.scalar_one_or_none()
+
+
+async def resolve_product_by_external_id(
+    db: AsyncSession, platform_id: uuid.UUID, events: list[ScrapedEvent],
+) -> Product | None:
+    """이벤트 그룹(한 product_name 그룹의 모든 variant)을 순회하며 fast-path 조회.
+
+    R4 자체발견[검증 1] 반영 — _collect_platform과 _collect_all 양쪽에서
+    공용으로 호출한다(4절 3·5번). 계약:
+    - Rakuten `item_code`는 신뢰 불가 식별자라 건너뛴다(3-2절).
+    - 그룹 안 여러 variant 중 하나라도 기존 활성 상품에 매핑돼 있으면
+      그 상품을 즉시 반환한다(50ml는 신규, 100ml는 기존인 케이스 대응).
+    """
+    for s in events:
+        if not s.external_id or s.id_type == "item_code":
+            continue
+        prod = await find_by_external_id(db, platform_id, s.external_id)
+        if prod is not None:
+            return prod
+    return None
 ```
 
 ---
 
-## 6. 리스크 (v3 갱신)
+## 6. 리스크 (v5 갱신)
 
 - **`(platform_id, external_id)` 매핑이 서로 다른 product_id를 두고 경합하면**
   5-3절 정책대로 기존 매핑이 이긴다 — 즉 "나중에 온 이벤트가 이름 매칭으로
@@ -404,7 +489,7 @@ async def find_by_external_id(db: AsyncSession, platform_id, external_id: str):
   v1보다 범위가 넓다 — "1단계만 빨리 끝낸다"는 v1의 낙관은 유효하지 않음,
   2단계부터 온전한 기능 단위로 커야 한다.
 
-## 7. 완료 판정 (v4 갱신)
+## 7. 완료 판정 (v5 갱신)
 
 - `platform_product_ids` 테이블이 v2 스키마(`platform_id` FK, `id_type`,
   `last_seen_at` 포함)로 DB에 존재하고, `alembic upgrade head`가 에러 없이 통과
@@ -418,9 +503,10 @@ async def find_by_external_id(db: AsyncSession, platform_id, external_id: str):
 - `_collect_platform`의 fast-path 단위 테스트: 이미 매핑된 external_id로
   재수집 시 `get_or_create_product`(이름 매칭·LLM)가 **호출되지 않고**
   `find_by_external_id`만으로 기존 Product를 반환하는지 확인 ([지적 2][R2 지적 3])
-- upsert 충돌 정책 단위 테스트: 같은 external_id를 서로 다른 product_id로
-  두 번 upsert 시도 → 두 번째 호출이 첫 번째 product_id를 그대로 반환(조용한
-  재귀속 없음) 확인 ([R2 지적 4])
+- upsert 충돌 정책 단위 테스트: **기존 product가 살아있는 상태**에서 같은
+  external_id를 서로 다른 product_id로 두 번 upsert 시도 → 두 번째 호출이
+  첫 번째 product_id를 그대로 반환(조용한 재귀속 없음) 확인 ([R2 지적 4] —
+  기존 product가 삭제된 경우는 아래 별도 테스트, 결과가 반대이므로 혼동 금지)
 - `_merge_products` 단위 테스트: orphan에 매핑이 있는 상태로 병합 실행 →
   매핑이 canonical로 이전됐는지, 중복 시 orphan 쪽이 삭제됐는지 확인, 그리고
   `admin.py`의 수동 승인 API를 통한 병합에서도 동일하게 동작하는지 확인
@@ -433,3 +519,28 @@ async def find_by_external_id(db: AsyncSession, platform_id, external_id: str):
   `find_exact_for_sweep`가 실패하는 상황을 시뮬레이션해도, 이벤트에
   external_id가 있으면 `find_by_external_id`로 기존 Product를 찾아 갱신하는지
   확인 ([R3 지적 2] — 이 시나리오가 이 설계의 원래 동기 그 자체)
+- **소프트 삭제 재할당 단위 테스트(R4 자체발견 1)**: 기존 매핑이 가리키는
+  product를 삭제(`deleted_at` 설정)한 뒤 같은 external_id로 다시 upsert →
+  새 product_id로 소유권이 재할당되는지, 그리고 이 시나리오를 두 번 연속
+  반복해도 고아 Product가 매번 늘지 않는지(무한루프 회귀 방지) 확인 —
+  **이 테스트 없이는 v5 착수 조건 미충족으로 간주한다.**
+
+---
+
+## 8. 후속 메모 (P2, 구현 착수를 막지 않음 — R4 자체발견 2·3)
+
+- **[자체발견 2] `_collect_platform`의 `collected_product_ids` 반환 정합성**:
+  `persist_events_for_product`가 이벤트를 다른 product로 재귀속시키면
+  (5-3절), `_collect_platform`이 모으는 `collected_product_ids` 집합과
+  실제로 이벤트가 붙은 product id가 어긋날 수 있다 — `collect_on_demand`의
+  `_products_with_events` 결과에서 방금 수집된 이벤트가 누락될 위험.
+  구현 시 `persist_events_for_product`가 실제 사용된 product_id 집합을
+  반환하도록 시그니처를 바꾸고 `_collect_platform`이 그걸 합산하게 할 것.
+- **[자체발견 3] `_match_pending_products`의 스캔 범위 재확인**: 5-3절은
+  "빈 고아는 다음 배치 정리에서 자연 정리된다"고 서술하지만, 실제
+  `_match_pending_products`는 `name_en IS NULL`인(=일본/한국 등 비영문
+  플랫폼에서 온) 고아만 스캔한다. Shopify(미국)에서 생긴 빈 고아는 이
+  배치의 대상이 아니다 — 다만 이벤트가 0개인 고아는 `_products_with_events`
+  필터로 UI에 노출되지 않으므로 사용자 영향은 없다(DB에 안 쓰이는 빈 행만
+  누적). 구현 시 이 스캔 범위를 넓힐지, 아니면 "이벤트 0개 고아 주기적
+  정리" 배치를 별도로 둘지는 이 설계 범위 밖 — 후속 이슈로 트래킹.
