@@ -44,6 +44,8 @@ def parse_response(data: dict[str, Any], query: str) -> list[ScrapedEvent]:
                     source_url=item.get("itemUrl", ""),
                     confidence=0.95,
                     raw_text=item.get("itemCaption", ""),
+                    external_id=item.get("itemCode"),
+                    id_type="item_code",
                 )
             )
         except Exception:

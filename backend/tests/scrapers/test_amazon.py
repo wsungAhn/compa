@@ -46,7 +46,7 @@ def test_parse_search_html_empty() -> None:
 
 def test_parse_search_html_with_price_and_original() -> None:
     html = """
-    <div data-component-type="s-search-result">
+    <div data-component-type="s-search-result" data-asin="B0123456789">
         <h2><a href="/product-page"><span>Test Product 1</span></a></h2>
         <span class="a-price-whole">29.</span>
         <span class="a-price-fraction">99</span>
@@ -65,6 +65,8 @@ def test_parse_search_html_with_price_and_original() -> None:
     assert event.currency == "USD"
     assert event.event_name == "Amazon 현재가"
     assert event.confidence == 0.8
+    assert event.external_id == "B0123456789"
+    assert event.id_type == "asin"
 
 
 def test_parse_search_html_missing_whole_price() -> None:
@@ -184,6 +186,7 @@ def test_parse_paapi_response_with_items() -> None:
         "SearchResult": {
             "Items": [
                 {
+                    "ASIN": "B0PAAPI1234",
                     "ItemInfo": {"Title": {"DisplayValue": "Test Moisturizer"}},
                     "Offers": {
                         "Listings": [
@@ -211,6 +214,44 @@ def test_parse_paapi_response_with_items() -> None:
     assert event.event_name == "Amazon 현재가"
     assert event.confidence == 0.95
     assert event.source_url == "https://amazon.com/Test-Moisturizer/dp/B0123"
+    assert event.external_id == "B0PAAPI1234"
+    assert event.id_type == "asin"
+
+
+def test_parse_paapi_response_without_asin_leaves_external_id_empty() -> None:
+    response: dict[str, Any] = {
+        "SearchResult": {
+            "Items": [
+                {
+                    "ItemInfo": {"Title": {"DisplayValue": "Test Moisturizer"}},
+                    "Offers": {"Listings": [{"Price": {"Amount": 29.99}}]},
+                    "DetailPageURL": "https://amazon.com/Test-Moisturizer/dp/B0123",
+                },
+            ]
+        }
+    }
+
+    events = parse_paapi_response(response, "https://example.com")
+
+    assert len(events) == 1
+    assert events[0].external_id is None
+    assert events[0].id_type == "asin"
+
+
+def test_parse_search_html_without_data_asin_leaves_external_id_empty() -> None:
+    html = """
+    <div data-component-type="s-search-result">
+        <h2><a href="/product-page"><span>Test Product 1</span></a></h2>
+        <span class="a-price-whole">29.</span>
+        <span class="a-price-fraction">99</span>
+    </div>
+    """
+
+    events = parse_search_html(html, "https://www.amazon.com/s?k=test")
+
+    assert len(events) == 1
+    assert events[0].external_id is None
+    assert events[0].id_type == "asin"
 
 
 def test_parse_paapi_response_missing_price() -> None:

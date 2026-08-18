@@ -1,6 +1,6 @@
 # Codex Handoff — 2026-08-18 · platform_product_ids Phase 3 (Rakuten/Amazon 식별자)
 
-> **상태(Status):** `대기 / pending`
+> **상태(Status):** `완료 / done`
 > _(Executor: 시작 시 `진행중 / in-progress`, 완료 시 `검토대기 / review-pending`.
 >  `완료 / done`은 리뷰어만 커밋 후 설정.)_
 >
@@ -87,3 +87,60 @@
 ---
 
 ## 3. Executor Log (여기에 기록)
+
+- 2026-08-18 12:37 PDT — Codex Executor
+  - 상태를 `진행중 / in-progress`로 변경 후 시작.
+  - T1 완료: `backend/app/scrapers/jp/rakuten.py`에서 Rakuten API `itemCode`를
+    `ScrapedEvent.external_id`로 기록하고 `id_type="item_code"`를 설정.
+    `itemCode` 누락 시 `external_id=None`, `id_type="item_code"` 유지.
+  - T1 테스트 추가/갱신: `tests/scrapers/test_rakuten.py`
+    - 실제스러운 `itemCode` fixture에서 seller listing 기록 확인.
+    - `itemCode` 누락 시 external id 미저장 확인.
+    - docstring에 Rakuten `item_code`는 product identity가 아니라 seller listing
+      presence 기록용임을 명시.
+  - T2 완료: `backend/app/scrapers/us/amazon.py`
+    - PA-API `item["ASIN"]`을 `external_id`, `id_type="asin"`으로 기록.
+    - HTML fallback에서 검색 결과 컨테이너 `data-asin` 속성만 직접 읽어
+      `external_id`, `id_type="asin"`으로 기록. 정규식 fallback 추가 안 함.
+      BeautifulSoup 타입상 list 가능성은 문자열이 아니면 `None`으로 명시 처리.
+  - T2 테스트 추가/갱신: `tests/scrapers/test_amazon.py`
+    - PA-API ASIN 있음/없음 케이스 확인.
+    - HTML `data-asin` 있음/없음 케이스 확인.
+  - 검증:
+    - `PYTHONPATH=. /Users/Mung/dev/compa/backend/.venv/bin/python -m pytest tests/scrapers/test_rakuten.py -q`
+      → `13 passed`.
+    - `PYTHONPATH=. /Users/Mung/dev/compa/backend/.venv/bin/python -m pytest tests/scrapers/test_amazon.py -q`
+      → `28 passed`.
+    - `PYTHONPATH=. /Users/Mung/dev/compa/backend/.venv/bin/python -m mypy --strict app/`
+      → `Success: no issues found in 86 source files`.
+    - `PYTHONPATH=. /Users/Mung/dev/compa/backend/.venv/bin/python -m pytest tests/scrapers tests/tasks/test_collect.py -q`
+      → `245 passed, 5 skipped`.
+    - `PYTHONPATH=. /Users/Mung/dev/compa/backend/.venv/bin/python -m pytest tests/scrapers/test_shopify_brand.py tests/scrapers/test_rakuten.py tests/scrapers/test_amazon.py -q`
+      → `52 passed`.
+    - 전체 스위트 `PYTHONPATH=. /Users/Mung/dev/compa/backend/.venv/bin/python -m pytest tests/ -q`
+      → sandbox PostgreSQL 접속 차단으로 blocked:
+      `PermissionError: [Errno 1] Operation not permitted`, address `::1:5432`.
+      결과 요약은 `19 failed, 483 passed, 7 skipped, 28 errors`; 실패는 DB 의존
+      테스트에서 발생했고 이번 parser 변경 대상/영향권 테스트는 별도 통과.
+    - 테스트 실패 기록 훅
+      `python3 ~/agent_hub/training/failure_log.py record --code TEST_FAILING --trigger test_run --project compa --phase verify --ref 2026-08-18-platform-product-ids-phase3-full-pytest-sandbox-db-blocked`
+      실행 시도 → sandbox가 `~/agent_hub/training/raw/failures/*.json` 쓰기를 막아
+      `PermissionError: [Errno 1] Operation not permitted`로 기록 실패.
+    - 모든 검증 명령에서 `pyenv: cannot rehash: /Users/Mung/.pyenv/shims isn't writable`
+      경고가 출력됐으나, 개별 pytest/mypy 통과 명령의 exit code는 0.
+  - 커밋/서비스 재시작/`.env` 수정 없음.
+  - 상태를 `검토대기 / review-pending`으로 변경.
+
+## 4. Reviewer Log (Claude Sonnet 5, 2026-08-18)
+
+Codex 샌드박스에서 다시 PostgreSQL(::1:5432) 접근이 막혀 DB 의존 테스트를
+blocked로 정직하게 보고함. 샌드박스 밖 plain SSH로 직접 재검증:
+
+- 전체 테스트 `pytest tests/ -q` (live PG): **515 passed, 1 skipped**
+  (Phase 1·2 베이스라인 511 passed 대비 +4 신규 테스트 전부 통과, 회귀 0건).
+- `mypy --strict app/`: **0 errors, 86 files**.
+- 코드 대조: `rakuten.py`의 `item.get("itemCode")`, `amazon.py`의
+  `item.get("ASIN")`(PA-API)·`item.get("data-asin")`(HTML) — 설계 v5 §3-2/3-3과
+  일치. 정규식 폴백 추가 안 함(설계 지시대로).
+
+커밋 승인.

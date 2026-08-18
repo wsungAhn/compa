@@ -212,6 +212,8 @@ def parse_paapi_response(data: dict[str, Any], url: str) -> list[ScrapedEvent]:
                     source_url=source_url,
                     confidence=0.95,
                     raw_text=product_name,
+                    external_id=item.get("ASIN"),
+                    id_type="asin",
                 )
             )
         except Exception:
@@ -293,6 +295,8 @@ def parse_search_html(html: str, url: str) -> list[ScrapedEvent]:
             href_attr = link_el.get("href", "") if link_el else ""
             href = href_attr if isinstance(href_attr, str) else ""
             source_url = f"https://www.amazon.com{href}" if href.startswith("/") else url
+            asin_attr = item.get("data-asin")
+            external_id = asin_attr if isinstance(asin_attr, str) else None
 
             events.append(
                 ScrapedEvent(
@@ -307,6 +311,8 @@ def parse_search_html(html: str, url: str) -> list[ScrapedEvent]:
                     source_url=source_url,
                     confidence=0.8,
                     raw_text=item.get_text(strip=True)[:300],
+                    external_id=external_id,
+                    id_type="asin",
                 )
             )
         except Exception:

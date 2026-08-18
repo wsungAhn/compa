@@ -74,6 +74,7 @@ def test_parse_response_single_item() -> None:
                     "itemName": "テストセラム",
                     "itemPrice": 1980,
                     "itemUrl": "https://item.rakuten.co.jp/shop/12345",
+                    "itemCode": "shop:12345",
                     "itemCaption": "美容液",
                 }
             }
@@ -91,6 +92,51 @@ def test_parse_response_single_item() -> None:
     assert event.source_url == "https://item.rakuten.co.jp/shop/12345"
     assert event.confidence == 0.95
     assert event.raw_text == "美容液"
+    assert event.external_id == "shop:12345"
+    assert event.id_type == "item_code"
+
+
+def test_parse_response_records_item_code_as_seller_listing_only() -> None:
+    """Rakuten item_code records seller listing presence, not product identity."""
+    data: dict[str, Any] = {
+        "Items": [
+            {
+                "Item": {
+                    "itemName": "SK-II フェイシャルトリートメントエッセンス",
+                    "itemPrice": 19800,
+                    "itemUrl": "https://item.rakuten.co.jp/beauty-shop/sk2-230ml",
+                    "itemCode": "beauty-shop:sk2-230ml",
+                    "itemCaption": "230ml",
+                }
+            }
+        ]
+    }
+
+    events = parse_response(data, "sk2")
+
+    assert len(events) == 1
+    assert events[0].external_id == "beauty-shop:sk2-230ml"
+    assert events[0].id_type == "item_code"
+
+
+def test_parse_response_missing_item_code_leaves_external_id_empty() -> None:
+    data: dict[str, Any] = {
+        "Items": [
+            {
+                "Item": {
+                    "itemName": "テストセラム",
+                    "itemPrice": 1980,
+                    "itemUrl": "https://item.rakuten.co.jp/shop/12345",
+                }
+            }
+        ]
+    }
+
+    events = parse_response(data, "test")
+
+    assert len(events) == 1
+    assert events[0].external_id is None
+    assert events[0].id_type == "item_code"
 
 
 def test_parse_response_missing_price() -> None:
