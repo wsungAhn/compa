@@ -199,7 +199,7 @@ async def test_t1_name_kr_none_product_is_included(monkeypatch: pytest.MonkeyPat
     )
     session = _HelperSession([product, miss_product])
     monkeypatch.setattr(collect, "AsyncSessionLocal", lambda: _SweepSessionContext(session))
-    monkeypatch.setattr(collect, "persist_events_for_product", AsyncMock(return_value=1))
+    monkeypatch.setattr(collect, "persist_events_for_product", AsyncMock(return_value=(1, set())))
 
     result = await collect._collect_all()
 
@@ -230,7 +230,7 @@ async def test_t2_brand_scrape_called_once_per_brand(monkeypatch: pytest.MonkeyP
     _patch_sweep_runtime(monkeypatch, brand_scrapers=brand_scrapers)
     monkeypatch.setattr(collect, "get_platform", AsyncMock(return_value=platform))
     monkeypatch.setattr(collect, "find_exact_for_sweep", AsyncMock(return_value=product))
-    monkeypatch.setattr(collect, "persist_events_for_product", AsyncMock(return_value=1))
+    monkeypatch.setattr(collect, "persist_events_for_product", AsyncMock(return_value=(1, set())))
 
     result = await collect._collect_all()
 
@@ -255,7 +255,7 @@ async def test_t3_unmatched_catalog_product_is_skipped(monkeypatch: pytest.Monke
     )
     monkeypatch.setattr(collect, "get_platform", AsyncMock(return_value=platform))
     monkeypatch.setattr(collect, "find_exact_for_sweep", AsyncMock(return_value=None))
-    persist = AsyncMock(return_value=1)
+    persist = AsyncMock(return_value=(1, set()))
     monkeypatch.setattr(collect, "persist_events_for_product", persist)
 
     result = await collect._collect_all()
@@ -288,7 +288,7 @@ async def test_t4_db_error_rolls_back_and_next_brand_continues(monkeypatch: pyte
     )
     monkeypatch.setattr(collect, "get_platform", AsyncMock(return_value=platform))
     monkeypatch.setattr(collect, "find_exact_for_sweep", AsyncMock(return_value=product))
-    persist = AsyncMock(side_effect=[RuntimeError("boom"), 1])
+    persist = AsyncMock(side_effect=[RuntimeError("boom"), (1, set())])
     monkeypatch.setattr(collect, "persist_events_for_product", persist)
 
     result = await collect._collect_all()
@@ -405,7 +405,7 @@ async def test_t8_sweep_path_never_calls_claude(monkeypatch: pytest.MonkeyPatch)
         "_ask_claude_for_match",
         AsyncMock(side_effect=AssertionError("Claude path must not run")),
     )
-    monkeypatch.setattr(collect, "persist_events_for_product", AsyncMock(return_value=1))
+    monkeypatch.setattr(collect, "persist_events_for_product", AsyncMock(return_value=(1, set())))
     monkeypatch.setattr(collect, "AsyncSessionLocal", lambda: _SweepSessionContext(session))
 
     result = await collect._collect_all()
@@ -439,11 +439,13 @@ async def test_t9_live_pg_duplicate_insert_returns_zero_on_second_run() -> None:
             size_ml=50.0,
         )
 
-        first = await collector.persist_events_for_product(db, product, platform, [event])
-        second = await collector.persist_events_for_product(db, product, platform, [event])
+        first, first_used_product_ids = await collector.persist_events_for_product(db, product, platform, [event])
+        second, second_used_product_ids = await collector.persist_events_for_product(db, product, platform, [event])
 
         assert first == 1
         assert second == 0
+        assert first_used_product_ids == {product.id}
+        assert second_used_product_ids == {product.id}
 
         await db.execute(delete(SaleEvent).where(SaleEvent.product_id == product.id))
         await db.execute(delete(Product).where(Product.id == product.id))
@@ -473,9 +475,10 @@ async def test_t10_persist_events_preserves_storage_contract(monkeypatch: pytest
     monkeypatch.setattr(collector, "_is_bundle", lambda name: True)
     monkeypatch.setattr(collector, "safe_url", lambda url: "https://safe.example/product")
 
-    inserted = await collector.persist_events_for_product(session, product, platform, [event, ScrapedEvent(product_name="skip", confidence=0.0)])
+    inserted, used_product_ids = await collector.persist_events_for_product(session, product, platform, [event, ScrapedEvent(product_name="skip", confidence=0.0)])
 
     assert inserted == 1
+    assert used_product_ids == {product.id}
     assert session.commits == 1
     compiled = str(session.executed[0].compile(compile_kwargs={"literal_binds": True}))  # type: ignore[attr-defined]
     assert "surprise" in compiled
@@ -504,9 +507,10 @@ async def test_persist_events_uses_authoritative_external_id_product(
     monkeypatch.setattr(collector, "upsert_platform_product_id", AsyncMock(return_value=mapped_product_id))
     caplog.set_level(logging.WARNING)
 
-    inserted = await collector.persist_events_for_product(session, source_product, platform, [event])
+    inserted, used_product_ids = await collector.persist_events_for_product(session, source_product, platform, [event])
 
     assert inserted == 1
+    assert used_product_ids == {mapped_product_id}
     compiled = str(session.executed[0].compile(compile_kwargs={"literal_binds": True}))  # type: ignore[attr-defined]
     assert str(mapped_product_id) in compiled
     assert str(source_product.id) not in compiled
@@ -538,7 +542,7 @@ async def test_t11_collect_all_does_not_call_search_path(monkeypatch: pytest.Mon
     monkeypatch.setattr(collect, "get_platform", AsyncMock(return_value=platform))
     monkeypatch.setattr(collect, "find_exact_for_sweep", AsyncMock(return_value=product))
     monkeypatch.setattr(collect, "collect_on_demand", AsyncMock(side_effect=AssertionError("search path must not run")))
-    monkeypatch.setattr(collect, "persist_events_for_product", AsyncMock(return_value=1))
+    monkeypatch.setattr(collect, "persist_events_for_product", AsyncMock(return_value=(1, set())))
 
     result = await collect._collect_all()
 
@@ -608,7 +612,7 @@ async def test_t13_missing_platform_counts_as_fail(monkeypatch: pytest.MonkeyPat
     )
     monkeypatch.setattr(collect, "get_platform", AsyncMock(return_value=None))
     monkeypatch.setattr(collect, "find_exact_for_sweep", AsyncMock(return_value=product))
-    monkeypatch.setattr(collect, "persist_events_for_product", AsyncMock(return_value=1))
+    monkeypatch.setattr(collect, "persist_events_for_product", AsyncMock(return_value=(1, set())))
 
     result = await collect._collect_all()
 
@@ -655,9 +659,10 @@ async def test_t15_live_pg_size_variants_both_insert(monkeypatch: pytest.MonkeyP
         first = ScrapedEvent(**base_kwargs, size_ml=30.0)
         second = ScrapedEvent(**base_kwargs, size_ml=50.0)
 
-        inserted = await collector.persist_events_for_product(db, product, platform, [first, second])
+        inserted, used_product_ids = await collector.persist_events_for_product(db, product, platform, [first, second])
 
         assert inserted == 2
+        assert used_product_ids == {product.id}
 
         await db.execute(delete(SaleEvent).where(SaleEvent.product_id == product.id))
         await db.execute(delete(Product).where(Product.id == product.id))
@@ -693,11 +698,52 @@ async def test_t17_collect_platform_returns_product_even_when_inserted_zero(monk
         "SCRAPERS",
         {"Tatcha 공홈": (_make_brand_scraper("Tatcha 공홈", "Tatcha", [ScrapedEvent(product_name="The Water Cream", brand="Tatcha", sale_price=70.0)], calls), "en")},
     )
-    monkeypatch.setattr(collector, "persist_events_for_product", AsyncMock(return_value=0))
+    monkeypatch.setattr(collector, "persist_events_for_product", AsyncMock(return_value=(0, set())))
 
     result = await collector._collect_platform(product.id, "Tatcha 공홈", "", "US", force=True)
 
     assert result == {product.id}
+    assert calls == [""]
+
+
+@pytest.mark.asyncio
+async def test_collect_platform_returns_authoritative_product_ids_from_persist(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_product = Product(id=uuid.uuid4(), name_en="Search Placeholder", brand="Tatcha")
+    authoritative_product_id = uuid.uuid4()
+    platform = Platform(id=uuid.uuid4(), name="Tatcha 공홈", country="US")
+    calls: list[str] = []
+    event = ScrapedEvent(
+        product_name="Renamed Water Cream",
+        brand="Tatcha",
+        sale_price=70.0,
+        external_id="40111",
+        id_type="variant_id",
+    )
+    session = _CollectPlatformSession(source_product)
+    monkeypatch.setattr(collector, "AsyncSessionLocal", lambda: _SweepSessionContext(session))
+    monkeypatch.setattr(collector, "get_platform", AsyncMock(return_value=platform))
+    monkeypatch.setattr(collector, "_fresh_platforms", AsyncMock(return_value=set()))
+    monkeypatch.setattr(collector, "_translate", lambda query, target_lang: query)
+    monkeypatch.setattr(collector, "resolve_product_by_external_id", AsyncMock(return_value=None))
+    monkeypatch.setattr(collector, "get_or_create_product", AsyncMock(return_value=source_product))
+    monkeypatch.setattr(
+        collector,
+        "SCRAPERS",
+        {"Tatcha 공홈": (_make_brand_scraper("Tatcha 공홈", "Tatcha", [event], calls), "en")},
+    )
+    monkeypatch.setattr(collector, "_scraper_instances", {})
+    monkeypatch.setattr(
+        collector,
+        "persist_events_for_product",
+        AsyncMock(return_value=(1, {authoritative_product_id})),
+    )
+
+    result = await collector._collect_platform(source_product.id, "Tatcha 공홈", "", "US", force=True)
+
+    assert result == {authoritative_product_id}
+    assert source_product.id not in result
     assert calls == [""]
 
 
@@ -727,7 +773,7 @@ async def test_collect_platform_external_id_fast_path_skips_name_matching(monkey
         {"Tatcha 공홈": (_make_brand_scraper("Tatcha 공홈", "Tatcha", [event], calls), "en")},
     )
     monkeypatch.setattr(collector, "_scraper_instances", {})
-    monkeypatch.setattr(collector, "persist_events_for_product", AsyncMock(return_value=1))
+    monkeypatch.setattr(collector, "persist_events_for_product", AsyncMock(return_value=(1, {mapped_product.id})))
 
     result = await collector._collect_platform(seed_product.id, "Tatcha 공홈", "", "US", force=True)
 
@@ -754,7 +800,7 @@ async def test_collect_all_external_id_fast_path_skips_exact_match(monkeypatch: 
     monkeypatch.setattr(collect, "get_platform", AsyncMock(return_value=platform))
     monkeypatch.setattr(collect, "resolve_product_by_external_id", AsyncMock(return_value=product))
     monkeypatch.setattr(collect, "find_exact_for_sweep", AsyncMock(side_effect=AssertionError("exact match must not run")))
-    monkeypatch.setattr(collect, "persist_events_for_product", AsyncMock(return_value=1))
+    monkeypatch.setattr(collect, "persist_events_for_product", AsyncMock(return_value=(1, set())))
 
     result = await collect._collect_all()
 
@@ -806,8 +852,8 @@ async def test_live_pg_shopify_two_runs_keep_single_platform_product_id_mapping(
             id_type="variant_id",
         )
 
-        first = await collector.persist_events_for_product(db, product, platform, [event])
-        second = await collector.persist_events_for_product(db, product, platform, [event])
+        first, first_used_product_ids = await collector.persist_events_for_product(db, product, platform, [event])
+        second, second_used_product_ids = await collector.persist_events_for_product(db, product, platform, [event])
         rows = (
             await db.execute(
                 select(PlatformProductId).where(
@@ -819,6 +865,8 @@ async def test_live_pg_shopify_two_runs_keep_single_platform_product_id_mapping(
 
         assert first == 1
         assert second == 0
+        assert first_used_product_ids == {product.id}
+        assert second_used_product_ids == {product.id}
         assert len(rows) == 1
         assert rows[0].product_id == product.id
 

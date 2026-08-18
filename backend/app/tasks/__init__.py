@@ -16,6 +16,7 @@ celery.conf.update(
         "app.tasks.collect",
         "app.tasks.classify",
         "app.tasks.match_products",
+        "app.tasks.cleanup",
         "app.tasks.social_collect",
         "app.tasks.social_extract",
         "app.tasks.seed",

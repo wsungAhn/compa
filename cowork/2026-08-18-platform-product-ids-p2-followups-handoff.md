@@ -1,6 +1,6 @@
 # Codex Handoff — 2026-08-18 · platform_product_ids P2 후속 2건
 
-> **상태(Status):** `대기 / pending`
+> **상태(Status):** `완료 / done`
 >
 > **작성자(Author):** Claude Sonnet 5 (랩탑 D:\dev\compa) → **수행자(Executor):** Codex CLI
 > **작업명(Task):** 설계 §8(P2 2건) 반영 — (1) `collected_product_ids` 반환 정합성
@@ -122,3 +122,38 @@ product_id는 호출자에게 알려주지 않는다.
 ---
 
 ## 4. Executor Log (여기에 기록)
+
+- 2026-08-18 Codex: 작업 시작. How to use 확인 — 커밋/머지/서비스 재시작/.env 변경 금지, 워킹트리 변경만 수행. 설계 v5 §8 확인.
+- 2026-08-18 Codex: T1 구현 완료. `persist_events_for_product` 반환을 `(inserted_count, used_product_ids)`로 변경하고, `_collect_platform`은 실제 authoritative product_id 집합을 `collected_product_ids`에 반영하도록 수정. `_collect_all` 호출부는 count만 사용하도록 튜플 언패킹.
+- 2026-08-18 Codex: T2 구현 완료. `app.tasks.cleanup.cleanup_empty_orphan_products` 추가. 24시간 지난 이벤트 0개 활성 Product를 soft delete하고, soft delete에서는 FK cascade가 동작하지 않으므로 관련 `platform_product_ids`도 task 내에서 삭제. Celery include만 추가했고 beat schedule은 등록하지 않음.
+- 2026-08-18 Codex: 테스트 추가/수정. T1 핵심 회귀 테스트(`_collect_platform`이 persist의 authoritative product_id를 반환하는지) 추가. T2는 24h 초과 빈 고아/24h 미만/이벤트 있음 3케이스와 매핑 정리를 검증하는 DB 의존 테스트 추가.
+- 2026-08-18 Codex: 검증 결과 — `PYTHONPATH=. /Users/Mung/dev/compa/backend/.venv/bin/python -m pytest tests/tasks/test_collect.py tests/tasks/test_cleanup.py -q` → `22 passed, 5 skipped`. `PYTHONPATH=. /Users/Mung/dev/compa/backend/.venv/bin/python -m mypy --strict app/` → `Success: no issues found in 87 source files`.
+- 2026-08-18 Codex: 전체 테스트 `PYTHONPATH=. /Users/Mung/dev/compa/backend/.venv/bin/python -m pytest tests/ -q` 실행 결과 sandbox에서 PostgreSQL `::1:5432` 접속이 `PermissionError: [Errno 1] Operation not permitted`로 차단되어 DB 의존 테스트 실패. 출력 요약: `19 failed, 484 passed, 8 skipped, 28 errors`. 실패 원인 기록 Hook C(`failure_log.py record`)도 sandbox write 제한으로 `/Users/Mung/agent_hub/training/raw/failures/*.json` 쓰기 실패.
+
+## 5. Reviewer Log (Claude Sonnet 5, 2026-08-18)
+
+Codex 샌드박스에서 다시 PostgreSQL 접근이 막혀 DB 의존 테스트를 skip으로
+보고함. 샌드박스 밖 plain SSH로 직접 재검증하며 실제 버그 2건을 추가로 발견·수정:
+
+1. `test_cleanup.py`의 `assert deleted == 1`이 공유 개발 DB의 전역 삭제 카운트를
+   가정하고 있어서, 오늘 세션 내내 쌓인 실제 빈 고아 119개까지 합쳐져
+   `120 == 1`로 실패. `deleted >= 1`로 완화(개별 product 3종 deleted_at 확인이
+   핵심 검증이라 전역 정확 카운트는 불필요).
+2. 그 다음 `db.expire_all()` 이후 만료된 ORM 인스턴스의 `.id` 속성에 동기
+   접근해서 `MissingGreenlet`(비동기 세션에서 동기 지연로딩 시도) 발생.
+   `flush()` 직후 id들을 지역 변수로 캡처해 만료 후에도 안전하게 재사용하도록
+   수정.
+
+두 수정 다 Codex에게 재위임해서 반영, 각각 직접 재검증 완료. 최종 확인:
+
+- 전체 테스트 `pytest tests/ -q` (live PG): **517 passed, 1 skipped**
+  (베이스라인 515 passed 대비 +2 신규 전부 통과, 회귀 0건).
+- `mypy --strict app/`: **0 errors, 87 files**.
+- T1(`collected_product_ids` 정합성) 코드 대조: `persist_events_for_product`가
+  `(inserted_count, used_product_ids)` 튜플 반환, `_collect_platform`이
+  `collected_product_ids.update(used_product_ids)`로 반영 — 설계 §8 의도대로.
+- T2(`cleanup_empty_orphan_products`) 코드 대조: 24h 컷오프 + `NOT EXISTS SaleEvent`
+  쿼리, `platform_product_ids`도 함께 정리(CASCADE 안 타는 소프트삭제라 명시적
+  삭제) — beat 스케줄 등록 안 함(지시대로 범위 밖).
+
+커밋 승인.

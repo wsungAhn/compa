@@ -67,7 +67,7 @@ async def _collect_all() -> int:
                         continue
 
                     matched_products += 1
-                    inserted_here = await persist_events_for_product(db, product, platform, group)
+                    inserted_here, _used_product_ids = await persist_events_for_product(db, product, platform, group)
                     if inserted_here > 0:
                         updated_products += 1
                     inserted_events += inserted_here

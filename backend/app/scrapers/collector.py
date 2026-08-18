@@ -294,9 +294,10 @@ async def persist_events_for_product(
     product: Product,
     platform: Platform,
     scraped: list[ScrapedEvent],
-) -> int:
-    """한 상품의 이벤트를 저장하고 실제 insert된 행 수를 반환한다."""
+) -> tuple[int, set[uuid.UUID]]:
+    """한 상품의 이벤트를 저장하고 실제 insert 수와 사용 product_id 집합을 반환한다."""
     inserted = 0
+    used_product_ids: set[uuid.UUID] = set()
     for s in scraped:
         if s.confidence == 0.0:
             continue
@@ -319,6 +320,7 @@ async def persist_events_for_product(
                     authoritative_product_id,
                 )
 
+        used_product_ids.add(authoritative_product_id)
         event_type = _classify_event_type(s)
         stmt = pg_insert(SaleEvent).values(
             id=uuid.uuid4(),
@@ -344,7 +346,7 @@ async def persist_events_for_product(
         result = await db.execute(stmt)
         inserted += len(result.scalars().all())
     await db.commit()
-    return inserted
+    return inserted, used_product_ids
 
 
 def _get_platform_country(platform_name: str) -> str:
@@ -422,8 +424,11 @@ async def _collect_platform(
                 prod = await resolve_product_by_external_id(db, platform.id, events)
                 if prod is None:
                     prod = await get_or_create_product(db, product_name, brand, platform_country)
-                await persist_events_for_product(db, prod, platform, events)
-                collected_product_ids.add(prod.id)
+                _inserted, used_product_ids = await persist_events_for_product(db, prod, platform, events)
+                if used_product_ids:
+                    collected_product_ids.update(used_product_ids)
+                else:
+                    collected_product_ids.add(prod.id)
 
         except Exception as exc:
             await db.rollback()
