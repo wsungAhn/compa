@@ -1,4 +1,4 @@
-# 설계 — platform_product_ids (외부 상품 식별자 저장) — 2026-08-09 (v3, 2026-08-18 개정)
+# 설계 — platform_product_ids (외부 상품 식별자 저장) — 2026-08-09 (v4, 2026-08-18 개정)
 
 - 작성: 2026-08-09 PDT · Mac Studio (`mac.lan`)
 - **개정 v2: 2026-08-18 · 랩탑(D:\dev\compa, Sonnet) · [예비 감사 R1](audit-platform-product-ids-2026-08-18-gemini-r1.md)
@@ -13,15 +13,26 @@
   부재, (5) 2절 표가 아직 product.id/handle 기준 서술 — 전부 아래 4·5절과
   2절 Shopify 행에 반영. v1·v2 원안은 git history에 남아있음. 착수 재확인:
   2026-08-18 기준 origin/main·맥스튜디오 워킹디렉토리 모두 이 설계 미구현 상태.
+- **개정 v4: 2026-08-18 · 랩탑(D:\dev\compa, Sonnet) · [Codex 확인 라운드
+  R3](audit-platform-product-ids-2026-08-18-codex-r3.md) 반영(판정:
+  NEEDS_REVISION → 본 v4로 해소 시도).** R3가 남긴 2건 — (1) `persist_events_for_product`가
+  upsert의 authoritative product_id를 `SaleEvent` insert **전에** 쓰도록 순서
+  미고정, (2) `_collect_platform` fast-path만 있고 일일 정기 수집의 실제
+  주경로인 `tasks/collect.py:_collect_all`(브랜드 카탈로그 스윕)엔 fast-path가
+  없음 — 전부 아래 4·5-3절에 반영. 문서 잔재(1·2·3절의 product.id/handle/onupdate
+  표현)도 정리.
 - Tier: **2** (`review-tiers.md` — 새 테이블+새 데이터 흐름 도입)
-- 감사 라운드: 예비 감사 R1(2026-08-18, 랩맥 Antigravity/Gemini) → v2 개정 →
-  **Codex 확인 라운드 R2(2026-08-18) 완료, 판정 NEEDS_REVISION → 본 v3로 반영**.
-  **다음: v3에 대한 재확인 필요**(R2가 짚은 5건이 실제로 해소됐는지 — 착수 전 필수).
+- 감사 라운드: 예비 감사 R1(랩맥 Gemini) → v2 → Codex R2(NEEDS_REVISION) → v3 →
+  **Codex R3(2026-08-18) 완료, 판정 NEEDS_REVISION → 본 v4로 반영**.
+  **다음: 랩맥 Gemini로 v4 적대감사 재실행**(Codex 두 라운드 연속 수행 후
+  동일 감사자 사각지대 방지 — 감사자를 바꿔 독립적 시각으로 재검증, 착수 전 필수).
 - 대상 파일(1단계 기준): `backend/alembic/versions/`(신규 마이그레이션),
   `backend/app/models/`(신규 모델 `platform_product_id.py`),
   **`backend/app/scrapers/base.py`(`ScrapedEvent`에 `external_id`/`id_type` 필드
   추가 — R2 지적 1)**, **`backend/app/scrapers/collector.py`(`_collect_platform`
-  fast-path 삽입 + `persist_events_for_product` 매핑 upsert — R2 지적 2·3)**,
+  fast-path 삽입 + `persist_events_for_product` 매핑 upsert·순서 고정 — R2 지적
+  2·3, R3 지적 1)**, **`backend/app/tasks/collect.py`(`_collect_all` 브랜드
+  카탈로그 스윕에도 동일 fast-path 적용 — R3 지적 2)**,
   **`backend/app/ai/matcher.py`(Phase 2와 동시 수정 — v1의 "4단계로 지연" 방침
   폐기, 아래 4절 참고)**, `backend/app/tasks/match_products.py`(병합 시 매핑
   이전 — `_merge_products`가 이미 자동/수동 승인 양쪽에서 재사용되는 공유
@@ -68,9 +79,12 @@ Tatcha라는 브랜드의 "The Dewy Skin Cream"이라는 화장품이 있다고 
   이 상품의 고유 번호다.
 - **브랜드 공홈(Shopify)**에서는 상품 목록 API(`products.json`)가 이렇게 준다:
   ```json
-  {"id": 7891234567, "handle": "the-dewy-skin-cream", "title": "The Dewy Skin Cream"}
+  {"id": 7891234567, "handle": "the-dewy-skin-cream", "title": "The Dewy Skin Cream",
+   "variants": [{"id": 40111, "title": "50ml", "price": "68.00"},
+                {"id": 40222, "title": "100ml", "price": "98.00"}]}
   ```
-  `id`와 `handle` 둘 다 이 상품의 고유 번호/별칭이다.
+  최상위 `id`/`handle`이 아니라 **`variants[].id`**가 compa가 저장할 값이다
+  (3-1절 — 화장품은 용량별 variant가 실제 판매·가격 단위라서).
 
 **지금 compa 코드는 이 셋을 전부 읽고도 버린다.** 이름(`itemName`, `title`)만
 저장하고 번호는 저장 안 한다 — 그래서 "이 세 개가 같은 상품이다"를 알아낼
@@ -112,9 +126,10 @@ Tatcha라는 브랜드의 "The Dewy Skin Cream"이라는 화장품이 있다고 
 
 **결론:** 개선해서 채택한다. 새로 발명하지 않는다 — 업계가 이미 쓰는 순서
 (식별자 우선 → 이름 조합 → 그래도 애매하면 사람 검토)를 그대로 가져오고, 우리
-소스들이 이미 API 응답에 갖고 있는 필드(itemCode/ASIN/handle)를 저장하는 작은
-테이블 하나만 새로 만든다. LLM은 이 설계에 등장하지 않는다(PRD의 "LLM 공급
-정책" 절과 일치).
+소스들이 이미 API 응답에 갖고 있는 필드(Rakuten `itemCode`/Amazon `ASIN`/
+Shopify `variant.id`)를 저장하는 작은 테이블 하나만 새로 만든다(Shopify는
+v3에서 `handle`→`variant.id`로 정정 — 3-1절). LLM은 이 설계에 등장하지
+않는다(PRD의 "LLM 공급 정책" 절과 일치).
 
 ---
 
@@ -130,7 +145,7 @@ Tatcha라는 브랜드의 "The Dewy Skin Cream"이라는 화장품이 있다고 
 | `external_id` | 그 사이트가 준 진짜 번호 | `"shop123:10000456"`, `"B08XYZ1234"`, `"40111"` |
 | `id_type` | **신규 컬럼([지적 1] 반영)** — 식별자가 어느 레벨인지 명시 | `"variant_id"`, `"asin"`, `"item_code"`, `"jan"` |
 | `created_at` | 언제 처음 저장했는지 | (자동) |
-| `last_seen_at` | **신규 컬럼([자체발견 3] 반영)** — 마지막으로 이 식별자를 관측한 시각, upsert 시 갱신 | (자동, `onupdate=func.now()`) |
+| `last_seen_at` | **신규 컬럼([자체발견 3] 반영)** — 마지막으로 이 식별자를 관측한 시각 | (`server_default=func.now()`로 생성, **ORM `onupdate`가 아니라 upsert의 `set_={"last_seen_at": func.now()}`에서 직접 갱신** — [R3 지적 P2], 5-3절 코드 참고) |
 
 **유니크 제약**: `(platform_id, external_id)` — 같은 사이트의 같은 번호가 두
 상품에 붙으면 안 되니까.
@@ -223,14 +238,38 @@ FK, `id_type`, `last_seen_at` 포함한 v2 스키마). 아무 스크래퍼도 �
    `find_by_external_id(db, platform.id, external_id)`(5-3절)를 시도한다.
    찾으면 그 `Product`를 그대로 쓰고 `get_or_create_product`(이름 매칭·LLM)를
    **스킵**한다. 못 찾으면 기존대로 `get_or_create_product`로 폴백.
-4. **매핑 upsert 위치 — `persist_events_for_product`, 이벤트별 `SaleEvent`
-   insert와 같은 루프 안**: 각 이벤트 `s`에 `s.external_id`가 있으면
-   `upsert_platform_product_id(db, product.id, platform.id, s.external_id, s.id_type)`
-   (5-3절)를 같은 트랜잭션에서 호출. `on_conflict_do_update` 사용 — Celery
-   동시 실행 시 경쟁 상태로 죽지 않게([지적 5, P1]). **단, upsert 전 기존
-   매핑의 product_id와 지금 쓰려는 product_id가 다르면 조용히 덮지 않는다
-   — 정책은 5-3절 참고([R2 지적 4] 반영).**
-5. `catalog.py`의 초기 시딩도 3·4번과 같은 fast-path/upsert 함수를
+4. **매핑 upsert 위치 및 순서 — `persist_events_for_product`, 이벤트별
+   `SaleEvent` insert 각각의 직전([R3 지적 1] 반영 — v3는 "같은 루프 안"까지만
+   말하고 순서를 안 고정해 잘못된 product_id로 먼저 저장될 여지가 있었다)**:
+   각 이벤트 `s`를 순회할 때 —
+   1. `s.confidence == 0.0`이면 기존대로 skip.
+   2. `s.external_id`가 있으면 **먼저** `upsert_platform_product_id(db, product.id, platform.id, s.external_id, s.id_type)`
+      (5-3절)를 호출하고 반환값(authoritative product_id)을 받는다.
+   3. 그 반환값을 이번 `SaleEvent.product_id`로 쓴다(함수 인자로 받은
+      `product.id`를 그대로 믿지 않는다 — 반환값이 다르면 그게 맞는 값이다).
+   4. `s.external_id`가 없으면 기존대로 `product.id` 사용.
+   5. 반환값이 인자로 받은 `product.id`와 다르면 `logger.warning`으로
+      재귀속 발생을 남긴다(운영 가시성 — 이후 5-1절 병합이 이 로그를 안
+      봐도 자연 정리되지만, 빈발하면 이름 매칭 튜닝 신호).
+   `on_conflict_do_update` 사용 — Celery 동시 실행 시 경쟁 상태로 죽지
+   않게([지적 5, P1]).
+5. **`tasks/collect.py:_collect_all`(브랜드 카탈로그 정기 스윕)에도 동일
+   fast-path 적용([R3 지적 2] — 이 함수가 일일 수집의 실제 주경로다)**:
+   현재 `_collect_all`은 `product_name, group`마다 `find_exact_for_sweep(db,
+   product_name, brand)`(엄격 이름매칭 전용, 실패 시 `skipped_groups += 1`
+   하고 이벤트를 통째로 버림 — 신규 생성 안 함, 스윕의 의도된 설계)만 쓴다.
+   여기에 3번과 같은 fast-path를 **`find_exact_for_sweep` 호출 전에** 끼워
+   넣는다: 그룹의 이벤트 중 external_id가 있는 게 하나라도 있으면
+   `find_by_external_id`를 먼저 시도 → 찾으면 그 Product로 확정하고
+   `find_exact_for_sweep` 스킵 → 없으면 기존대로 `find_exact_for_sweep`
+   (그래도 실패하면 기존과 동일하게 skip, 스윕은 여전히 신규 생성 안 함).
+   이래야 상품명이 리브랜딩으로 바뀌어도(스윕이 원래 제일 취약한 지점)
+   external_id로 계속 갱신된다 — 이게 이 설계의 핵심 동기(0. 문단)와
+   가장 직접 맞닿는 경로인데 v3까지는 빠져 있었다.
+   `_collect_platform`과 이 fast-path 판단 로직은 **공용 helper 함수**
+   (`resolve_product_by_external_id` 같은 이름)로 추출해 두 호출부가
+   같은 코드를 쓰게 한다 — 로직 중복·drift 방지.
+6. `catalog.py`의 초기 시딩도 3·4·5번과 같은 fast-path/upsert 함수를
    재사용하도록 정합화([자체발견 1] — 시딩 중 variant 여러 개가 겹쳐도
    크래시하지 않게).
 
@@ -365,7 +404,7 @@ async def find_by_external_id(db: AsyncSession, platform_id, external_id: str):
   v1보다 범위가 넓다 — "1단계만 빨리 끝낸다"는 v1의 낙관은 유효하지 않음,
   2단계부터 온전한 기능 단위로 커야 한다.
 
-## 7. 완료 판정 (v3 갱신)
+## 7. 완료 판정 (v4 갱신)
 
 - `platform_product_ids` 테이블이 v2 스키마(`platform_id` FK, `id_type`,
   `last_seen_at` 포함)로 DB에 존재하고, `alembic upgrade head`가 에러 없이 통과
@@ -386,3 +425,11 @@ async def find_by_external_id(db: AsyncSession, platform_id, external_id: str):
   매핑이 canonical로 이전됐는지, 중복 시 orphan 쪽이 삭제됐는지 확인, 그리고
   `admin.py`의 수동 승인 API를 통한 병합에서도 동일하게 동작하는지 확인
   (같은 함수 호출이므로 회귀 테스트 하나로 양쪽 커버 — [지적 3][자체발견 2])
+- `persist_events_for_product` 순서 단위 테스트: 기존 매핑이 P1을 가리키는
+  상태에서 같은 external_id를 가진 이벤트를 product=P2로 호출 → 실제
+  insert된 `SaleEvent.product_id`가 P2가 아니라 **P1**인지 확인 ([R3 지적 1] —
+  이게 안 되면 "조용한 재귀속 방지" 정책이 문서상으로만 존재하는 것)
+- `_collect_all`(브랜드 카탈로그 스윕) fast-path 테스트: 상품명이 바뀌어
+  `find_exact_for_sweep`가 실패하는 상황을 시뮬레이션해도, 이벤트에
+  external_id가 있으면 `find_by_external_id`로 기존 Product를 찾아 갱신하는지
+  확인 ([R3 지적 2] — 이 시나리오가 이 설계의 원래 동기 그 자체)
