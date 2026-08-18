@@ -4,11 +4,12 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 import pytest
-from sqlalchemy import insert, select, update
+from sqlalchemy import delete, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import engine
 from app.ai.matching import evaluate_match
+from app.models.platform_product_id import PlatformProductId
 from app.models.product import Product
 from app.models.sale_event import SaleEvent
 from app.models.product_match_candidate import ProductMatchCandidate
@@ -20,6 +21,18 @@ from app.tasks.match_products import (
     _candidate_sizes,
     _unit_price,
 )
+
+
+class _MergeFakeSession:
+    def __init__(self) -> None:
+        self.flush_calls = 0
+        self.executed: list[object] = []
+
+    async def flush(self) -> None:
+        self.flush_calls += 1
+
+    async def execute(self, statement: object) -> None:
+        self.executed.append(statement)
 
 
 @pytest.fixture(autouse=True)
@@ -226,6 +239,55 @@ async def test_match_orphan_auto_merge(db_session: AsyncSession, cleanup_db, pla
     candidate = candidate_result.scalar_one()
     assert candidate.status == "approved"
     assert candidate.decided_by == "auto"
+
+
+async def test_merge_products_transfers_platform_product_ids(db_session: AsyncSession, cleanup_db, platform_id):
+    brand = f"SK-II-{uuid.uuid4().hex[:8]}"
+    canonical_product = Product(name_en="Facial Treatment Essence", brand=brand)
+    orphan_product = Product(name_jp="SK-II フェイシャルトリートメント エッセンス", brand=brand)
+    db_session.add_all([canonical_product, orphan_product])
+    await db_session.flush()
+
+    db_session.add(
+        PlatformProductId(
+            product_id=orphan_product.id,
+            platform_id=platform_id,
+            external_id="variant-orphan",
+            id_type="variant_id",
+        )
+    )
+    await db_session.commit()
+
+    await _merge_products(db_session, orphan_product, canonical_product)
+    await db_session.commit()
+
+    rows = (
+        await db_session.execute(
+            select(PlatformProductId).where(PlatformProductId.external_id == "variant-orphan")
+        )
+    ).scalars().all()
+    assert len(rows) == 1
+    assert rows[0].product_id == canonical_product.id
+
+    await db_session.execute(delete(PlatformProductId).where(PlatformProductId.external_id == "variant-orphan"))
+    await db_session.commit()
+
+
+async def test_merge_products_runs_duplicate_drop_before_mapping_transfer() -> None:
+    canonical_product = Product(id=uuid.uuid4(), name_en="Facial Treatment Essence", brand="SK-II")
+    orphan_product = Product(id=uuid.uuid4(), name_jp="SK-II フェイシャルトリートメント", brand="SK-II")
+    session = _MergeFakeSession()
+
+    await _merge_products(session, orphan_product, canonical_product)  # type: ignore[arg-type]
+
+    assert session.flush_calls == 1
+    compiled = [
+        str(statement.compile(compile_kwargs={"literal_binds": True}))  # type: ignore[attr-defined]
+        for statement in session.executed
+    ]
+    assert "UPDATE sale_events" in compiled[0]
+    assert "DELETE FROM platform_product_ids" in compiled[1]
+    assert "UPDATE platform_product_ids" in compiled[2]
 
 
 async def test_match_orphan_needs_review(db_session: AsyncSession, cleanup_db):

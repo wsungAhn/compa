@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Any, Sequence
 from unittest.mock import AsyncMock, MagicMock
 
@@ -14,6 +14,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.ai import matcher
 from app.core.database import AsyncSessionLocal, engine
 from app.models.platform import Platform
+from app.models.platform_product_id import PlatformProductId
 from app.models.product import Product
 from app.models.sale_event import SaleEvent
 from app.scrapers import collector
@@ -42,6 +43,11 @@ class _QueryResult:
 
     def scalar_one_or_none(self) -> object | None:
         return self._scalar_value
+
+    def first(self) -> object | None:
+        if not self._rows:
+            return None
+        return self._rows[0]
 
     def scalars(self) -> _ScalarRows:
         return _ScalarRows(self._rows)
@@ -349,6 +355,13 @@ def test_t6_nameless_events_are_grouped_out() -> None:
     assert grouped == {"The Water Cream": [ScrapedEvent(product_name=" The Water Cream ")]}
 
 
+def test_scraped_event_accepts_external_identifier_fields() -> None:
+    event = ScrapedEvent(product_name="The Water Cream", external_id="40111", id_type="variant_id")
+
+    assert event.external_id == "40111"
+    assert event.id_type == "variant_id"
+
+
 @pytest.mark.asyncio
 async def test_t7_same_brand_different_name_is_not_matched(monkeypatch: pytest.MonkeyPatch) -> None:
     session = _HelperSession(
@@ -471,6 +484,33 @@ async def test_t10_persist_events_preserves_storage_contract(monkeypatch: pytest
     assert "50.0" in compiled
     assert "raw text" in compiled
     assert "KRW" in compiled
+
+
+@pytest.mark.asyncio
+async def test_persist_events_uses_authoritative_external_id_product(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    session = _PersistSession(inserted_rows=1)
+    source_product = Product(id=uuid.uuid4(), name_en="Renamed Cream", brand="Tatcha")
+    mapped_product_id = uuid.uuid4()
+    platform = Platform(id=uuid.uuid4(), name="Tatcha 공홈", country="US")
+    event = ScrapedEvent(
+        product_name="Renamed Cream",
+        sale_price=70.0,
+        external_id="40111",
+        id_type="variant_id",
+    )
+    monkeypatch.setattr(collector, "upsert_platform_product_id", AsyncMock(return_value=mapped_product_id))
+    caplog.set_level(logging.WARNING)
+
+    inserted = await collector.persist_events_for_product(session, source_product, platform, [event])
+
+    assert inserted == 1
+    compiled = str(session.executed[0].compile(compile_kwargs={"literal_binds": True}))  # type: ignore[attr-defined]
+    assert str(mapped_product_id) in compiled
+    assert str(source_product.id) not in compiled
+    assert any("external_id remapped sale event" in record.message for record in caplog.records)
 
 
 @pytest.mark.asyncio
@@ -659,3 +699,187 @@ async def test_t17_collect_platform_returns_product_even_when_inserted_zero(monk
 
     assert result == {product.id}
     assert calls == [""]
+
+
+@pytest.mark.asyncio
+async def test_collect_platform_external_id_fast_path_skips_name_matching(monkeypatch: pytest.MonkeyPatch) -> None:
+    seed_product = Product(id=uuid.uuid4(), name_en="Original Name", brand="Tatcha")
+    mapped_product = Product(id=uuid.uuid4(), name_en="The Water Cream", brand="Tatcha")
+    platform = Platform(id=uuid.uuid4(), name="Tatcha 공홈", country="US")
+    calls: list[str] = []
+    event = ScrapedEvent(
+        product_name="Renamed Water Cream",
+        brand="Tatcha",
+        sale_price=70.0,
+        external_id="40111",
+        id_type="variant_id",
+    )
+    session = _CollectPlatformSession(seed_product)
+    monkeypatch.setattr(collector, "AsyncSessionLocal", lambda: _SweepSessionContext(session))
+    monkeypatch.setattr(collector, "get_platform", AsyncMock(return_value=platform))
+    monkeypatch.setattr(collector, "_fresh_platforms", AsyncMock(return_value=set()))
+    monkeypatch.setattr(collector, "_translate", lambda query, target_lang: query)
+    monkeypatch.setattr(collector, "resolve_product_by_external_id", AsyncMock(return_value=mapped_product))
+    monkeypatch.setattr(collector, "get_or_create_product", AsyncMock(side_effect=AssertionError("name matching must not run")))
+    monkeypatch.setattr(
+        collector,
+        "SCRAPERS",
+        {"Tatcha 공홈": (_make_brand_scraper("Tatcha 공홈", "Tatcha", [event], calls), "en")},
+    )
+    monkeypatch.setattr(collector, "_scraper_instances", {})
+    monkeypatch.setattr(collector, "persist_events_for_product", AsyncMock(return_value=1))
+
+    result = await collector._collect_platform(seed_product.id, "Tatcha 공홈", "", "US", force=True)
+
+    assert result == {mapped_product.id}
+    assert calls == [""]
+
+
+@pytest.mark.asyncio
+async def test_collect_all_external_id_fast_path_skips_exact_match(monkeypatch: pytest.MonkeyPatch) -> None:
+    product = Product(id=uuid.uuid4(), name_en="The Water Cream", brand="Tatcha")
+    platform = Platform(id=uuid.uuid4(), name="Tatcha 공홈", country="US")
+    calls: list[str] = []
+    event = ScrapedEvent(
+        product_name="The Water Cream 2026",
+        brand="Tatcha",
+        sale_price=70.0,
+        external_id="40111",
+        id_type="variant_id",
+    )
+    _patch_sweep_runtime(
+        monkeypatch,
+        brand_scrapers={"Tatcha 공홈": _make_brand_scraper("Tatcha 공홈", "Tatcha", [event], calls)},
+    )
+    monkeypatch.setattr(collect, "get_platform", AsyncMock(return_value=platform))
+    monkeypatch.setattr(collect, "resolve_product_by_external_id", AsyncMock(return_value=product))
+    monkeypatch.setattr(collect, "find_exact_for_sweep", AsyncMock(side_effect=AssertionError("exact match must not run")))
+    monkeypatch.setattr(collect, "persist_events_for_product", AsyncMock(return_value=1))
+
+    result = await collect._collect_all()
+
+    assert result == 1
+    assert calls == [""]
+
+
+@pytest.mark.asyncio
+async def test_resolve_product_by_external_id_skips_item_code(monkeypatch: pytest.MonkeyPatch) -> None:
+    product = Product(id=uuid.uuid4(), name_en="The Water Cream", brand="Tatcha")
+    find_by_external_id = AsyncMock(return_value=product)
+    monkeypatch.setattr(collector, "find_by_external_id", find_by_external_id)
+
+    result = await collector.resolve_product_by_external_id(
+        MagicMock(),
+        uuid.uuid4(),
+        [
+            ScrapedEvent(product_name="Rakuten listing", external_id="shop:100", id_type="item_code"),
+            ScrapedEvent(product_name="Shopify listing", external_id="40111", id_type="variant_id"),
+        ],
+    )
+
+    assert result is product
+    find_by_external_id.assert_awaited_once()
+    assert find_by_external_id.await_args.args[2] == "40111"
+
+
+@pytest.mark.skipif(LIVE_PG_UNAVAILABLE, reason=LIVE_PG_MARK_REASON)
+@pytest.mark.asyncio
+async def test_live_pg_shopify_two_runs_keep_single_platform_product_id_mapping() -> None:
+    marker = f"platform-id-{uuid.uuid4()}"
+    async with AsyncSessionLocal() as db:
+        product = Product(name_en=marker, brand="Test Brand")
+        platform = Platform(name=marker, country="US")
+        db.add(product)
+        db.add(platform)
+        await db.commit()
+        await db.refresh(product)
+        await db.refresh(platform)
+
+        event = ScrapedEvent(
+            product_name=marker,
+            brand="Test Brand",
+            sale_price=10.0,
+            currency="USD",
+            start_date=date(2026, 8, 18),
+            confidence=0.95,
+            external_id="variant-1",
+            id_type="variant_id",
+        )
+
+        first = await collector.persist_events_for_product(db, product, platform, [event])
+        second = await collector.persist_events_for_product(db, product, platform, [event])
+        rows = (
+            await db.execute(
+                select(PlatformProductId).where(
+                    PlatformProductId.platform_id == platform.id,
+                    PlatformProductId.external_id == "variant-1",
+                )
+            )
+        ).scalars().all()
+
+        assert first == 1
+        assert second == 0
+        assert len(rows) == 1
+        assert rows[0].product_id == product.id
+
+        await db.execute(delete(PlatformProductId).where(PlatformProductId.platform_id == platform.id))
+        await db.execute(delete(SaleEvent).where(SaleEvent.product_id == product.id))
+        await db.execute(delete(Product).where(Product.id == product.id))
+        await db.execute(delete(Platform).where(Platform.id == platform.id))
+        await db.commit()
+
+
+@pytest.mark.skipif(LIVE_PG_UNAVAILABLE, reason=LIVE_PG_MARK_REASON)
+@pytest.mark.asyncio
+async def test_live_pg_upsert_keeps_active_existing_product_and_reassigns_deleted_product() -> None:
+    marker = f"platform-id-{uuid.uuid4()}"
+    async with AsyncSessionLocal() as db:
+        platform = Platform(name=marker, country="US")
+        first = Product(name_en=f"{marker}-first", brand="Test Brand")
+        second = Product(name_en=f"{marker}-second", brand="Test Brand")
+        third = Product(name_en=f"{marker}-third", brand="Test Brand")
+        db.add_all([platform, first, second, third])
+        await db.commit()
+        await db.refresh(platform)
+        await db.refresh(first)
+        await db.refresh(second)
+        await db.refresh(third)
+
+        first_result = await collector.upsert_platform_product_id(
+            db, first.id, platform.id, "variant-1", "variant_id"
+        )
+        active_conflict_result = await collector.upsert_platform_product_id(
+            db, second.id, platform.id, "variant-1", "variant_id"
+        )
+        assert first_result == first.id
+        assert active_conflict_result == first.id
+
+        first.deleted_at = datetime.now(timezone.utc)
+        await db.commit()
+        deleted_result = await collector.upsert_platform_product_id(
+            db, second.id, platform.id, "variant-1", "variant_id"
+        )
+        assert deleted_result == second.id
+
+        second.deleted_at = datetime.now(timezone.utc)
+        await db.commit()
+        repeated_deleted_result = await collector.upsert_platform_product_id(
+            db, third.id, platform.id, "variant-1", "variant_id"
+        )
+        assert repeated_deleted_result == third.id
+
+        rows = (
+            await db.execute(
+                select(PlatformProductId).where(
+                    PlatformProductId.platform_id == platform.id,
+                    PlatformProductId.external_id == "variant-1",
+                )
+            )
+        ).scalars().all()
+        assert len(rows) == 1
+        assert rows[0].product_id == third.id
+
+        await db.execute(delete(PlatformProductId).where(PlatformProductId.platform_id == platform.id))
+        await db.execute(delete(Product).where(Product.id.in_([first.id, second.id, third.id])))
+        await db.execute(delete(Platform).where(Platform.id == platform.id))
+        await db.commit()

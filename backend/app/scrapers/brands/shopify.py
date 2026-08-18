@@ -70,6 +70,7 @@ def parse_products(
             sale_price = _to_float(variant.get("price"))
             if not sale_price:
                 continue
+            variant_id = variant.get("id")
             compare_at = _to_float(variant.get("compare_at_price"))
             size_ml = parse_size_ml(str(variant.get("title") or "")) or parse_size_ml(title)
             # 같은 용량이 여러 variant로 나뉘면(색상 등) 최저가만 남긴다.
@@ -96,6 +97,8 @@ def parse_products(
                     event_name=f"{brand} 공홈 {'할인' if original_price else '현재가'}",
                     source_url=source_url,
                     confidence=0.95,
+                    external_id=str(variant_id) if variant_id is not None else None,
+                    id_type="variant_id" if variant_id is not None else None,
                 )
             )
 

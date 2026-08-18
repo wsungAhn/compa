@@ -3,11 +3,12 @@ import asyncio
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
+from typing import cast
 
 from app.core.config import settings
 
 from deep_translator import GoogleTranslator
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,6 +17,7 @@ from app.ai.matcher import get_or_create_product, normalize_name
 from app.core.database import AsyncSessionLocal
 from app.core.url_safety import safe_url
 from app.models.platform import Platform
+from app.models.platform_product_id import PlatformProductId
 from app.models.product import Product
 from app.models.sale_event import SaleEvent
 from app.scrapers.base import BaseScraper, ScrapedEvent
@@ -183,6 +185,99 @@ async def find_exact_for_sweep(
     return None
 
 
+async def upsert_platform_product_id(
+    db: AsyncSession,
+    product_id: uuid.UUID,
+    platform_id: uuid.UUID,
+    external_id: str,
+    id_type: str,
+) -> uuid.UUID:
+    """매핑을 upsert하고 최종적으로 authoritative한 product_id를 반환한다.
+
+    - 기존 매핑이 없으면: 그대로 insert.
+    - 기존 매핑이 있고 그 product가 살아있으면: product_id는 그대로 두고
+      last_seen_at만 갱신 — 기존 product_id가 이긴다.
+    - 기존 매핑이 있는데 그 product가 이미 소프트 삭제됐으면: 새
+      product_id로 소유권을 재할당한다.
+
+    호출자는 반환값을 실제 SaleEvent 저장에 쓸 product_id로 다시 사용해야 한다.
+    """
+    existing = (
+        await db.execute(
+            select(PlatformProductId.product_id, Product.deleted_at)
+            .join(Product, Product.id == PlatformProductId.product_id)
+            .where(
+                PlatformProductId.platform_id == platform_id,
+                PlatformProductId.external_id == external_id,
+            )
+        )
+    ).first()
+
+    if existing is not None:
+        existing_product_id, deleted_at = existing
+        if deleted_at is None:
+            await db.execute(
+                update(PlatformProductId)
+                .where(
+                    PlatformProductId.platform_id == platform_id,
+                    PlatformProductId.external_id == external_id,
+                )
+                .values(last_seen_at=func.now())
+            )
+            return cast(uuid.UUID, existing_product_id)
+        await db.execute(
+            update(PlatformProductId)
+            .where(
+                PlatformProductId.platform_id == platform_id,
+                PlatformProductId.external_id == external_id,
+            )
+            .values(product_id=product_id, last_seen_at=func.now())
+        )
+        return product_id
+
+    stmt = pg_insert(PlatformProductId).values(
+        product_id=product_id,
+        platform_id=platform_id,
+        external_id=external_id,
+        id_type=id_type,
+    ).on_conflict_do_nothing(index_elements=["platform_id", "external_id"])
+    await db.execute(stmt)
+    return product_id
+
+
+async def find_by_external_id(
+    db: AsyncSession,
+    platform_id: uuid.UUID,
+    external_id: str,
+) -> Product | None:
+    """external_id 하나로 활성 상품 조회. resolve_product_by_external_id가 호출한다."""
+    result = await db.execute(
+        select(Product)
+        .join(PlatformProductId, PlatformProductId.product_id == Product.id)
+        .where(
+            PlatformProductId.platform_id == platform_id,
+            PlatformProductId.external_id == external_id,
+            Product.deleted_at.is_(None),
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def resolve_product_by_external_id(
+    db: AsyncSession,
+    platform_id: uuid.UUID,
+    events: list[ScrapedEvent],
+) -> Product | None:
+    """이벤트 그룹의 신뢰 가능한 외부 식별자로 기존 활성 상품을 찾는다."""
+    for s in events:
+        if not s.external_id or s.id_type == "item_code":
+            continue
+        prod = await find_by_external_id(db, platform_id, s.external_id)
+        if prod is not None:
+            return prod
+    return None
+
+
 def group_events_by_product_name(events: list[ScrapedEvent]) -> dict[str, list[ScrapedEvent]]:
     """이름이 있는 이벤트만 상품명으로 묶는다."""
     grouped: dict[str, list[ScrapedEvent]] = {}
@@ -206,10 +301,28 @@ async def persist_events_for_product(
         if s.confidence == 0.0:
             continue
 
+        authoritative_product_id = product.id
+        if s.external_id:
+            authoritative_product_id = await upsert_platform_product_id(
+                db,
+                product.id,
+                platform.id,
+                s.external_id,
+                s.id_type or "unknown",
+            )
+            if authoritative_product_id != product.id:
+                _logger.warning(
+                    "external_id remapped sale event: platform=%s external_id=%s from_product=%s to_product=%s",
+                    platform.name,
+                    s.external_id,
+                    product.id,
+                    authoritative_product_id,
+                )
+
         event_type = _classify_event_type(s)
         stmt = pg_insert(SaleEvent).values(
             id=uuid.uuid4(),
-            product_id=product.id,
+            product_id=authoritative_product_id,
             platform_id=platform.id,
             event_name=s.event_name,
             event_type=event_type,
@@ -306,7 +419,9 @@ async def _collect_platform(
 
             for product_name, events in by_product.items():
                 brand = events[0].brand if events else None
-                prod = await get_or_create_product(db, product_name, brand, platform_country)
+                prod = await resolve_product_by_external_id(db, platform.id, events)
+                if prod is None:
+                    prod = await get_or_create_product(db, product_name, brand, platform_country)
                 await persist_events_for_product(db, prod, platform, events)
                 collected_product_ids.add(prod.id)
 

@@ -67,8 +67,8 @@ def test_every_variant_is_emitted_with_its_own_discount() -> None:
             "title": "Essence",
             "handle": "essence",
             "variants": [
-                {"title": "7 oz", "price": "205.00", "compare_at_price": None},
-                {"title": "2.5 oz", "price": "99.00", "compare_at_price": "120.00"},
+                {"id": 40111, "title": "7 oz", "price": "205.00", "compare_at_price": None},
+                {"id": 40222, "title": "2.5 oz", "price": "99.00", "compare_at_price": "120.00"},
             ],
         }),
         query="essence",
@@ -79,6 +79,8 @@ def test_every_variant_is_emitted_with_its_own_discount() -> None:
     assert events[0].sale_price == 205.0 and events[0].original_price is None
     assert events[1].sale_price == 99.0 and events[1].original_price == 120.0
     assert [e.size_ml for e in events] == [207.0, 73.9]
+    assert [e.external_id for e in events] == ["40111", "40222"]
+    assert [e.id_type for e in events] == ["variant_id", "variant_id"]
 
 
 def test_query_filters_catalog() -> None:

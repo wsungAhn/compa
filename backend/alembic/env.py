@@ -16,6 +16,7 @@ if database_url:
 from app.models.base import Base
 import app.models.product
 import app.models.platform
+import app.models.platform_product_id
 import app.models.sale_event
 import app.models.social_post
 import app.models.feedback

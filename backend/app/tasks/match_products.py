@@ -4,7 +4,7 @@ import logging
 import uuid
 from typing import Optional
 
-from sqlalchemy import select, update, func
+from sqlalchemy import delete, func, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.matching import evaluate_match, containment_score
@@ -13,8 +13,9 @@ from app.core.database import AsyncSessionLocal
 from app.core.fx import convert
 from app.core.size import sizes_match
 from app.models.product import Product
-from app.models.sale_event import SaleEvent
 from app.models.product_match_candidate import ProductMatchCandidate
+from app.models.platform_product_id import PlatformProductId
+from app.models.sale_event import SaleEvent
 from app.tasks import celery
 
 _logger = logging.getLogger(__name__)
@@ -221,6 +222,20 @@ async def _merge_products(db: AsyncSession, orphan: Product, canonical: Product)
     await db.execute(
         update(SaleEvent)
         .where(SaleEvent.product_id == orphan.id)
+        .values(product_id=canonical.id)
+    )
+    await db.execute(
+        delete(PlatformProductId).where(
+            PlatformProductId.product_id == orphan.id,
+            tuple_(PlatformProductId.platform_id, PlatformProductId.external_id).in_(
+                select(PlatformProductId.platform_id, PlatformProductId.external_id)
+                .where(PlatformProductId.product_id == canonical.id)
+            ),
+        )
+    )
+    await db.execute(
+        update(PlatformProductId)
+        .where(PlatformProductId.product_id == orphan.id)
         .values(product_id=canonical.id)
     )
 

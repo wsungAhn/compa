@@ -9,6 +9,7 @@ from app.scrapers.collector import (
     get_enabled_scrapers,
     group_events_by_product_name,
     persist_events_for_product,
+    resolve_product_by_external_id,
 )
 from app.scrapers.collector import collect_on_demand
 from app.scrapers.brands.shopify import BRAND_SCRAPERS
@@ -58,7 +59,9 @@ async def _collect_all() -> int:
                     continue
 
                 for product_name, group in group_events_by_product_name(events).items():
-                    product = await find_exact_for_sweep(db, product_name, ScraperClass.BRAND)
+                    product = await resolve_product_by_external_id(db, platform.id, group)
+                    if product is None:
+                        product = await find_exact_for_sweep(db, product_name, ScraperClass.BRAND)
                     if product is None:
                         skipped_groups += 1
                         continue

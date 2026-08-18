@@ -1,6 +1,6 @@
 # Codex Handoff — 2026-08-18 · platform_product_ids (외부 상품 식별자 저장)
 
-> **상태(Status):** `대기 / pending`
+> **상태(Status):** `완료 / done`
 > _(Executor: 시작 시 `진행중 / in-progress`, 완료 시 `검토대기 / review-pending`.
 >  `완료 / done`은 리뷰어만 커밋 후 설정.)_
 >
@@ -159,3 +159,63 @@ compa는 화장품 가격 추적 서비스다. 지금은 "이 한국 상품과 �
 
 _시작 시 위 상태줄을 `진행중 / in-progress`로, 완료 시 `검토대기 / review-pending`으로
 바꾸고, 아래에 Task별 진행 상황·발견한 문제·테스트 결과(pass/skip 구분)를 남겨라._
+
+- 2026-08-18 Codex: 시작. `git status --short`로 기존 워킹트리 확인, 핸드오프와
+  `docs/design-platform-product-ids-2026-08-09.md` v5 전체 확인. `admin.py`는 문서대로
+  `_merge_products`를 직접 호출함을 코드로 재확인.
+- 2026-08-18 Codex: T1/T2/T3/T4/T5/T6/T7 1차 구현. 신규 모델
+  `app/models/platform_product_id.py`, Alembic revision
+  `9b8c7d6e5f4a_add_platform_product_ids.py`, `ScrapedEvent` 외부 식별자 필드,
+  Shopify `variant.id`, collector helper/upsert/fast-path, `_collect_all` fast-path,
+  `_merge_products` 매핑 이전 로직 추가.
+- 2026-08-18 Codex: 로컬 PostgreSQL 접근 확인 중 `alembic current`가
+  `psycopg2.OperationalError: Operation not permitted`로 실패. sandbox에서
+  localhost:5432 접근이 차단된 상태로 보이며, DB 의존 검증은 skip/실패를 구분해
+  아래 최종 테스트 결과에 별도 기록 예정.
+- 2026-08-18 Codex: 테스트 추가. §7 항목 대응:
+  `ScrapedEvent` 식별자 필드, Shopify `variant.id`/`id_type`, 공홈 2회 수집
+  매핑 중복 방지(live PG), variant 2개 매핑(live PG), `_collect_platform`
+  fast-path, active conflict upsert(live PG), `_merge_products` 매핑 이전/중복 삭제
+  SQL 순서, `persist_events_for_product` authoritative product_id 사용,
+  `_collect_all` fast-path, 소프트삭제 재할당 2회 반복(live PG).
+- 2026-08-18 Codex: 검증 결과.
+  - PASS: `PYTHONPATH=. /Users/Mung/dev/compa/backend/.venv/bin/python -m mypy --strict app/`
+    → `Success: no issues found in 86 source files`.
+  - PASS: `PYTHONPATH=. /Users/Mung/dev/compa/backend/.venv/bin/python -m alembic heads`
+    → `9b8c7d6e5f4a (head)`.
+  - PASS: `PYTHONPATH=. /Users/Mung/dev/compa/backend/.venv/bin/python -m alembic upgrade head --sql`
+    → offline SQL 생성 성공, `platform_product_ids` DDL 포함 확인.
+  - PASS/SKIP: `PYTHONPATH=. /Users/Mung/dev/compa/backend/.venv/bin/python -m pytest tests/scrapers/test_shopify_brand.py tests/tasks/test_collect.py -q`
+    → `32 passed, 4 skipped` (skip은 live PG 의존 테스트).
+  - PASS: 신규 비DB 핵심 subset
+    (`test_persist_events_uses_authoritative_external_id_product`,
+    `test_collect_platform_external_id_fast_path_skips_name_matching`,
+    `test_collect_all_external_id_fast_path_skips_exact_match`,
+    `test_resolve_product_by_external_id_skips_item_code`,
+    `test_merge_products_runs_duplicate_drop_before_mapping_transfer`,
+    `test_every_variant_is_emitted_with_its_own_discount`) → `6 passed`.
+  - PASS: `git diff --check`.
+  - BLOCKED/ENV: `PYTHONPATH=. /Users/Mung/dev/compa/backend/.venv/bin/python -m alembic upgrade head`
+    → `psycopg2.OperationalError: Operation not permitted` on `localhost:5432`.
+  - BLOCKED/ENV: full
+    `PYTHONPATH=. /Users/Mung/dev/compa/backend/.venv/bin/python -m pytest tests/ -q`
+    → `479 passed, 7 skipped, 19 failed, 28 errors`; failures/errors are DB connection
+    attempts to `localhost:5432` raising `PermissionError: [Errno 1] Operation not permitted`
+    and follow-on `PendingRollbackError` in DB cleanup fixtures. 이 환경에서 DB 의존
+    테스트를 통과로 보고하지 않음.
+
+## 5. Reviewer Log (Claude Sonnet 5, 2026-08-18)
+
+Codex 샌드박스에서 localhost:5432 접근이 막혀 DB 의존 테스트를 정직하게
+skip/blocked로 보고했음(허위 pass 없음 — 좋은 신호). 샌드박스 밖 plain SSH로
+직접 재검증:
+
+- `alembic upgrade head` (live PG): **성공**, `9b8c7d6e5f4a`로 이동.
+- 전체 테스트 `pytest tests/ -q` (live PG): **511 passed, 1 skipped**
+  (베이스라인 502 passed, 1 skipped 대비 +9 신규 테스트 전부 통과, 회귀 0건).
+- `mypy --strict app/`: **0 errors, 86 files** (Codex 결과와 동일 재확인).
+- `upsert_platform_product_id` 소프트삭제 재할당 분기 코드 직접 대조 —
+  설계 v5 §5-3과 일치.
+
+커밋 승인. T1~T7 전부 반영 확인. 3단계(Rakuten/Amazon 식별자 채워넣기)는
+범위 밖으로 후속 핸드오프 대상.
