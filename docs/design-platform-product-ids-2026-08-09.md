@@ -1,11 +1,21 @@
-# 설계 — platform_product_ids (외부 상품 식별자 저장) — 2026-08-09
+# 설계 — platform_product_ids (외부 상품 식별자 저장) — 2026-08-09 (v2, 2026-08-18 개정)
 
 - 작성: 2026-08-09 PDT · Mac Studio (`mac.lan`)
+- **개정: 2026-08-18 · 랩탑(D:\dev\compa, Sonnet) · [예비 감사 R1](audit-platform-product-ids-2026-08-18-gemini-r1.md)
+  반영.** P0 3건(Shopify Variant 미분리, matcher.py 4단계 지연의 런타임 크래시,
+  merge 시 고아 행 방치) + P1 3건(Rakuten itemCode 셀러종속, Celery 동시성 upsert
+  누락, Amazon ASIN 정규식 실패) 전부 이 문서에 반영해 v1 스키마·순서를 대체함.
+  v1 원안은 git history에 남아있음(이 커밋의 이전 버전). 착수 재확인:
+  2026-08-18 기준 origin/main·맥스튜디오 워킹디렉토리 모두 이 설계 미구현 상태.
 - Tier: **2** (`review-tiers.md` — 새 테이블+새 데이터 흐름 도입)
-- 감사 라운드: 아직 시작 안 함(이 세션은 초안 작성까지 — 착수 전 Codex 핸드오프
-  이전에 적대 감사 라운드가 선행돼야 함, `review-tiers.md` 기준)
+- 감사 라운드: **예비 감사 R1 완료(2026-08-18, 랩맥 Antigravity/Gemini)** —
+  지적사항 본 개정판에 반영 완료. **다음: Codex 확인 라운드** (`review-tiers.md`
+  기준 — 예비 감사 다음 단계, 착수 전 필수).
 - 대상 파일(1단계 기준): `backend/alembic/versions/`(신규 마이그레이션),
-  `backend/app/models/`(신규 모델 `platform_product_id.py`)
+  `backend/app/models/`(신규 모델 `platform_product_id.py`),
+  **`backend/app/ai/matcher.py`(Phase 2와 동시 수정 — v1의 "4단계로 지연" 방침
+  폐기, 아래 4절 참고)**, `backend/app/tasks/match_products.py`(병합 시 매핑 이전),
+  `backend/app/api/admin.py`(수동 병합 승인 시 매핑 이전)
 
 > PRD `docs/PRD-2026-08-07.md`의 "식별자 폐기 실측" 절(2026-08-09 추가분)의 후속.
 > **아주 쉽게 쓴다** — 이 문서를 처음 읽는 사람도 "뭘, 왜, 어떻게" 순서로 끝까지
@@ -97,63 +107,210 @@ Tatcha라는 브랜드의 "The Dewy Skin Cream"이라는 화장품이 있다고 
 
 ---
 
-## 3. 무엇을 만드는가 — 테이블 하나
+## 3. 무엇을 만드는가 — 테이블 하나 (v2: 감사 반영)
 
 새 테이블 이름: `platform_product_ids`
 
 | 컬럼 | 뜻 | 예시 값 |
 |---|---|---|
-| `id` | 이 행 자체의 번호(내부용, 신경 안 써도 됨) | (자동생성 UUID) |
-| `product_id` | compa의 `products` 테이블 어느 행인지 (외래키) | (Tatcha Dewy Skin Cream의 UUID) |
-| `platform_name` | 어느 사이트의 번호인지 | `"Rakuten"`, `"Amazon US"`, `"Tatcha 공홈"` |
-| `external_id` | 그 사이트가 준 진짜 번호 | `"shop123:10000456"`, `"B08XYZ1234"`, `"7891234567"` |
+| `id` | 이 행 자체의 번호(내부용) | (자동생성 UUID) |
+| `product_id` | compa의 `products` 테이블 어느 행인지 (FK, `ON DELETE CASCADE`) | (Tatcha Dewy Skin Cream의 UUID) |
+| `platform_id` | 어느 사이트의 번호인지 — **v1의 `platform_name: String` 대신 `platforms.id` FK** ([지적 7]: 문자열은 `platforms` 테이블과 정합성이 끊기고 이름 변경에 취약) | `platforms.id`의 UUID |
+| `external_id` | 그 사이트가 준 진짜 번호 | `"shop123:10000456"`, `"B08XYZ1234"`, `"40111"` |
+| `id_type` | **신규 컬럼([지적 1] 반영)** — 식별자가 어느 레벨인지 명시 | `"variant_id"`, `"asin"`, `"item_code"`, `"jan"` |
 | `created_at` | 언제 처음 저장했는지 | (자동) |
+| `last_seen_at` | **신규 컬럼([자체발견 3] 반영)** — 마지막으로 이 식별자를 관측한 시각, upsert 시 갱신 | (자동, `onupdate=func.now()`) |
 
-**유니크 제약**: `(platform_name, external_id)` 조합은 딱 한 번만 존재해야
-한다 — 같은 사이트의 같은 번호가 두 상품에 붙으면 안 되니까.
+**유니크 제약**: `(platform_id, external_id)` — 같은 사이트의 같은 번호가 두
+상품에 붙으면 안 되니까.
+**인덱스**: `product_id`에 단독 인덱스 추가 ([지적 7] — 역방향 조회 풀스캔 방지,
+병합·삭제·관리자 조회에서 상시 사용).
 
-**이 테이블이 생기면 뭐가 달라지나:**
+### 3-1. [지적 1, P0] Shopify는 반드시 `variant.id`를 저장한다 — `product.id`가 아니다
+
+v1은 `products.json` 최상위 `id`(Product ID)를 저장하려 했다. 이건 틀렸다.
+화장품은 **용량별 variant**(50ml/100ml)가 실제 판매 단위이고 가격·할인율이
+서로 다르며, `backend/app/scrapers/brands/shopify.py`는 이미 variant 단위로
+`ScrapedEvent`를 만든다. Product ID를 저장하면 같은 상품의 두 번째 용량을
+수집하는 순간 `(platform_id, external_id)` 유니크 위반으로 그 스크래퍼 실행
+전체가 롤백된다(감사 지적 1의 재현 시나리오).
+**결정: `external_id = variant.id`, `id_type = "variant_id"`.** `handle`은
+저장하지 않는다(가변 URL slug, 식별자로 부적합 — 감사 근거 그대로 수용).
+
+### 3-2. [지적 4, P1] Rakuten `itemCode`는 "글로벌 상품 식별자"가 아니라
+"셀러별 리스팅 식별자"다
+
+`itemCode`는 `shopCode:itemUrl` 구조 — 오픈마켓이라 같은 상품도 셀러마다
+값이 다르다. v1의 "번호가 새 번호면 100% 신규 확정" 전제는 **Shopify/Amazon
+에는 맞지만 Rakuten에는 안 맞는다.** Rakuten 행은 "이 상품이 새 상품이다"의
+증거가 아니라 "이 셀러가 이 상품을 판다"의 기록으로만 쓴다 — 신규 Product
+자동생성의 판단 근거에서 Rakuten `itemCode`는 제외하고, 이름 매칭(기존 로직)에
+계속 의존한다. `id_type = "item_code"`로 명시해 이 한계를 코드 레벨에서도
+드러낸다. **후속 조사(범위 밖, TODO)**: Rakuten API가 JAN 코드(13자리 바코드)를
+필드로 주는지 확인 — 준다면 그게 진짜 글로벌 식별자 후보(`id_type="jan"`).
+
+### 3-3. [지적 6, P1] Amazon ASIN — URL 정규식이 아니라 필드/속성에서 직접 추출
+
+v1은 "DetailPageURL에서 정규식으로 추출, 리스크 거의 없음"이라 썼다. 틀렸다 —
+`backend/app/scrapers/us/amazon.py`의 HTML 폴백 경로는 스폰서/리다이렉트
+링크(`/sspa/click?...`, `/gp/slredirect/...`)나 검색 페이지 URL로 폴백되는
+경우가 있어 정규식이 실패한다.
+**결정**:
+- PA-API 경로: 응답의 `item["ASIN"]` 필드를 직접 읽는다(정규식 불필요).
+- HTML 폴백 경로: 검색 결과 컨테이너의 `data-asin` 속성을 1순위로 읽는다.
+  둘 다 실패하면 `external_id`를 저장하지 않는다(그 행은 이름 매칭에만 의존 —
+  실패를 조용히 삼키고 확인 안 된 값을 저장하지 않는다).
+
+**이 테이블이 생기면 뭐가 달라지나** (Shopify/Amazon처럼 신뢰 가능한 식별자에
+한함 — Rakuten은 위 3-2 참고):
 
 | | 지금 | 이 테이블이 생긴 후 |
 |---|---|---|
-| Rakuten을 다시 수집할 때 | 상품 이름을 번역·정규화해서 기존 상품과 비교(느림, 가끔 틀림) | `external_id`가 일치하는 행이 있는지 딱 한 번 조회(빠름, 절대 안 틀림) |
-| 신규 상품 발견 | 이름만 보고 신규인지 기존인지 애매하면 Claude에게 물어봄 | 번호가 새 번호면 100% 신규 확정, LLM 안 부름 |
-| 매칭 실패로 인한 중복 생성 | 종종 발생(로그에 흔적 있음) | 애초에 발생 안 함(번호 기준이라 애매함이 없음) |
+| Shopify 공홈을 다시 수집할 때 | 상품 이름을 정규화해서 기존 상품과 비교(느림, 가끔 틀림) | `(platform_id, external_id)`가 일치하는 행이 있는지 딱 한 번 조회(빠름, 절대 안 틀림) |
+| 신규 Shopify/Amazon 상품 발견 | 이름만 보고 신규인지 기존인지 애매하면 Claude에게 물어봄 | 번호가 새 번호면 100% 신규 확정, LLM 안 부름 |
+| Rakuten 재수집 | 이름 매칭(현행 유지) | 이름 매칭(현행 유지) — `platform_product_ids`는 "이 셀러가 파는 중" 기록용 |
+| 매칭 실패로 인한 중복 생성 | 종종 발생(로그에 흔적 있음) | Shopify/Amazon 소스는 크게 감소, Rakuten은 기존 수준 유지 |
 
 ---
 
-## 4. 구현 순서 — Working Skeleton First (한 번에 다 안 만든다)
+## 4. 구현 순서 — Working Skeleton First (v2: [지적 2] 반영 — 4단계 지연 폐기)
 
-**1단계 (제일 쉬움, 먼저)**: 테이블만 만든다(Alembic 마이그레이션). 아무 스크래퍼도
-아직 안 건드림 — 그냥 그릇만 준비.
+**1단계 (제일 쉬움, 먼저)**: 테이블만 만든다(Alembic 마이그레이션 — `platform_id`
+FK, `id_type`, `last_seen_at` 포함한 v2 스키마). 아무 스크래퍼도 아직 안 건드림.
 
-**2단계**: 스크래퍼 3곳(Shopify 공홈, Rakuten, Amazon) 중 **Shopify 공홈부터**
-— 이미 산출량이 가장 많고(sale_events의 86%), API 응답에 `id`가 명확히 있어서
-제일 쉽다. 스크래퍼가 상품을 저장할 때 `platform_product_ids`에도 한 줄 같이
-쓰게 한다.
+**2단계 — Shopify 공홈 + matcher.py 조회 로직, 반드시 동시 배포**
+([지적 2, P0] 핵심 수정: v1은 이걸 "4단계, 나중"으로 미뤘는데 그러면 안 된다.
+이유 — Shopify 상품명이 리브랜딩·시즌 문구로 조금이라도 바뀌면 이름 매칭이
+실패해 `get_or_create_product`가 새 Product를 만들고, 거기에 이미 존재하는
+`(platform_id, external_id)`를 다시 넣으려다 유니크 위반으로 **그 수집
+트랜잭션이 크래시한다.** "데이터만 조용히 쌓인다"는 v1의 전제 자체가 틀렸다 —
+쓰기만 하고 읽지 않는 테이블은 즉시 자기 자신과 충돌한다.):
+1. `backend/app/scrapers/brands/shopify.py`가 variant 단위로 `external_id`
+   (variant.id) + `id_type="variant_id"`를 `ScrapedEvent`에 실어 보내도록 확장.
+2. `matcher.py`의 `get_or_create_product` **최우선 분기**에 "이 external_id가
+   이미 `platform_product_ids`에 있으면 그 product_id를 즉시 반환하고 이름
+   매칭·LLM 호출을 스킵" 로직 추가 (설계 예시는 아래 5-3).
+3. 신규 Product 생성 시(=external_id가 정말 처음 보는 값일 때) 같은 트랜잭션
+   안에서 `platform_product_ids` insert까지 함께 커밋.
+4. `on_conflict_do_update(index_elements=["platform_id", "external_id"], set_={"last_seen_at": func.now()})`
+   패턴 사용 — Celery 동시 실행 시 경쟁 상태로 죽지 않게 ([지적 5, P1] 반영,
+   기존 `SaleEvent` upsert 패턴과 동일).
+5. `catalog.py`의 초기 시딩도 같은 upsert 함수를 재사용하도록 정합화
+   ([자체발견 1] — 시딩 중 variant 여러 개가 겹쳐도 크래시하지 않게).
 
-**3단계**: Rakuten, Amazon 순서로 같은 방식 추가.
+**3단계**: Rakuten, Amazon 순서로 같은 스크래퍼 확장 추가. Rakuten은 3-2절
+한계 때문에 `get_or_create_product`의 "즉시 확정" 분기에서 **제외**하고
+`id_type="item_code"`로만 기록(추후 셀러 분석·JAN 코드 후속 조사용).
 
-**4단계(나중, 이 설계 범위 밖)**: 매칭 로직(`matcher.py`)이 이름 비교 전에
-"이 external_id가 이미 저장돼 있나?"를 먼저 확인하도록 바꾼다. 이게 실제로
-LLM 호출을 줄이는 부분인데, 1~3단계로 데이터가 어느 정도 쌓인 뒤에 손대는 게
-순서에 맞다(데이터 없이 로직부터 바꾸면 테스트할 게 없음).
+**4단계(이 설계 범위 밖, 후속 설계로 분리)**: JAN 코드 등 진짜 글로벌
+Rakuten 식별자 조사, 오래된 셀러 리스팅 정리(TTL/last_seen_at 기반 아카이빙 —
+[자체발견 3] 대응).
 
 ---
 
-## 5. 리스크 (숨기지 않고 미리 적어둠)
+## 5. 병합·동시성·수동승인 — v1에 없던 3개 경로 (감사 [지적 3][지적 5][자체발견 2])
 
-- **번호가 언젠가 바뀔 수 있다**: 브랜드가 Shopify 상품을 삭제하고 새로 만들면
-  `id`가 바뀐다. 이러면 "새 상품"으로 오인식 — 이름 비교보다는 훨씬 드문 일이지만
-  0%는 아니다. 대응: 발생하면 그때 `ProductMatchCandidate` 큐로 사람이 병합하면
-  됨(이미 있는 안전망).
-- **Amazon ASIN 추출은 정규식 하나 추가**라 리스크 거의 없음.
-- **이 설계는 매칭 로직 자체를 아직 안 바꾼다**(4단계는 범위 밖) — 그래서 이
-  1~3단계만으로는 LLM 호출이 당장 줄지 않는다. "데이터를 쌓는 단계"라는 걸
-  착수 전에 분명히 인지할 것 — 성과가 바로 안 보인다고 잘못됐다고 오해하지 말 것.
+### 5-1. [지적 3, P0] 상품 자동 병합 시 매핑 이전
 
-## 6. 완료 판정 (이걸 보면 "됐다"를 알 수 있음)
+`backend/app/tasks/match_products.py`의 `_merge_products`는 현재
+`orphan.deleted_at`을 찍고 `SaleEvent.product_id`만 canonical로 옮긴다.
+`platform_product_ids`는 손대지 않아 — 병합 후에도 삭제된 orphan을 가리키는
+유령 매핑이 남고, 다음 수집에서 그 external_id를 다시 만나면 죽은 Product를
+참조하거나(조회 조건에 `deleted_at IS NULL`이 있다면) 재차 신규 생성을 시도해
+또 유니크 위반이 난다. **수정**: `_merge_products`에 아래 로직 추가 —
+canonical에 이미 있는 `(platform_id, external_id)`는 orphan 쪽을 버리고
+(중복 방지), 나머지는 orphan → canonical로 `UPDATE`.
 
-- `platform_product_ids` 테이블이 DB에 존재하고, `alembic upgrade head`가 에러 없이 통과
-- Shopify 공홈 스윕 1회 실행 후, `select count(*) from platform_product_ids where platform_name like '%공홈%'`가 0보다 큼
-- 같은 상품을 다시 스윕했을 때 `platform_product_ids` 행 수가 **늘지 않음**(중복 안 생김 — 유니크 제약이 지켜지는지 확인)
+```python
+# orphan의 platform_product_ids 중 canonical에 이미 있는 (platform_id, external_id)는 버리고,
+# 나머지는 canonical로 소유권 이전.
+await db.execute(
+    delete(PlatformProductId).where(
+        PlatformProductId.product_id == orphan.id,
+        tuple_(PlatformProductId.platform_id, PlatformProductId.external_id).in_(
+            select(PlatformProductId.platform_id, PlatformProductId.external_id)
+            .where(PlatformProductId.product_id == canonical.id)
+        ),
+    )
+)
+await db.execute(
+    update(PlatformProductId)
+    .where(PlatformProductId.product_id == orphan.id)
+    .values(product_id=canonical.id)
+)
+```
+
+### 5-2. [자체발견 2, P0] 관리자 수동 병합 승인에도 동일 로직 필요
+
+`backend/app/api/admin.py`의 `ProductMatchCandidate` 승인 API가 자동
+`_match_pending_products`와 별개 경로로 병합을 수행한다면, 5-1과 **같은
+매핑 이전 로직을 재사용**해야 한다(별도 구현 금지 — 함수로 추출해 두 경로
+모두에서 호출). 안 하면 사람이 수동 검토까지 해서 병합한 상품이 다음
+스크래핑에서 다시 갈라지는, 감사가 사람이 제일 짜증낼 시나리오로 지목한
+버그가 그대로 재현된다.
+
+### 5-3. [지적 5, P1] 동시 쓰기는 전부 upsert로 — 예시
+
+```python
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+async def upsert_platform_product_id(
+    db: AsyncSession, product_id, platform_id, external_id: str, id_type: str
+) -> None:
+    stmt = pg_insert(PlatformProductId).values(
+        product_id=product_id, platform_id=platform_id,
+        external_id=external_id, id_type=id_type,
+    )
+    stmt = stmt.on_conflict_do_update(
+        index_elements=["platform_id", "external_id"],
+        set_={"last_seen_at": func.now()},
+    )
+    await db.execute(stmt)
+
+
+async def find_by_external_id(db: AsyncSession, platform_id, external_id: str):
+    """O(1) fast-path — matcher.py의 get_or_create_product 최우선 분기에서 호출."""
+    result = await db.execute(
+        select(Product)
+        .join(PlatformProductId, PlatformProductId.product_id == Product.id)
+        .where(
+            PlatformProductId.platform_id == platform_id,
+            PlatformProductId.external_id == external_id,
+            Product.deleted_at.is_(None),
+        )
+    )
+    return result.scalar_one_or_none()
+```
+
+---
+
+## 6. 리스크 (v2 갱신)
+
+- **Rakuten `itemCode`는 셀러 종속이라 신규확정 판단에서 제외했다** — 3-2절.
+  이건 v1의 "리스크"가 아니라 v1의 **설계 오류**였다(수정 완료, 항목 아님).
+- **Shopify `variant.id`도 언젠가 바뀔 수 있다**: 브랜드가 상품을 삭제하고
+  새로 만들면 바뀐다 — 이름 비교보다는 훨씬 드물지만 0%는 아니다. 대응:
+  발생하면 `ProductMatchCandidate` 큐로 사람이 병합(5-1/5-2 경로로 매핑도
+  같이 정리됨 — 이미 있는 안전망 + 이번에 고친 이전 로직).
+- **`id_type` 분류가 틀리면(예: variant_id인데 product_id로 잘못 저장)** 조용히
+  틀린 매칭을 만들 수 있다. 대응: 스크래퍼 단위 테스트에서 `id_type`과
+  `external_id` 자릿수/형식을 함께 assert(Shopify variant id는 Product id와
+  값 범위가 겹칠 수 있어 타입 태그가 없으면 구분 불가).
+- **2~3단계(Shopify/Rakuten/Amazon 확장)는 matcher.py 통합까지 포함**이라
+  v1보다 범위가 넓다 — "1단계만 빨리 끝낸다"는 v1의 낙관은 유효하지 않음,
+  2단계부터 온전한 기능 단위로 커야 한다.
+
+## 7. 완료 판정 (v2 갱신)
+
+- `platform_product_ids` 테이블이 v2 스키마(`platform_id` FK, `id_type`,
+  `last_seen_at` 포함)로 DB에 존재하고, `alembic upgrade head`가 에러 없이 통과
+- Shopify 공홈 스윕 1회 실행 후, 같은 브랜드를 **두 번 연속** 스윕해도 2회차가
+  에러 없이 통과(동시성/유니크 검증 — [지적 5])
+- 서로 다른 용량(variant) 2개를 가진 실제 Shopify 상품 1개로 통합테스트 —
+  두 이벤트 모두 성공 저장, `platform_product_ids`에 서로 다른 `external_id`
+  2행 생성 ([지적 1] 회귀 방지)
+- `_merge_products` 단위 테스트: orphan에 매핑이 있는 상태로 병합 실행 →
+  매핑이 canonical로 이전됐는지, 중복 시 orphan 쪽이 삭제됐는지 확인 ([지적 3])
+- 이름이 살짝 바뀐 것으로 시뮬레이션한 재수집 케이스에서 `get_or_create_product`가
+  LLM을 호출하지 않고 external_id로 즉시 기존 Product를 반환하는지 확인
+  ([지적 2] — 이게 되어야 이 설계의 원래 목적이 달성된 것)
