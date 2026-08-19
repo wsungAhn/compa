@@ -14,6 +14,7 @@ from starlette.responses import Response
 from starlette.types import Scope
 
 from app.api.comparison import router as comparison_router
+from app.api.deals import router as deals_router
 from app.api.feedback import router as feedback_router
 from app.api.jobs import router as jobs_router
 from app.api.products import router as products_router
@@ -68,6 +69,7 @@ app.add_middleware(
 
 app.include_router(products_router)
 app.include_router(comparison_router)
+app.include_router(deals_router)
 app.include_router(jobs_router)
 app.include_router(feedback_router)
 app.include_router(admin_router)

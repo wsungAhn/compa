@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "test": "node --test src/components/searchPolling.test.mjs src/utils/urlSafety.test.mjs src/utils/debounce.test.mjs src/utils/localDateString.test.mjs",
+    "test": "node --test src/components/searchPolling.test.mjs src/routes/DealFeedPage.test.mjs src/utils/urlSafety.test.mjs src/utils/debounce.test.mjs src/utils/localDateString.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

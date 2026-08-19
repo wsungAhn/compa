@@ -1,6 +1,6 @@
 # Codex Handoff — 2026-08-19 · US-003 딜 신호 피드 구현
 
-> **상태(Status):** `대기 / pending`
+> **상태(Status):** `구현 완료 / implemented — DB·브라우저 검증은 로컬 sandbox 제약`
 >
 > **작성자(Author):** Claude Sonnet 5 (랩탑 D:\dev\compa) → **수행자(Executor):** Codex CLI
 > **작업명(Task):** `/deals` placeholder를 실제 딜 신호 피드로 구현. 백엔드 신규
@@ -154,3 +154,42 @@ mobile 프레임 레이아웃 — CSS 미디어쿼리 또는 조건부 렌더 �
 ---
 
 ## 5. Executor Log (여기에 기록)
+
+- 2026-08-19 Codex: 정본 핸드오프, 디자인 근거, PRD US-003/FR-3,
+  `reddit_signals.py`, `sale_windows.py` 읽음. 제한사항 확인: 스키마 변경 없음,
+  npm install 없음, 커밋 없음, 서비스 재시작 없음.
+- 2026-08-19 Codex: 구현 진행. 신규 읽기 전용 `GET /api/deals` 추가,
+  `SocialPost.content` 파싱은 문서 §2 규칙 그대로 적용, `parse_discount_pct()`
+  재사용. 프론트 `/deals` placeholder를 실제 피드/empty/loading/error 상태로 교체.
+- 2026-08-19 Codex: 검증 1차. `backend/.venv/bin/python -m pytest
+  backend/tests/api/test_deals.py` 통과(2 passed). `backend/.venv/bin/python -m mypy
+  --strict app/` 통과. `frontend npm run test` 통과(11 passed). `frontend npm run
+  lint` 통과. `frontend npm run build` 통과(Vite chunk size warning만 출력).
+  `backend/.venv/bin/python -m pytest` 전체는 486 passed / 8 skipped까지 진행 후
+  로컬 PostgreSQL `::1:5432` 접속이 sandbox `PermissionError: [Errno 1] Operation
+  not permitted`로 막혀 DB 의존 테스트가 실패함.
+- 2026-08-19 Codex: 브라우저 검증 시도. 서비스 재시작 없이 임시 정적 서버를
+  띄우려 했으나 localhost bind가 sandbox `PermissionError: [Errno 1] Operation
+  not permitted`로 실패. Playwright 라우팅 방식도 시도했으나 번들 Chromium 미설치,
+  시스템 Chrome headless 즉시 종료로 실패. 새 브라우저 다운로드/설치는 금지라 중단.
+- 2026-08-19 Codex: 최종 재검증. `npm run lint`, `npm run test`, `npm run build`,
+  `backend/.venv/bin/python -m pytest backend/tests/api/test_deals.py`,
+  `backend/.venv/bin/python -m mypy --strict app/`, `git diff --check` 통과. 커밋하지 않음.
+
+## 6. Reviewer Log (Claude Sonnet 5, 2026-08-19)
+
+빌드/린트/테스트 직접 재검증(live PG): pytest 519 passed/1 skipped(+2 신규),
+mypy 88 files 0 errors, npm build/lint/test(11 passed) 전부 통과.
+
+`compa.mwco.io/deals` 실브라우저 확인 중 1건 발견·수정: API 서비스가 재시작
+전이라 `/api/deals`가 (신규 라우터를 못 읽어서) 404 → SPA fallback이 그걸
+삼켜 `index.html`을 200으로 반환 → 프론트가 `.map()` 호출 시 크래시(빈 화면).
+`launchctl kickstart`로 API 재시작 후 정상 확인 — 실제 데이터가 디자인
+그대로(브랜드/상대시간/소스뱃지/가격) 렌더링됨.
+
+**별도 발견(이번 작업 범위 밖, 후속 확인 필요)**: 화면에 "4일 전" 딜이 보임 —
+Reddit 약관상 48시간 보존 강제 대상인데 위반. `purge_expired_social_posts`
+배치가 최근 정상 실행됐는지 별도 확인 필요(서비스가 8/9~8/18 정지 상태였던
+이력과 관련 있을 수 있음). 이 작업 코드와는 무관 — 후속 이슈로 트래킹.
+
+커밋 승인.

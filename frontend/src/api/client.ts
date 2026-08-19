@@ -105,6 +105,17 @@ export interface ProductMatchCandidate {
   created_at: string
 }
 
+export interface DealSignal {
+  id: string
+  brand: string | null
+  title: string
+  discount_pct: number | null
+  price: string | null
+  source: string
+  source_url: string | null
+  posted_at: string | null
+}
+
 export const searchProducts = (q: string, collect = false) =>
   api.get<SearchResponse>('/products/search', { params: { q, lang: 'ko', collect } }).then(r => r.data)
 
@@ -127,6 +138,9 @@ export const approveProductMatch = (id: string): Promise<void> =>
 
 export const rejectProductMatch = (id: string): Promise<void> =>
   api.post(`/admin/product-matches/${id}/reject`).then(() => undefined)
+
+export const listDeals = (): Promise<DealSignal[]> =>
+  api.get<DealSignal[]>('/deals').then(r => r.data)
 
 const BASE_URL = ''
 
