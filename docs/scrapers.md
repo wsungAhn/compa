@@ -97,10 +97,13 @@ await page.wait_for_timeout(8000)
 - 스크래퍼 반환 상품명 → `sale_event.scraped_name`에 보존
 - 기획세트 감지: "세트", "set", "kit", "duo", "bundle", "기획" 등 → `is_bundle=True`
 
-## 활성 스크래퍼 (2026-08-05 기준)
+## 활성 스크래퍼 (2026-08-19 재확인)
 
-`ENABLED_SCRAPERS` 기본값 = `Sephora,Amazon US,Rakuten` — 라이브 실측으로 살아있는
-것만 켠다. 네이버쇼핑(API 종료)·올리브영·Ulta·아모레몰은 전부 차단/종료 확인됐다.
+`ENABLED_SCRAPERS` 기본값(`backend/app/core/config.py`) = `Sephora,Amazon US,Rakuten,brands`
+— 라이브 실측으로 살아있는 것만 켠다. 네이버쇼핑(API 종료)·올리브영·Ulta·아모레몰은
+전부 차단/종료 확인됐다. `brands`는 럭셔리 공홈 스크래퍼 묶음(SK-II·Shiseido 등,
+`app/scrapers/brands/`) — 2026-08-19 `platform_product_ids` 작업에서 Shopify계
+공홈에 `external_id`(variant_id) 기록이 추가됐다(위 표와 무관, ID 매칭용 보강).
 
 **조용한 실패 금지**: 스크래퍼가 아무것도 못 받았을 때 빈 리스트를 반환하면
 "할인이 없다"로 읽혀 고장이 숨는다. 파싱 결과가 0건이면 `confidence=0` 이벤트에
