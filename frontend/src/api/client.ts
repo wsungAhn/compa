@@ -10,6 +10,14 @@ export function setPremiumHeader(key: string | null) {
   }
 }
 
+export function setAdminSecretHeader(key: string | null) {
+  if (key) {
+    api.defaults.headers.common['X-Admin-Secret'] = key
+  } else {
+    delete api.defaults.headers.common['X-Admin-Secret']
+  }
+}
+
 export interface Product {
   id: string
   name_kr: string | null
@@ -85,6 +93,18 @@ export interface JobStatus {
   ready: boolean
 }
 
+export interface ProductMatchCandidate {
+  id: string
+  orphan_product_id: string
+  orphan_name: string | null
+  canonical_product_id: string
+  canonical_name: string | null
+  brand: string | null
+  score: number
+  status: string
+  created_at: string
+}
+
 export const searchProducts = (q: string, collect = false) =>
   api.get<SearchResponse>('/products/search', { params: { q, lang: 'ko', collect } }).then(r => r.data)
 
@@ -98,6 +118,15 @@ export const getComparison = (id: string, preferred: string, platforms?: string)
   api.get<ComparisonOut>(`/products/${id}/comparison`, {
     params: { preferred, ...(platforms ? { platforms } : {}) },
   }).then(r => r.data)
+
+export const listProductMatches = (status: 'pending' = 'pending') =>
+  api.get<ProductMatchCandidate[]>('/admin/product-matches', { params: { status } }).then(r => r.data)
+
+export const approveProductMatch = (id: string): Promise<void> =>
+  api.post(`/admin/product-matches/${id}/approve`).then(() => undefined)
+
+export const rejectProductMatch = (id: string): Promise<void> =>
+  api.post(`/admin/product-matches/${id}/reject`).then(() => undefined)
 
 const BASE_URL = ''
 

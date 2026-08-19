@@ -1,6 +1,6 @@
 # Codex Handoff — 2026-08-19 · SPA 클라이언트 라우팅 404 수정 (US-005 후속 버그)
 
-> **상태(Status):** `대기 / pending`
+> **상태(Status):** `완료 / done`
 >
 > **작성자(Author):** Claude Sonnet 5 (랩탑 D:\dev\compa) → **수행자(Executor):** Codex CLI
 > **작업명(Task):** `backend/app/main.py`의 정적 파일 서빙이 `/`만 `index.html`을
@@ -77,3 +77,10 @@ class SPAStaticFiles(StaticFiles):
 ---
 
 ## 4. Executor Log (여기에 기록)
+
+- 2026-08-19 Codex: 작업 시작. `review-tiers.md` 기준 단일 파일 버그픽스라 Tier 1로 판단.
+- 2026-08-19 Codex: `backend/app/main.py` 확인. API 라우터와 `/health`가 정적 파일 mount보다 먼저 등록되어 있어 `/api/*` 라우팅 선점 위험은 현재 순서상 없음.
+- 2026-08-19 Codex: 로컬 Starlette `StaticFiles.get_response()` 구현 확인. 이 버전은 미매칭 경로에서 404 `Response`를 반환하지 않고 `HTTPException(status_code=404)`를 raise하므로, SPA fallback은 404 예외를 catch해 `index.html`을 재조회하는 방식으로 구현 예정.
+- 2026-08-19 Codex: `SPAStaticFiles` 추가 후 `/` 정적 mount를 `StaticFiles`에서 `SPAStaticFiles`로 교체. `_DIST.is_dir()` guard와 라우터 등록 순서는 유지.
+- 2026-08-19 Codex: 검증 완료. `PYTHONPATH=. python -m py_compile app/main.py` 성공(출력: `pyenv: cannot rehash: /Users/Mung/.pyenv/shims isn't writable`, exit 0). 서버 기동/서비스 재시작/커밋은 하지 않음.
+- 2026-08-19 Codex: `git status --short` 확인. 이번 작업 변경 파일은 `backend/app/main.py`, `cowork/2026-08-19-spa-fallback-fix-handoff.md`; 그 외 `cowork/2026-08-19-us002-match-review-ui-handoff.md`, `frontend/*` 변경은 작업 전부터 존재한 별도 변경으로 판단해 건드리지 않음.

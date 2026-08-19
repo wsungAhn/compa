@@ -9,6 +9,9 @@ from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy import select
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.responses import Response
+from starlette.types import Scope
 
 from app.api.comparison import router as comparison_router
 from app.api.feedback import router as feedback_router
@@ -22,6 +25,16 @@ from app.core.seed import seed_platforms
 from app.models.product import Product
 
 logger = logging.getLogger(__name__)
+
+
+class SPAStaticFiles(StaticFiles):
+    async def get_response(self, path: str, scope: Scope) -> Response:
+        try:
+            return await super().get_response(path, scope)
+        except StarletteHTTPException as exc:
+            if exc.status_code != 404:
+                raise
+        return await super().get_response("index.html", scope)
 
 
 @asynccontextmanager
@@ -76,4 +89,4 @@ async def health_check() -> dict[str, object]:
 # /api와 same-origin이라 CORS 문제도 사라진다 (dist가 없으면 API 전용으로 동작).
 _DIST = pathlib.Path(__file__).resolve().parents[2] / "frontend" / "dist"
 if _DIST.is_dir():
-    app.mount("/", StaticFiles(directory=_DIST, html=True), name="frontend")
+    app.mount("/", SPAStaticFiles(directory=_DIST, html=True), name="frontend")

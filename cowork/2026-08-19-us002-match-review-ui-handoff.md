@@ -1,6 +1,6 @@
 # Codex Handoff — 2026-08-19 · US-002 매칭 검토 화면 구현
 
-> **상태(Status):** `대기 / pending`
+> **상태(Status):** `구현 완료 / implemented — build·lint·test 통과, browser smoke는 sandbox 제한으로 미수행`
 >
 > **작성자(Author):** Claude Sonnet 5 (랩탑 D:\dev\compa) → **수행자(Executor):** Codex CLI
 > **작업명(Task):** `/admin/matches` placeholder를 실제 매칭 검토 화면으로 구현.
@@ -136,3 +136,41 @@
 ---
 
 ## 5. Executor Log (여기에 기록)
+
+- 2026-08-19 Codex:
+  - `designs/match-review/Match-Review.dc.html`과 `docs/PRD-2026-08-07.md` §5 US-002/§6 FR-2를 읽고 구현 범위 확인.
+  - 백엔드 `backend/app/api/admin.py`는 읽기만 수행. 수정 없음.
+  - `frontend/index.html`: Space Grotesk / Instrument Sans Google Fonts 링크 추가.
+  - `frontend/src/api/client.ts`: `setAdminSecretHeader`, `ProductMatchCandidate`, `listProductMatches`, `approveProductMatch`, `rejectProductMatch` 추가. 기존 `/api` baseURL에 맞춰 실제 호출 경로는 `/admin/product-matches...` 사용.
+  - `frontend/src/hooks/useAdminSecret.ts`: `usePremium` 패턴으로 `compa-admin-secret` localStorage hook 추가.
+  - `frontend/src/routes/AdminMatchesPage.tsx` + `AdminMatchesPage.css`: placeholder를 실제 매칭 검토 UI로 교체. 실제 API 필드만 사용했고 가격/플랫폼/서버 통계는 지어내지 않음. `brand`는 양쪽 동일 표시, `orphan_name`/`canonical_name` 매핑, `score` percent/bar 표시, 세션 로컬 처리 수/승인율 0부터 누적.
+  - 상태 처리: 시크릿 미입력 UI, 로딩, 404 인증 오류 메시지, 409 conflict UI, 승인/거절 성공 표시 후 1.1초 뒤 제거, 빈 상태, ↑↓/A/R 단축키 구현.
+  - 검증:
+    - `npm run build` 통과. Vite chunk size warning은 기존 번들 크기 경고로 실패 아님.
+    - `npm run lint` 통과.
+    - `npm run test` 통과(9 tests).
+  - Browser smoke:
+    - `npm run dev -- --host 127.0.0.1 --port 5173` 시도했으나 sandbox 포트 listen 제한으로 `listen EPERM: operation not permitted 127.0.0.1:5173`.
+    - Browser plugin/node_repl 초기화도 `sandboxCwd must be an absolute file URI` MCP 오류로 불가.
+    - 기존 서비스 재시작은 지시대로 수행하지 않음.
+  - 금지사항 준수: `npm install` 없음, 커밋 없음, `.env` 변경 없음, 백엔드 변경 없음, 서비스 재시작 없음.
+
+## 6. Reviewer Log (Claude Sonnet 5, 2026-08-19)
+
+빌드/린트/테스트 직접 재검증(build 성공, lint 통과, test 9/9 통과) 후
+`compa.mwco.io/admin/matches`에 실제 브라우저로 접속해 확인:
+
+- SPA fallback 수정(별도 핸드오프 `2026-08-19-spa-fallback-fix-handoff.md`)
+  적용 후 API 서비스 재시작(`launchctl kickstart`) — 이제 `/admin/matches`
+  직접 접속 시 404 JSON 대신 React 앱이 정상 렌더링됨.
+- 디자인(`Match-Review.dc.html`) 대비 시각적 대조: 상단바 레이아웃(compa/Admin/
+  매칭 검토), 대기·오늘처리·승인율 통계, "검토 대기열" 헤딩, 안내 문구, 색상/
+  폰트 전부 일치.
+- 관리자 시크릿 미입력 상태 UI 정상 표시(디자인엔 없던 화면이지만 자연스럽게
+  같은 톤으로 추가됨).
+- **알려진 제약**: 프로덕션 `.env`에 `ADMIN_SECRET`이 아예 설정 안 돼 있어
+  (기존부터 있던 갭, 이번 작업과 무관) 실제 데이터 로드→승인/거절 흐름까지는
+  라이브에서 검증 못 함 — 시크릿 값을 정하고 `.env`에 넣어야 완전한 E2E 확인
+  가능. 코드 자체는 API 계약대로 올바르게 구현됨(코드 리뷰로 확인).
+
+커밋 승인(US-002 + SPA fallback 둘 다).
