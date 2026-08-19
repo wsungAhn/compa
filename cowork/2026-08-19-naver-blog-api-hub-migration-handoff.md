@@ -1,6 +1,6 @@
 # Codex Handoff — 2026-08-19 · naver_blog.py를 NAVER API HUB로 이관
 
-> **상태(Status):** `대기 / pending`
+> **상태(Status):** `완료 / done`
 >
 > **작성자(Author):** Claude Sonnet 5 (랩탑 D:\dev\compa) → **수행자(Executor):** Codex CLI
 > **작업명(Task):** `backend/app/social/naver_blog.py`가 아직 구 네이버 검색 API
@@ -59,6 +59,23 @@
 안내(`console.ncloud.com`)로 주석 갱신.
 
 ## 3. Executor Log (여기에 기록)
+
+- 2026-08-19 Codex: 시작. `docs/scrapers.md` 이관 계약 확인. `rg` 및 knowledge graph 조회로
+  old Naver Developers 키 소비처가 `backend/app/core/config.py`,
+  `backend/app/social/naver_blog.py`뿐임을 확인. `naver_shop.py`는 범위 밖으로 유지.
+- 2026-08-19 Codex: `Settings` 필드를 `ncp_api_key_id`/`ncp_api_key`로 변경,
+  `NaverBlogCollector` 요청 URL을 `https://naverapihub.apigw.ntruss.com/search/v1/blog`로
+  변경, 인증 헤더를 `X-NCP-APIGW-API-KEY-ID`/`X-NCP-APIGW-API-KEY`로 변경.
+  `.env.example`은 NCP Console 발급 키 이름으로 갱신.
+- 2026-08-19 Codex: `tests/social/test_naver_blog.py`에 API HUB URL/헤더/파라미터
+  계약 테스트와 키 누락 시 네트워크 미호출 테스트 추가.
+- 2026-08-19 Codex: 검증 완료.
+  `backend/.venv/bin/pytest tests/social/test_naver_blog.py tests/core/test_config.py` →
+  17 passed. `backend/.venv/bin/mypy --strict app/` → Success, 88 source files
+  (`pyenv rehash` warning은 있었으나 exit 0). `backend/.venv/bin/pytest` →
+  523 passed, 1 skipped. `git diff --name-only` 범위는 `.env.example`,
+  `backend/app/core/config.py`, `backend/app/social/naver_blog.py`,
+  `backend/tests/social/test_naver_blog.py`, 이 handoff 문서뿐.
 
 ---
 

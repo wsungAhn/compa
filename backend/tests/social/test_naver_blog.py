@@ -1,6 +1,9 @@
 """Naver Blog collector unit tests."""
 from typing import Any
 
+import pytest
+
+import app.social.naver_blog as naver_blog
 from app.social.naver_blog import NaverBlogCollector, parse_response
 
 
@@ -167,3 +170,69 @@ def test_parse_response_missing_link() -> None:
     assert len(posts) == 1
     post = posts[0]
     assert post.post_url is None
+
+
+@pytest.mark.asyncio
+async def test_collect_uses_naver_api_hub_contract(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test collector sends requests to NAVER API HUB with NCP headers."""
+    calls: list[dict[str, Any]] = []
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, Any]:
+            return {"items": []}
+
+    class FakeAsyncClient:
+        def __init__(self, timeout: float) -> None:
+            self.timeout = timeout
+
+        async def __aenter__(self) -> "FakeAsyncClient":
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+        async def get(
+            self,
+            url: str,
+            *,
+            headers: dict[str, str],
+            params: dict[str, str | int],
+        ) -> FakeResponse:
+            calls.append({"url": url, "headers": headers, "params": params})
+            return FakeResponse()
+
+    monkeypatch.setattr(naver_blog.settings, "ncp_api_key_id", "key-id")
+    monkeypatch.setattr(naver_blog.settings, "ncp_api_key", "api-key")
+    monkeypatch.setattr(naver_blog.httpx, "AsyncClient", FakeAsyncClient)
+
+    posts = await NaverBlogCollector().collect("클렌징")
+
+    assert posts == []
+    assert calls == [
+        {
+            "url": "https://naverapihub.apigw.ntruss.com/search/v1/blog",
+            "headers": {
+                "X-NCP-APIGW-API-KEY-ID": "key-id",
+                "X-NCP-APIGW-API-KEY": "api-key",
+            },
+            "params": {"query": "클렌징", "display": 20, "sort": "date"},
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_collect_skips_without_ncp_keys(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test collector does not call NAVER API HUB when NCP keys are absent."""
+
+    class FakeAsyncClient:
+        def __init__(self, timeout: float) -> None:
+            raise AssertionError("AsyncClient should not be created without NCP keys")
+
+    monkeypatch.setattr(naver_blog.settings, "ncp_api_key_id", "")
+    monkeypatch.setattr(naver_blog.settings, "ncp_api_key", "")
+    monkeypatch.setattr(naver_blog.httpx, "AsyncClient", FakeAsyncClient)
+
+    assert await NaverBlogCollector().collect("클렌징") == []

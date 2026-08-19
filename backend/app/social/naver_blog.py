@@ -1,4 +1,4 @@
-"""Naver Blog collector via Naver Search API."""
+"""Naver Blog collector via NAVER API HUB Search API."""
 from datetime import datetime
 from typing import Any
 
@@ -9,10 +9,10 @@ from app.social.base import BaseSocialCollector, SocialPostData
 
 
 def parse_response(data: dict[str, Any], platform: str) -> list[SocialPostData]:
-    """Parse Naver Search API blog response.
+    """Parse NAVER API HUB blog search response.
 
     Args:
-        data: JSON response dict from Naver Search API
+        data: JSON response dict from NAVER API HUB
         platform: Platform name string
 
     Returns:
@@ -58,7 +58,7 @@ def parse_response(data: dict[str, Any], platform: str) -> list[SocialPostData]:
 
 
 class NaverBlogCollector(BaseSocialCollector):
-    """Collect posts from Naver Blog via Naver Search API."""
+    """Collect posts from Naver Blog via NAVER API HUB."""
 
     PLATFORM = "naver_blog"
     RATE_LIMIT_SEC = 1.0
@@ -67,14 +67,14 @@ class NaverBlogCollector(BaseSocialCollector):
         """Collect blog posts mentioning the product."""
         posts: list[SocialPostData] = []
 
-        if not settings.naver_client_id or not settings.naver_client_secret:
+        if not settings.ncp_api_key_id or not settings.ncp_api_key:
             return posts
 
         try:
             await self._wait_rate_limit()
             headers = {
-                "X-Naver-Client-Id": settings.naver_client_id,
-                "X-Naver-Client-Secret": settings.naver_client_secret,
+                "X-NCP-APIGW-API-KEY-ID": settings.ncp_api_key_id,
+                "X-NCP-APIGW-API-KEY": settings.ncp_api_key,
             }
             params: dict[str, str | int] = {
                 "query": query,
@@ -83,7 +83,7 @@ class NaverBlogCollector(BaseSocialCollector):
             }
             async with httpx.AsyncClient(timeout=30.0) as client:
                 resp = await client.get(
-                    "https://openapi.naver.com/v1/search/blog.json",
+                    "https://naverapihub.apigw.ntruss.com/search/v1/blog",
                     headers=headers,
                     params=params,
                 )
