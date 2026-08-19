@@ -186,6 +186,9 @@ export function HomePage() {
           </div>
         )}
       </main>
+      <footer className="text-center text-xs text-gray-400 py-6">
+        As an Amazon Associate, compa earns from qualifying purchases.
+      </footer>
     </div>
   )
 }
