@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; padding: 0; background: #fafafa; }
+  body { font-family: 'Instrument Sans', sans-serif; color: #111114; }
+  a { color: #0E96C1; text-decoration: none; }
+  a:hover { color: #0B7A9E; text-decoration: underline; }
+  ::selection { background: rgba(14,150,193,0.18); }
+</style>
+</helmet>
+<div style="min-height: 100vh; background: #fafafa; display: flex; flex-direction: column;">
+  <!-- Top bar -->
+  <header data-screen-label="Top bar" style="background: #ffffff; border-bottom: 1px solid #e4e4e7; padding: 0 40px; height: 64px; display: flex; align-items: center; gap: 32px; position: sticky; top: 0; z-index: 10;">
+    <div style="display: flex; align-items: baseline; gap: 10px;">
+      <span style="font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 18px; letter-spacing: -0.02em;">compa</span>
+      <span style="font-size: 11px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: #9a9aa3;">Admin</span>
+    </div>
+    <div style="width: 1px; height: 24px; background: #e4e4e7;"></div>
+    <div style="display: flex; align-items: baseline; gap: 8px;">
+      <span style="font-size: 15px; font-weight: 600;">매칭 검토</span>
+      <span style="font-size: 12px; color: #9a9aa3;">Match Review</span>
+    </div>
+    <div style="flex: 1;"></div>
+    <div style="display: flex; align-items: center; gap: 28px;">
+      <div style="display: flex; align-items: baseline; gap: 7px;">
+        <span style="font-size: 12px; color: #71717a;">대기</span>
+        <span style="font-family: 'Space Grotesk', sans-serif; font-size: 16px; font-weight: 600; color: #0E96C1; font-variant-numeric: tabular-nums;">{{ pendingCount }}</span>
+      </div>
+      <div style="display: flex; align-items: baseline; gap: 7px;">
+        <span style="font-size: 12px; color: #71717a;">오늘 처리</span>
+        <span style="font-family: 'Space Grotesk', sans-serif; font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums;">{{ resolvedToday }}</span>
+      </div>
+      <div style="display: flex; align-items: baseline; gap: 7px;">
+        <span style="font-size: 12px; color: #71717a;">승인율</span>
+        <span style="font-family: 'Space Grotesk', sans-serif; font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums;">{{ approveRate }}</span>
+      </div>
+    </div>
+  </header>
+
+  <main style="flex: 1; max-width: 1400px; width: 100%; margin: 0 auto; padding: 32px 40px 80px; box-sizing: border-box;">
+    <!-- Queue header -->
+    <div style="display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 20px;">
+      <div>
+        <h1 style="margin: 0 0 6px; font-family: 'Space Grotesk', sans-serif; font-size: 26px; font-weight: 600; letter-spacing: -0.02em;">검토 대기열</h1>
+        <p style="margin: 0; font-size: 13px; color: #71717a;">자동 매칭 시스템이 동일 상품 후보로 판별한 KR–JP 리스팅 쌍입니다. 각 항목을 승인 또는 거절하세요.</p>
+      </div>
+      <sc-if value="{{ showKeyboardHints }}" hint-placeholder-val="{{ true }}">
+        <div style="display: flex; align-items: center; gap: 14px; font-size: 12px; color: #71717a; padding-bottom: 2px;">
+          <span style="display: inline-flex; align-items: center; gap: 6px;"><kbd style="font-family: 'Space Grotesk', sans-serif; font-size: 11px; border: 1px solid #d4d4d8; background: #ffffff; padding: 1px 6px; min-width: 10px; text-align: center;">↑↓</kbd> 이동</span>
+          <span style="display: inline-flex; align-items: center; gap: 6px;"><kbd style="font-family: 'Space Grotesk', sans-serif; font-size: 11px; border: 1px solid #d4d4d8; background: #ffffff; padding: 1px 6px; min-width: 10px; text-align: center;">A</kbd> 승인</span>
+          <span style="display: inline-flex; align-items: center; gap: 6px;"><kbd style="font-family: 'Space Grotesk', sans-serif; font-size: 11px; border: 1px solid #d4d4d8; background: #ffffff; padding: 1px 6px; min-width: 10px; text-align: center;">R</kbd> 거절</span>
+        </div>
+      </sc-if>
+    </div>
+
+    <sc-if value="{{ hasRows }}" hint-placeholder-val="{{ true }}">
+      <!-- Column header -->
+      <div style="display: grid; grid-template-columns: 1fr 44px 1fr 128px 176px; align-items: center; padding: 0 20px 8px; gap: 16px; font-size: 11px; font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase; color: #9a9aa3;">
+        <div>KR 리스팅 · Coupang</div>
+        <div></div>
+        <div>JP 리스팅 · Rakuten</div>
+        <div style="text-align: right;">신뢰도</div>
+        <div style="text-align: right;">작업</div>
+      </div>
+
+      <div data-screen-label="Match queue" style="display: flex; flex-direction: column; background: #ffffff; border: 1px solid #e4e4e7;">
+        <sc-for list="{{ rows }}" as="row" hint-placeholder-count="6">
+          <div onClick="{{ row.select }}" style="{{ row.rowStyle }}">
+            <!-- KR side -->
+            <div style="min-width: 0;">
+              <div style="font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #71717a; margin-bottom: 3px;">{{ row.krBrand }}</div>
+              <div style="font-size: 14px; font-weight: 500; line-height: 1.35; color: #111114; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ row.krName }}</div>
+              <div style="font-family: 'Space Grotesk', sans-serif; font-size: 12px; color: #71717a; margin-top: 3px; font-variant-numeric: tabular-nums;">{{ row.krPrice }}</div>
+            </div>
+            <!-- Match glyph -->
+            <div style="display: flex; justify-content: center; color: #c4c4cb; font-family: 'Space Grotesk', sans-serif; font-size: 14px;">⇌</div>
+            <!-- JP side -->
+            <div style="min-width: 0;">
+              <div style="font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #71717a; margin-bottom: 3px;">{{ row.jpBrand }}</div>
+              <div style="font-size: 14px; font-weight: 500; line-height: 1.35; color: #111114; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ row.jpName }}</div>
+              <div style="font-family: 'Space Grotesk', sans-serif; font-size: 12px; color: #71717a; margin-top: 3px; font-variant-numeric: tabular-nums;">{{ row.jpPrice }}</div>
+            </div>
+            <!-- Confidence -->
+            <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 6px;">
+              <span style="{{ row.confTextStyle }}">{{ row.confLabel }}</span>
+              <div style="width: 72px; height: 3px; background: #ececef;">
+                <div style="{{ row.confBarStyle }}"></div>
+              </div>
+            </div>
+            <!-- Actions / status -->
+            <div style="display: flex; justify-content: flex-end;">
+              <sc-if value="{{ row.isPending }}" hint-placeholder-val="{{ true }}">
+                <div style="display: flex; gap: 8px;">
+                  <button onClick="{{ row.approve }}" style="font-family: 'Instrument Sans', sans-serif; font-size: 13px; font-weight: 600; padding: 8px 18px; background: #111114; color: #ffffff; border: 1px solid #111114; cursor: pointer;" style-hover="background: #0E96C1; border-color: #0E96C1;">승인</button>
+                  <button onClick="{{ row.reject }}" style="font-family: 'Instrument Sans', sans-serif; font-size: 13px; font-weight: 600; padding: 8px 18px; background: #ffffff; color: #52525b; border: 1px solid #d4d4d8; cursor: pointer;" style-hover="border-color: #111114; color: #111114;">거절</button>
+                </div>
+              </sc-if>
+              <sc-if value="{{ row.isResolved }}" hint-placeholder-val="{{ false }}">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span style="{{ row.resolvedStyle }}">{{ row.resolvedLabel }}</span>
+                </div>
+              </sc-if>
+              <sc-if value="{{ row.isConflict }}" hint-placeholder-val="{{ false }}">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                  <div style="text-align: right;">
+                    <div style="font-size: 13px; font-weight: 600; color: #111114;">이미 처리된 항목</div>
+                    <div style="font-size: 12px; color: #71717a;">다른 운영자가 방금 해결했습니다</div>
+                  </div>
+                  <button onClick="{{ row.dismiss }}" style="font-family: 'Instrument Sans', sans-serif; font-size: 13px; font-weight: 600; padding: 8px 16px; background: #ffffff; color: #111114; border: 1px solid #111114; cursor: pointer; white-space: nowrap; flex-shrink: 0;" style-hover="background: #111114; color: #ffffff;">확인</button>
+                </div>
+              </sc-if>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+      <div style="display: flex; justify-content: space-between; margin-top: 12px; font-size: 12px; color: #9a9aa3;">
+        <span>신뢰도 90% 이상은 자동 승인 후보입니다</span>
+        <span>행을 클릭해 선택 · 단축키로 빠르게 처리</span>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isEmpty }}" hint-placeholder-val="{{ false }}">
+      <div data-screen-label="Empty state" style="background: #ffffff; border: 1px solid #e4e4e7; padding: 96px 40px; display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center;">
+        <div style="font-family: 'Space Grotesk', sans-serif; font-size: 28px; font-weight: 600; color: #0E96C1;">0</div>
+        <div style="font-size: 16px; font-weight: 600;">검토할 매칭이 없습니다</div>
+        <div style="font-size: 13px; color: #71717a; max-width: 360px; line-height: 1.5;">대기열이 비었습니다. 새 매칭 후보는 자동 매칭 배치가 완료되는 대로 이곳에 표시됩니다.</div>
+        <button onClick="{{ resetDemo }}" style="margin-top: 16px; font-family: 'Instrument Sans', sans-serif; font-size: 13px; font-weight: 600; padding: 9px 20px; background: #ffffff; color: #111114; border: 1px solid #d4d4d8; cursor: pointer;" style-hover="border-color: #111114;">대기열 새로고침</button>
+      </div>
+    </sc-if>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{
+  &quot;showKeyboardHints&quot;: { &quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;동작&quot; },
+  &quot;simulateConflict&quot;: { &quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;동작&quot; },
+  &quot;autoAdvance&quot;: { &quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;동작&quot; }
+}">
+const SEED = [
+  { id: 1, krBrand: '라운드랩', krName: '1025 독도 토너 200ml', krPrice: '₩12,800', jpBrand: 'ラウンドラボ', jpName: '独島トナー 化粧水 200mL', jpPrice: '¥1,780', conf: 0.97 },
+  { id: 2, krBrand: '코스알엑스', krName: '어드밴스드 스네일 96 뮤신 파워 에센스 100ml', krPrice: '₩16,900', jpBrand: 'COSRX', jpName: 'アドバンスド スネイル96 ムチンパワーエッセンス', jpPrice: '¥2,420', conf: 0.94 },
+  { id: 3, krBrand: '아누아', krName: '어성초 77 수딩 토너 250ml', krPrice: '₩19,500', jpBrand: 'Anua', jpName: 'ドクダミ77% スージングトナー 250mL', jpPrice: '¥2,860', conf: 0.91, willFail: true },
+  { id: 4, krBrand: '토리든', krName: '다이브인 저분자 히알루론산 세럼 50ml', krPrice: '₩14,200', jpBrand: 'Torriden', jpName: 'ダイブイン セラム 低分子ヒアルロン酸 50mL', jpPrice: '¥2,090', conf: 0.89 },
+  { id: 5, krBrand: '달바', krName: '화이트 트러플 퍼스트 스프레이 세럼 100ml', krPrice: '₩24,000', jpBrand: "d'Alba", jpName: 'ホワイトトリュフ ファーストスプレーセラム', jpPrice: '¥3,540', conf: 0.86 },
+  { id: 6, krBrand: '이니스프리', krName: '그린티 씨드 히알루론산 세럼 80ml', krPrice: '₩21,000', jpBrand: 'innisfree', jpName: 'グリーンティーシード セラム 80mL', jpPrice: '¥3,080', conf: 0.82 },
+  { id: 7, krBrand: '메디힐', krName: '티트리 케어솔루션 에센셜 마스크 10매', krPrice: '₩9,900', jpBrand: 'MEDIHEAL', jpName: 'ティーツリー ケアソリューション マスク 10枚', jpPrice: '¥1,450', conf: 0.78 },
+  { id: 8, krBrand: '조선미녀', krName: '맑은쌀선크림 SPF50+ 50ml', krPrice: '₩13,500', jpBrand: 'Beauty of Joseon', jpName: 'リリーフサン 米ぬか日焼け止め SPF50+', jpPrice: '¥1,980', conf: 0.71 },
+];
+class Component extends DCLogic {
+  state = { rows: SEED.map(r => ({ ...r, status: 'pending' })), selected: 0, resolvedToday: 38, approved: 32 };
+  componentDidMount() {
+    this._key = (e) => {
+      if (e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) return;
+      const pend = this.state.rows.filter(r => r.status === 'pending');
+      if (!pend.length) return;
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        const d = e.key === 'ArrowDown' ? 1 : -1;
+        this.setState(s => ({ selected: Math.min(Math.max(s.selected + d, 0), s.rows.length - 1) }));
+      } else if (e.key === 'a' || e.key === 'A') { this.act(this.selectedId(), 'approved'); }
+      else if (e.key === 'r' || e.key === 'R') { this.act(this.selectedId(), 'rejected'); }
+    };
+    window.addEventListener('keydown', this._key);
+  }
+  componentWillUnmount() { window.removeEventListener('keydown', this._key); }
+  selectedId() { const r = this.state.rows[this.state.selected]; return r && r.status === 'pending' ? r.id : null; }
+  act(id, status) {
+    if (id == null) return;
+    const row = this.state.rows.find(r => r.id === id);
+    if (!row || row.status !== 'pending') return;
+    const simulate = this.props.simulateConflict ?? true;
+    if (row.willFail && simulate) {
+      this.setState(s => ({ rows: s.rows.map(r => r.id === id ? { ...r, status: 'conflict' } : r) }));
+      return;
+    }
+    this.setState(s => ({
+      rows: s.rows.map(r => r.id === id ? { ...r, status } : r),
+      resolvedToday: s.resolvedToday + 1,
+      approved: s.approved + (status === 'approved' ? 1 : 0),
+    }));
+    setTimeout(() => this.remove(id), 1100);
+  }
+  remove(id) {
+    this.setState(s => {
+      const idx = s.rows.findIndex(r => r.id === id);
+      const rows = s.rows.filter(r => r.id !== id);
+      let selected = s.selected;
+      if (idx !== -1 && idx <= selected) selected = Math.max(0, selected - (idx < selected ? 1 : 0));
+      if ((this.props.autoAdvance ?? true) === false) selected = Math.min(selected, Math.max(rows.length - 1, 0));
+      return { rows, selected: Math.min(selected, Math.max(rows.length - 1, 0)) };
+    });
+  }
+  renderVals() {
+    const { rows, selected } = this.state;
+    const pending = rows.filter(r => r.status === 'pending').length;
+    const accent = '#0E96C1';
+    const vms = rows.map((r, i) => {
+      const isSel = i === selected && r.status === 'pending';
+      const pct = Math.round(r.conf * 100);
+      const low = r.conf < 0.8;
+      let bg = '#ffffff', opacity = 1;
+      if (r.status === 'approved') { bg = 'rgba(14,150,193,0.06)'; }
+      if (r.status === 'rejected') { bg = '#f6f6f7'; opacity = 0.75; }
+      if (r.status === 'conflict') { bg = '#fbfbfc'; }
+      return {
+        ...r,
+        isPending: r.status === 'pending',
+        isResolved: r.status === 'approved' || r.status === 'rejected',
+        isConflict: r.status === 'conflict',
+        resolvedLabel: r.status === 'approved' ? '✓ 승인됨' : '거절됨',
+        resolvedStyle: {
+          fontFamily: "'Space Grotesk', sans-serif", fontSize: '13px', fontWeight: 600,
+          color: r.status === 'approved' ? accent : '#71717a', letterSpacing: '0.02em',
+        },
+        confLabel: pct + '%',
+        confTextStyle: {
+          fontFamily: "'Space Grotesk', sans-serif", fontSize: '15px', fontWeight: 600,
+          fontVariantNumeric: 'tabular-nums', color: low ? '#71717a' : '#111114',
+        },
+        confBarStyle: { width: pct + '%', height: '100%', background: low ? '#9a9aa3' : accent },
+        rowStyle: {
+          display: 'grid', gridTemplateColumns: '1fr 44px 1fr 128px 176px', alignItems: 'center',
+          gap: '16px', padding: '16px 20px', borderBottom: '1px solid #ececef',
+          background: bg, opacity, cursor: r.status === 'pending' ? 'pointer' : 'default',
+          boxShadow: isSel ? 'inset 3px 0 0 ' + accent : 'none',
+          transition: 'background 0.25s, opacity 0.25s',
+        },
+        select: () => this.setState({ selected: i }),
+        approve: (e) => { e.stopPropagation(); this.act(r.id, 'approved'); },
+        reject: (e) => { e.stopPropagation(); this.act(r.id, 'rejected'); },
+        dismiss: (e) => { e.stopPropagation(); this.remove(r.id); },
+      };
+    });
+    return {
+      rows: vms,
+      hasRows: rows.length > 0,
+      isEmpty: rows.length === 0,
+      pendingCount: pending,
+      resolvedToday: this.state.resolvedToday,
+      approveRate: Math.round(this.state.approved / Math.max(this.state.resolvedToday, 1) * 100) + '%',
+      showKeyboardHints: this.props.showKeyboardHints ?? true,
+      resetDemo: () => this.setState({ rows: SEED.map(r => ({ ...r, status: 'pending' })), selected: 0 }),
+    };
+  }
+}
+</script>
+</body>
+</html>
