@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; padding: 0; background: #ececee; }
+  body { font-family: 'Instrument Sans', sans-serif; color: #111114; }
+  a { color: #0E96C1; text-decoration: none; }
+  a:hover { color: #0B7A9E; text-decoration: underline; }
+  ::selection { background: rgba(14,150,193,0.18); }
+</style>
+</helmet>
+<div style="display: flex; flex-wrap: wrap; gap: 48px; padding: 48px; align-items: flex-start;">
+
+  <!-- ============ DESKTOP · POPULATED ============ -->
+  <div data-screen-label="Desktop · populated">
+    <div style="font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #71717a; margin-bottom: 10px;">Desktop · 딜 피드</div>
+    <div style="width: 1200px; min-height: 860px; background: #fafafa; border: 1px solid #d4d4d8; display: flex; flex-direction: column;">
+      <header style="background: #ffffff; border-bottom: 1px solid #e4e4e7; padding: 0 48px; height: 64px; display: flex; align-items: center; gap: 36px;">
+        <span style="font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 19px; letter-spacing: -0.02em;">compa</span>
+        <nav style="display: flex; gap: 28px; font-size: 14px; font-weight: 500;">
+          <span style="color: #71717a; cursor: pointer;" style-hover="color: #111114;">가격 비교</span>
+          <span style="color: #71717a; cursor: pointer;" style-hover="color: #111114;">가격 히스토리</span>
+          <span style="color: #111114; box-shadow: inset 0 -2px 0 #0E96C1; padding-bottom: 21px; margin-bottom: -21px;">딜 피드</span>
+        </nav>
+        <div style="flex: 1;"></div>
+        <span style="font-size: 13px; color: #71717a; cursor: pointer;" style-hover="color: #111114;">로그인</span>
+      </header>
+      <main style="flex: 1; width: 100%; max-width: 760px; margin: 0 auto; padding: 44px 24px 72px; box-sizing: border-box;">
+        <div style="display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px;">
+          <h1 style="margin: 0; font-family: 'Space Grotesk', sans-serif; font-size: 28px; font-weight: 600; letter-spacing: -0.02em;">지금 이야기되는 딜</h1>
+          <div style="display: flex; align-items: center; gap: 7px; font-size: 12px; color: #71717a;">
+            <span style="width: 6px; height: 6px; border-radius: 50%; background: #0E96C1; display: inline-block;"></span>
+            실시간 수집 중
+          </div>
+        </div>
+        <p style="margin: 0 0 32px; font-size: 14px; color: #71717a; line-height: 1.5;">Reddit과 Slickdeals 커뮤니티에서 발견된 화장품 딜입니다. 48시간 동안만 표시됩니다.</p>
+        <div style="display: flex; flex-direction: column; background: #ffffff; border: 1px solid #e4e4e7;">
+          <sc-for list="{{ deals }}" as="d" hint-placeholder-count="7">
+            <a href="#" style="{{ d.rowStyle }}" style-hover="background: #f7fbfc;">
+              <div style="min-width: 0; flex: 1;">
+                <div style="display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px;">
+                  <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #71717a;">{{ d.brand }}</span>
+                  <span style="{{ d.timeStyle }}">{{ d.timeAgo }}</span>
+                </div>
+                <div style="{{ d.nameStyle }}">{{ d.name }}</div>
+                <div style="display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 12px; color: #9a9aa3;">
+                  <span style="{{ d.sourceStyle }}">{{ d.source }}</span>
+                  <span>{{ d.thread }}</span>
+                  <span style="color: #c4c4cb;">↗</span>
+                </div>
+              </div>
+              <div style="text-align: right; flex-shrink: 0; padding-left: 24px;">
+                <div style="{{ d.signalStyle }}">{{ d.signal }}</div>
+                <div style="font-family: 'Space Grotesk', sans-serif; font-size: 13px; color: #71717a; margin-top: 3px; font-variant-numeric: tabular-nums;">{{ d.price }}</div>
+              </div>
+            </a>
+          </sc-for>
+        </div>
+        <p style="margin: 14px 2px 0; font-size: 12px; color: #9a9aa3;">딜은 게시 48시간 후 자동으로 사라집니다 · 확인된 딜은 가격 히스토리에 반영됩니다</p>
+      </main>
+    </div>
+  </div>
+
+  <!-- ============ MOBILE · POPULATED ============ -->
+  <div data-screen-label="Mobile · populated">
+    <div style="font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #71717a; margin-bottom: 10px;">Mobile · 딜 피드</div>
+    <div style="width: 390px; min-height: 780px; background: #fafafa; border: 1px solid #d4d4d8; display: flex; flex-direction: column;">
+      <header style="background: #ffffff; border-bottom: 1px solid #e4e4e7; padding: 0 20px; height: 56px; display: flex; align-items: center; justify-content: space-between;">
+        <span style="font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 17px; letter-spacing: -0.02em;">compa</span>
+        <div style="display: flex; align-items: center; gap: 6px; font-size: 11px; color: #71717a;">
+          <span style="width: 5px; height: 5px; border-radius: 50%; background: #0E96C1; display: inline-block;"></span>
+          실시간
+        </div>
+      </header>
+      <div style="background: #ffffff; border-bottom: 1px solid #e4e4e7; padding: 0 20px; display: flex; gap: 20px; font-size: 13px; font-weight: 500; height: 44px; align-items: center;">
+        <span style="color: #71717a;">가격 비교</span>
+        <span style="color: #71717a;">히스토리</span>
+        <span style="color: #111114; box-shadow: inset 0 -2px 0 #0E96C1; padding-bottom: 13px; margin-bottom: -13px;">딜 피드</span>
+      </div>
+      <main style="flex: 1; padding: 24px 16px 48px;">
+        <h1 style="margin: 0 0 4px; font-family: 'Space Grotesk', sans-serif; font-size: 21px; font-weight: 600; letter-spacing: -0.02em;">지금 이야기되는 딜</h1>
+        <p style="margin: 0 0 20px; font-size: 13px; color: #71717a; line-height: 1.5;">커뮤니티에서 발견된 딜 · 48시간 표시</p>
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <sc-for list="{{ dealsMobile }}" as="d" hint-placeholder-count="5">
+            <a href="#" style="{{ d.cardStyle }}">
+              <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 4px;">
+                <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #71717a;">{{ d.brand }}</span>
+                <span style="{{ d.timeStyle }}">{{ d.timeAgo }}</span>
+              </div>
+              <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 14px;">
+                <div style="{{ d.nameStyleM }}">{{ d.name }}</div>
+                <div style="{{ d.signalStyleM }}">{{ d.signal }}</div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; color: #9a9aa3;">
+                <span style="{{ d.sourceStyle }}">{{ d.source }}</span>
+                <span style="font-family: 'Space Grotesk', sans-serif; font-variant-numeric: tabular-nums;">{{ d.price }}</span>
+                <span style="flex: 1;"></span>
+                <span>원문 보기 ↗</span>
+              </div>
+            </a>
+          </sc-for>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- ============ EMPTY STATES ============ -->
+  <div data-screen-label="Empty states" style="display: flex; flex-direction: column; gap: 48px;">
+    <div>
+      <div style="font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #71717a; margin-bottom: 10px;">Desktop · 빈 상태</div>
+      <div style="width: 760px; background: #fafafa; border: 1px solid #d4d4d8;">
+        <header style="background: #ffffff; border-bottom: 1px solid #e4e4e7; padding: 0 40px; height: 64px; display: flex; align-items: center; gap: 36px;">
+          <span style="font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 19px; letter-spacing: -0.02em;">compa</span>
+          <nav style="display: flex; gap: 28px; font-size: 14px; font-weight: 500;">
+            <span style="color: #71717a;">가격 비교</span>
+            <span style="color: #71717a;">가격 히스토리</span>
+            <span style="color: #111114; box-shadow: inset 0 -2px 0 #0E96C1; padding-bottom: 21px; margin-bottom: -21px;">딜 피드</span>
+          </nav>
+        </header>
+        <main style="max-width: 560px; margin: 0 auto; padding: 44px 24px 72px;">
+          <h1 style="margin: 0 0 8px; font-family: 'Space Grotesk', sans-serif; font-size: 28px; font-weight: 600; letter-spacing: -0.02em;">지금 이야기되는 딜</h1>
+          <p style="margin: 0 0 32px; font-size: 14px; color: #71717a;">Reddit과 Slickdeals 커뮤니티에서 발견된 화장품 딜입니다.</p>
+          <div style="background: #ffffff; border: 1px solid #e4e4e7; padding: 72px 40px; display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center;">
+            <div style="width: 6px; height: 6px; border-radius: 50%; background: #c4c4cb;"></div>
+            <div style="font-size: 15px; font-weight: 600; margin-top: 6px;">지금은 조용하네요</div>
+            <div style="font-size: 13px; color: #71717a; max-width: 320px; line-height: 1.55;">현재 진행 중인 딜이 없습니다. 커뮤니티에서 새 딜이 발견되면 바로 이곳에 올라옵니다.</div>
+            <div style="font-size: 12px; color: #9a9aa3; margin-top: 10px;">대신 <a href="#">가격 히스토리</a>에서 역대 최저가를 확인해 보세요</div>
+          </div>
+        </main>
+      </div>
+    </div>
+    <div>
+      <div style="font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #71717a; margin-bottom: 10px;">Mobile · 빈 상태</div>
+      <div style="width: 390px; background: #fafafa; border: 1px solid #d4d4d8;">
+        <header style="background: #ffffff; border-bottom: 1px solid #e4e4e7; padding: 0 20px; height: 56px; display: flex; align-items: center;">
+          <span style="font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 17px; letter-spacing: -0.02em;">compa</span>
+        </header>
+        <main style="padding: 24px 16px 56px;">
+          <h1 style="margin: 0 0 20px; font-family: 'Space Grotesk', sans-serif; font-size: 21px; font-weight: 600; letter-spacing: -0.02em;">지금 이야기되는 딜</h1>
+          <div style="background: #ffffff; border: 1px solid #e4e4e7; padding: 56px 24px; display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center;">
+            <div style="width: 5px; height: 5px; border-radius: 50%; background: #c4c4cb;"></div>
+            <div style="font-size: 14px; font-weight: 600; margin-top: 4px;">지금은 조용하네요</div>
+            <div style="font-size: 13px; color: #71717a; line-height: 1.55;">새 딜이 발견되면 바로 올라옵니다.</div>
+          </div>
+        </main>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{
+  &quot;fadeStartHours&quot;: { &quot;editor&quot;: &quot;range&quot;, &quot;default&quot;: 24, &quot;min&quot;: 6, &quot;max&quot;: 48, &quot;step&quot;: 6, &quot;unit&quot;: &quot;h&quot;, &quot;tsType&quot;: &quot;number&quot;, &quot;section&quot;: &quot;표시&quot; }
+}">
+const DEALS = [
+  { brand: '코스알엑스', name: '어드밴스드 스네일 96 뮤신 에센스 — 아마존 40% 할인', signal: '-40%', price: '$15.29', source: 'Reddit', thread: 'r/AsianBeauty', hours: 1 },
+  { brand: '조선미녀', name: '맑은쌀선크림 SPF50+ 2개 묶음 특가', signal: '-32%', price: '$18.90', source: 'Slickdeals', thread: 'Beauty & Grooming', hours: 3 },
+  { brand: '라운드랩', name: '1025 독도 토너 500ml 대용량 쿠폰 적용가', signal: '-27%', price: '$21.75', source: 'Reddit', thread: 'r/KoreanBeauty', hours: 7 },
+  { brand: '아누아', name: '어성초 77 토너 + 세럼 세트, 스타일코리안 프로모션', signal: '-35%', price: '$29.40', source: 'Slickdeals', thread: 'Beauty & Grooming', hours: 12 },
+  { brand: '토리든', name: '다이브인 세럼 YesStyle 신규가입 코드 중복 적용', signal: '-25%', price: '$13.80', source: 'Reddit', thread: 'r/AsianBeauty', hours: 22 },
+  { brand: '달바', name: '화이트 트러플 미스트 세럼 올리브영 글로벌 세일', signal: '-30%', price: '$24.50', source: 'Reddit', thread: 'r/KoreanBeauty', hours: 34 },
+  { brand: '메디힐', name: '티트리 마스크 20매 아이허브 재고 정리', signal: '-45%', price: '$11.20', source: 'Slickdeals', thread: 'Beauty & Grooming', hours: 43 },
+];
+class Component extends DCLogic {
+  renderVals() {
+    const accent = '#0E96C1';
+    const fadeStart = this.props.fadeStartHours ?? 24;
+    const vm = DEALS.map((d, i) => {
+      const stale = d.hours >= fadeStart; // second half of 48h window reads muted
+      const ink = stale ? '#71717a' : '#111114';
+      const timeAgo = d.hours < 24 ? d.hours + '시간 전' : Math.floor(d.hours / 24) + '일 전';
+      return {
+        ...d, timeAgo,
+        rowStyle: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 24px', borderBottom: i < DEALS.length - 1 ? '1px solid #ececef' : 'none', color: 'inherit', textDecoration: 'none', opacity: stale ? 0.72 : 1 },
+        cardStyle: { display: 'block', background: '#ffffff', border: '1px solid #e4e4e7', padding: '14px 16px', color: 'inherit', textDecoration: 'none', opacity: stale ? 0.72 : 1 },
+        nameStyle: { fontSize: '15px', fontWeight: 500, lineHeight: 1.4, color: ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+        nameStyleM: { fontSize: '14px', fontWeight: 500, lineHeight: 1.4, color: ink, minWidth: 0 },
+        signalStyle: { fontFamily: "'Space Grotesk', sans-serif", fontSize: '18px', fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: stale ? '#71717a' : accent },
+        signalStyleM: { fontFamily: "'Space Grotesk', sans-serif", fontSize: '16px', fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: stale ? '#71717a' : accent, flexShrink: 0 },
+        timeStyle: { fontFamily: "'Space Grotesk', sans-serif", fontSize: '11px', color: stale ? '#9a9aa3' : '#71717a', fontVariantNumeric: 'tabular-nums' },
+        sourceStyle: { fontFamily: "'Space Grotesk', sans-serif", fontSize: '11px', fontWeight: 500, letterSpacing: '0.04em', color: '#71717a', border: '1px solid #e4e4e7', padding: '1px 7px' },
+      };
+    });
+    return { deals: vm, dealsMobile: vm };
+  }
+}
+</script>
+</body>
+</html>

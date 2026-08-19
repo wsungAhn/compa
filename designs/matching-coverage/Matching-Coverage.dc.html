@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; padding: 0; background: #fafafa; }
+  body { font-family: 'Instrument Sans', sans-serif; color: #111114; }
+  a { color: #0E96C1; text-decoration: none; }
+  a:hover { color: #0B7A9E; text-decoration: underline; }
+  ::selection { background: rgba(14,150,193,0.18); }
+</style>
+</helmet>
+<div style="min-height: 100vh; background: #fafafa; display: flex; flex-direction: column;">
+  <header data-screen-label="Top bar" style="background: #ffffff; border-bottom: 1px solid #e4e4e7; padding: 0 40px; height: 64px; display: flex; align-items: center; gap: 32px;">
+    <div style="display: flex; align-items: baseline; gap: 10px;">
+      <span style="font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 18px; letter-spacing: -0.02em;">compa</span>
+      <span style="font-size: 11px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: #9a9aa3;">Admin</span>
+    </div>
+    <div style="width: 1px; height: 24px; background: #e4e4e7;"></div>
+    <div style="display: flex; align-items: baseline; gap: 8px;">
+      <span style="font-size: 15px; font-weight: 600;">매칭 커버리지</span>
+      <span style="font-size: 12px; color: #9a9aa3;">Matching Coverage</span>
+    </div>
+    <div style="flex: 1;"></div>
+    <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #71717a;">
+      <span style="width: 6px; height: 6px; border-radius: 50%; background: #0E96C1; display: inline-block;"></span>
+      마지막 배치 {{ lastBatch }} · 다음 배치 {{ nextBatch }}
+    </div>
+  </header>
+
+  <main style="flex: 1; width: 100%; max-width: 960px; margin: 0 auto; padding: 56px 40px 96px; box-sizing: border-box;">
+    <!-- Focal metric -->
+    <section data-screen-label="Coverage metric" style="background: #ffffff; border: 1px solid #e4e4e7; padding: 48px 48px 44px;">
+      <div style="font-size: 12px; font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase; color: #71717a; margin-bottom: 18px;">교차 매칭 커버리지 · KR–JP–US</div>
+      <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 40px; flex-wrap: wrap;">
+        <div style="display: flex; align-items: baseline; gap: 16px;">
+          <span style="font-family: 'Space Grotesk', sans-serif; font-size: 88px; font-weight: 600; letter-spacing: -0.04em; line-height: 1; color: #111114; font-variant-numeric: tabular-nums;">{{ coveragePct }}</span>
+          <span style="font-family: 'Space Grotesk', sans-serif; font-size: 15px; color: #71717a; font-variant-numeric: tabular-nums;">{{ matchedCount }} / {{ totalCount }} 매칭됨</span>
+        </div>
+        <div style="display: flex; gap: 40px; padding-bottom: 8px;">
+          <div>
+            <div style="font-size: 12px; color: #71717a; margin-bottom: 4px;">미매칭 (orphan)</div>
+            <div style="font-family: 'Space Grotesk', sans-serif; font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums;">{{ orphanCount }}</div>
+          </div>
+          <div>
+            <div style="font-size: 12px; color: #71717a; margin-bottom: 4px;">지난 배치에서 신규 매칭</div>
+            <div style="font-family: 'Space Grotesk', sans-serif; font-size: 24px; font-weight: 600; color: #0E96C1; font-variant-numeric: tabular-nums;">{{ newlyMatched }}</div>
+          </div>
+        </div>
+      </div>
+      <div style="margin-top: 32px;">
+        <div style="width: 100%; height: 6px; background: #ececef;">
+          <div style="{{ barStyle }}"></div>
+        </div>
+        <div style="display: flex; justify-content: space-between; margin-top: 8px; font-size: 12px; color: #9a9aa3;">
+          <span>매칭됨 <span style="color: #0E96C1;">■</span></span>
+          <span>배치 주기 6시간 · 커버리지는 배치 완료 시 갱신</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Orphan sample -->
+    <section data-screen-label="Orphan sample" style="margin-top: 40px;">
+      <div style="display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 14px;">
+        <div style="display: flex; align-items: baseline; gap: 10px;">
+          <h2 style="margin: 0; font-family: 'Space Grotesk', sans-serif; font-size: 18px; font-weight: 600; letter-spacing: -0.01em;">미매칭 상품 샘플</h2>
+          <span style="font-size: 12px; color: #9a9aa3;">최근 orphan {{ sampleSize }}건 무작위 표본</span>
+        </div>
+        <a href="#" style="font-size: 13px;">전체 orphan 내보내기</a>
+      </div>
+      <div style="background: #ffffff; border: 1px solid #e4e4e7;">
+        <div style="display: grid; grid-template-columns: 140px 1fr 120px 140px; gap: 16px; padding: 10px 20px; border-bottom: 1px solid #ececef; font-size: 11px; font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase; color: #9a9aa3;">
+          <div>브랜드</div>
+          <div>상품명</div>
+          <div>소스 국가</div>
+          <div style="text-align: right;">미매칭 기간</div>
+        </div>
+        <sc-for list="{{ orphans }}" as="o" hint-placeholder-count="8">
+          <div style="display: grid; grid-template-columns: 140px 1fr 120px 140px; gap: 16px; padding: 13px 20px; border-bottom: 1px solid #ececef; align-items: baseline;" style-hover="background: #f7fbfc;">
+            <div style="font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: #71717a;">{{ o.brand }}</div>
+            <div style="font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ o.name }}</div>
+            <div style="font-family: 'Space Grotesk', sans-serif; font-size: 12px; color: #71717a;">{{ o.country }}</div>
+            <div style="{{ o.ageStyle }}">{{ o.age }}</div>
+          </div>
+        </sc-for>
+      </div>
+      <p style="margin: 12px 2px 0; font-size: 12px; color: #9a9aa3;">7일 이상 미매칭 상태인 상품은 진하게 표시됩니다 — 매칭 규칙 점검이 필요할 수 있습니다.</p>
+    </section>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{
+  &quot;totalCount&quot;: { &quot;editor&quot;: &quot;int&quot;, &quot;default&quot;: 48213, &quot;tsType&quot;: &quot;number&quot;, &quot;section&quot;: &quot;데이터&quot; },
+  &quot;matchedCount&quot;: { &quot;editor&quot;: &quot;int&quot;, &quot;default&quot;: 41792, &quot;tsType&quot;: &quot;number&quot;, &quot;section&quot;: &quot;데이터&quot; },
+  &quot;newlyMatched&quot;: { &quot;editor&quot;: &quot;int&quot;, &quot;default&quot;: 316, &quot;tsType&quot;: &quot;number&quot;, &quot;section&quot;: &quot;데이터&quot; }
+}">
+const ORPHANS = [
+  { brand: '스킨1004', name: '마다가스카르 센텔라 앰플 100ml', country: 'KR', days: 12 },
+  { brand: 'VT', name: 'リードルショット 100 エッセンス', country: 'JP', days: 9 },
+  { brand: '넘버즈인', name: '3번 결광가득 에센스 토너', country: 'KR', days: 8 },
+  { brand: 'Glow Recipe', name: 'Watermelon Glow PHA+BHA Toner', country: 'US', days: 5 },
+  { brand: '어뮤즈', name: '듀 틴트 09 캔디데이', country: 'KR', days: 4 },
+  { brand: 'CANMAKE', name: 'マシュマロフィニッシュパウダー MO', country: 'JP', days: 3 },
+  { brand: '퓌', name: '보송 세럼 쿠션 17N', country: 'KR', days: 2 },
+  { brand: 'TIRTIR', name: 'マスクフィット レッドクッション 21N', country: 'JP', days: 1 },
+];
+class Component extends DCLogic {
+  renderVals() {
+    const total = this.props.totalCount ?? 48213;
+    const matched = this.props.matchedCount ?? 41792;
+    const orphan = total - matched;
+    const pct = matched / total * 100;
+    const fmt = (n) => n.toLocaleString('ko-KR');
+    return {
+      coveragePct: pct.toFixed(1) + '%',
+      matchedCount: fmt(matched), totalCount: fmt(total), orphanCount: fmt(orphan),
+      newlyMatched: '+' + fmt(this.props.newlyMatched ?? 316),
+      lastBatch: '14:00', nextBatch: '20:00',
+      sampleSize: ORPHANS.length,
+      barStyle: { width: pct.toFixed(1) + '%', height: '100%', background: '#0E96C1' },
+      orphans: ORPHANS.map(o => ({
+        ...o,
+        age: o.days + '일',
+        ageStyle: {
+          textAlign: 'right', fontFamily: "'Space Grotesk', sans-serif", fontSize: '13px',
+          fontVariantNumeric: 'tabular-nums',
+          color: o.days >= 7 ? '#111114' : '#71717a',
+          fontWeight: o.days >= 7 ? 600 : 400,
+        },
+      })),
+    };
+  }
+}
+</script>
+</body>
+</html>
