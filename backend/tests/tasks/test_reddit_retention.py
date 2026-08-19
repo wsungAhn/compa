@@ -23,11 +23,11 @@ async def _dispose_engine():
     await engine.dispose()
 
 
-async def _insert(hours_ago: float, url: str) -> None:
+async def _insert(hours_ago: float, url: str, platform: str = PLATFORM) -> None:
     async with AsyncSessionLocal() as db:
         db.add(
             SocialPost(
-                platform=PLATFORM,
+                platform=platform,
                 post_url=url,
                 content="[Glossier] 10% off Glossier",
                 created_at=now_utc() - timedelta(hours=hours_ago),
@@ -55,21 +55,25 @@ async def _cleanup(*urls: str) -> None:
 async def test_retention_boundary_is_enforced() -> None:
     fresh = "https://reddit.test/fresh-47h"
     stale = "https://reddit.test/stale-49h"
-    await _cleanup(fresh, stale)
+    slickdeals_stale = "https://slickdeals.test/stale-49h"
+    await _cleanup(fresh, stale, slickdeals_stale)
     await _insert(RETENTION_HOURS - 1, fresh)
     await _insert(RETENTION_HOURS + 1, stale)
+    await _insert(RETENTION_HOURS + 1, slickdeals_stale, platform="slickdeals")
 
     try:
         assert await _count(fresh) == 1
         assert await _count(stale) == 1
+        assert await _count(slickdeals_stale) == 1
 
         await _purge()
 
-        # 48시간 이내는 남고, 넘긴 것은 사라진다.
+        # 48시간 이내는 남고, 넘긴 Reddit/Slickdeals 원문은 사라진다.
         assert await _count(fresh) == 1
         assert await _count(stale) == 0
+        assert await _count(slickdeals_stale) == 0
     finally:
-        await _cleanup(fresh, stale)
+        await _cleanup(fresh, stale, slickdeals_stale)
 
 
 async def test_retention_window_is_48_hours() -> None:
@@ -77,7 +81,7 @@ async def test_retention_window_is_48_hours() -> None:
     assert RETENTION_HOURS == 48
 
 
-async def test_purge_only_touches_reddit_rows() -> None:
+async def test_purge_only_touches_reddit_and_slickdeals_rows() -> None:
     """다른 플랫폼의 보존 정책까지 이 태스크가 결정하면 안 된다."""
     other = "https://instagram.test/old-post"
     await _cleanup(other)

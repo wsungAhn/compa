@@ -21,6 +21,7 @@ from app.tasks import celery
 logger = logging.getLogger(__name__)
 
 PLATFORM = "reddit"
+_PURGED_PLATFORMS = ("reddit", "slickdeals")
 # 약관 권고치. 이 값을 늘리는 것은 정책 위반이므로 상수로 고정한다.
 RETENTION_HOURS = 48
 
@@ -138,7 +139,7 @@ async def _collect_slickdeals() -> int:
 
 
 def purge_expired_social_posts() -> int:
-    """48시간이 지난 reddit 행을 하드 삭제한다.
+    """48시간이 지난 Reddit/Slickdeals 행을 하드 삭제한다.
 
     soft delete가 아니다 — 보관 자체가 약관 위반이므로 행을 지운다. 승격된 신호도
     예외가 아니다: sale_events에 남는 값은 우리가 공홈에서 독립 관측한 가격이지
@@ -152,14 +153,18 @@ async def _purge() -> int:
     async with AsyncSessionLocal() as db:
         result = await db.execute(
             delete(SocialPost).where(
-                SocialPost.platform == PLATFORM,
+                SocialPost.platform.in_(_PURGED_PLATFORMS),
                 SocialPost.created_at < cutoff,
             )
         )
         await db.commit()
     deleted = int(result.rowcount or 0)
     if deleted:
-        logger.info("reddit: purged %d posts older than %dh", deleted, RETENTION_HOURS)
+        logger.info(
+            "social posts: purged %d posts older than %dh (reddit+slickdeals)",
+            deleted,
+            RETENTION_HOURS,
+        )
     return deleted
 
 

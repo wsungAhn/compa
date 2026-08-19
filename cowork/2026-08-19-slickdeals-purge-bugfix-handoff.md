@@ -1,6 +1,6 @@
 # Codex Handoff — 2026-08-19 · Slickdeals 게시물 48시간 보존 미적용 버그
 
-> **상태(Status):** `대기 / pending`
+> **상태(Status):** `완료 / done`
 >
 > **작성자(Author):** Claude Sonnet 5 (랩탑 D:\dev\compa) → **수행자(Executor):** Codex CLI
 > **작업명(Task):** `purge_expired_social_posts`가 `platform == "reddit"`로만
@@ -61,3 +61,12 @@ async def _purge() -> int:
 - `git status`로 이 파일(+ 신규 테스트 있으면 그 파일)만 바뀌었는지 확인.
 
 ## 3. Executor Log (여기에 기록)
+
+- 2026-08-19 Codex: 작업 시작. 범위 확인 — `backend/app/tasks/reddit_signals.py`
+  `_purge()` 조건/로그와 기존 retention 테스트만 수정 예정. 커밋/서비스 재시작 금지 준수.
+- 2026-08-19 Codex: `_purge()` 삭제 대상을 `reddit+slickdeals`로 확장하고,
+  purge 로그 문구를 두 플랫폼 기준으로 수정. 기존 retention 테스트에 만료된
+  Slickdeals 행 삭제 assertion 추가.
+- 2026-08-19 Codex: 검증 완료 — `cd backend && ./.venv/bin/mypy --strict app/`
+  성공(0 errors), `cd backend && ./.venv/bin/pytest tests/tasks/test_reddit_retention.py`
+  성공(3 passed). 커밋/서비스 재시작은 수행하지 않음.
