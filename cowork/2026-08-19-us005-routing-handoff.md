@@ -1,6 +1,6 @@
 # Codex Handoff — 2026-08-19 · US-005 프론트엔드 라우팅 도입
 
-> **상태(Status):** `대기 / pending`
+> **상태(Status):** `완료 / done`
 >
 > **작성자(Author):** Claude Sonnet 5 (랩탑 D:\dev\compa) → **수행자(Executor):** Codex CLI
 > **작업명(Task):** react-router 도입, 기존 검색/비교 화면을 그대로 홈 라우트로 감싸고
@@ -96,3 +96,25 @@ frontend/src/
 ---
 
 ## 3. Executor Log (여기에 기록)
+
+- 2026-08-19 11:23 PDT — Codex 착수. 정본 handoff와 PRD US-005/FR-5 확인, 워킹트리 clean 확인. 범위: frontend routing skeleton만, 커밋/서비스 재시작 없음.
+- 2026-08-19 11:24 PDT — `npm install react-router-dom` 시도 실패: `ENOTFOUND registry.npmjs.org` 네트워크 DNS 실패. npm package page 기준 최신 v7 계열 `react-router-dom@7.18.2`로 `package.json`/lockfile root dependency만 반영.
+- 2026-08-19 11:25 PDT — 기존 `App.tsx` 내용을 `src/routes/HomePage.tsx`로 이동. import 경로와 함수명만 변경했고, `diff` 비교로 홈 화면 본문 동일 확인. `App.tsx`는 `/`, `/admin/matches`, `/deals`, `/admin/coverage` 라우트 선언만 보유. `main.tsx`는 `BrowserRouter`로 감쌈.
+- 2026-08-19 11:26 PDT — Placeholder 3개 생성: `AdminMatchesPage`, `DealFeedPage`, `CoveragePage`. 실제 US-002/003/004 UI/API 구현 없음.
+- 2026-08-19 11:26 PDT — 검증: `npm run lint` 통과, `npm run test` 통과(9 tests). `npm run build` 실패: `TS2307 Cannot find module 'react-router-dom'` — 설치가 네트워크 실패로 완료되지 않아 모듈/타입 미존재. 브라우저 검증도 동일 원인으로 미실행. 커밋/서비스 재시작 없음.
+- 2026-08-19 11:29 PDT — `npm ci --dry-run` 추가 확인도 `ENOTFOUND registry.npmjs.org`로 실패. 남은 차단 사유는 npm registry 접근 및 실제 의존성 설치/lockfile 완전 갱신.
+
+## 4. Reviewer Log (Claude Sonnet 5, 2026-08-19)
+
+Codex 샌드박스가 npm 레지스트리 접근도 막혀 있어 `npm install`이 실패,
+package.json/lockfile만 수동 반영하고 `npm run build`는 TS2307(모듈 없음)로
+막힌 상태였음. 샌드박스 밖 plain SSH로 `npm install` 직접 실행 후 재검증:
+
+- `npm install`: react-router-dom 등 4개 패키지 정상 설치.
+- `npm run build`: 성공(656 modules, dist 생성).
+- `npm run lint`: 통과.
+- `npm run test`: 9/9 통과.
+- App.tsx 코드 대조: `/`, `/admin/matches`, `/deals`, `/admin/coverage` 4개
+  라우트 선언 확인, HomePage로 기존 로직 이동 확인.
+
+커밋 승인.
