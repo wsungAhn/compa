@@ -105,6 +105,21 @@ export interface ProductMatchCandidate {
   created_at: string
 }
 
+export interface CoverageOrphan {
+  brand: string | null
+  name: string | null
+  source_country: string
+  unmatched_days: number
+}
+
+export interface Coverage {
+  total_count: number
+  matched_count: number
+  orphan_count: number
+  coverage_pct: number
+  orphans: CoverageOrphan[]
+}
+
 export interface DealSignal {
   id: string
   brand: string | null
@@ -138,6 +153,9 @@ export const approveProductMatch = (id: string): Promise<void> =>
 
 export const rejectProductMatch = (id: string): Promise<void> =>
   api.post(`/admin/product-matches/${id}/reject`).then(() => undefined)
+
+export const getCoverage = (): Promise<Coverage> =>
+  api.get<Coverage>('/admin/coverage').then(r => r.data)
 
 export const listDeals = (): Promise<DealSignal[]> =>
   api.get<DealSignal[]>('/deals').then(r => r.data)

@@ -93,6 +93,65 @@ async def test_list_product_matches_with_status(client, admin_secret):
     assert isinstance(response.json(), list)
 
 
+async def test_get_coverage_unauthorized(client: AsyncClient) -> None:
+    """Test coverage endpoint without admin secret."""
+    response = await client.get("/api/admin/coverage")
+    assert response.status_code == 404
+
+
+async def test_get_coverage_counts_jp_orphan(
+    client: AsyncClient,
+    admin_secret: str,
+    db_session: AsyncSession,
+) -> None:
+    """Test coverage endpoint counts active JP orphan products."""
+    before = await client.get(
+        "/api/admin/coverage",
+        headers={"X-Admin-Secret": admin_secret},
+    )
+    assert before.status_code == 200
+    before_payload = before.json()
+
+    brand = f"Coverage-{uuid.uuid4().hex[:8]}"
+    orphan_name = f"Coverage JP Orphan {uuid.uuid4().hex[:8]}"
+    orphan_product = Product(
+        name_en=None,
+        name_jp=orphan_name,
+        brand=brand,
+        name_kr=None,
+        name_cn=None,
+        created_at=datetime(2000, 1, 1, tzinfo=timezone.utc),
+    )
+    db_session.add(orphan_product)
+    await db_session.commit()
+
+    try:
+        response = await client.get(
+            "/api/admin/coverage",
+            headers={"X-Admin-Secret": admin_secret},
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["total_count"] == before_payload["total_count"] + 1
+        assert payload["orphan_count"] == before_payload["orphan_count"] + 1
+        assert payload["matched_count"] == payload["total_count"] - payload["orphan_count"]
+        assert payload["coverage_pct"] == round(
+            (payload["matched_count"] / payload["total_count"]) * 100,
+            1,
+        )
+        assert any(
+            row["name"] == orphan_name
+            and row["source_country"] == "JP"
+            and row["unmatched_days"] >= 7
+            for row in payload["orphans"]
+        )
+    finally:
+        await db_session.execute(
+            update(Product).where(Product.brand == brand).values(deleted_at=func.now())
+        )
+        await db_session.commit()
+
+
 async def test_approve_product_match(client, admin_secret, db_session, cleanup_db):
     brand = f"SK-II-{uuid.uuid4().hex[:8]}"
     """Test approving a product match."""

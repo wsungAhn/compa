@@ -6,6 +6,7 @@ from typing import Optional
 
 from sqlalchemy import delete, func, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.ai.matching import evaluate_match, containment_score
 from app.ai.translator import translate_for_matching
@@ -19,6 +20,16 @@ from app.models.sale_event import SaleEvent
 from app.tasks import celery
 
 _logger = logging.getLogger(__name__)
+
+
+def orphan_product_filters() -> tuple[ColumnElement[bool], ...]:
+    """Return the shared JP orphan definition for matching coverage."""
+    return (
+        Product.name_en.is_(None),
+        Product.name_jp.isnot(None),
+        Product.deleted_at.is_(None),
+        Product.brand.isnot(None),
+    )
 
 
 def match_pending_products(limit: int = 50) -> int:
@@ -251,10 +262,7 @@ async def _match_pending_products(limit: int = 50) -> int:
                 Product.id == ProductMatchCandidate.orphan_product_id,
             )
             .where(
-                Product.name_en.is_(None),
-                Product.name_jp.isnot(None),
-                Product.deleted_at.is_(None),
-                Product.brand.isnot(None),
+                *orphan_product_filters(),
                 ProductMatchCandidate.id.is_(None),
             )
             .limit(limit)

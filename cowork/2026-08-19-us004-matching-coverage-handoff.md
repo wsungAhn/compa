@@ -1,6 +1,6 @@
 # Codex Handoff — 2026-08-19 · US-004 매칭 커버리지 대시보드 구현
 
-> **상태(Status):** `대기 / pending`
+> **상태(Status):** `구현 완료 / done — 전체 mypy는 기존 테스트 타입 부채로 실패`
 >
 > **작성자(Author):** Claude Sonnet 5 (랩탑 D:\dev\compa) → **수행자(Executor):** Codex CLI
 > **작업명(Task):** `/admin/coverage` placeholder를 실제 매칭 커버리지 화면으로
@@ -161,3 +161,50 @@ async def get_coverage(
 ---
 
 ## 5. Executor Log (여기에 기록)
+
+- 2026-08-19 Codex: 실행 시작. 핸드오프/디자인/PRD/`_match_pending_products`
+  orphan 조건/현재 워킹트리 상태를 확인함. 스코프는 JP→EN 백필 커버리지,
+  배치 델타 제거, 새 테이블/패키지/커밋/서비스 재시작 없음으로 고정.
+- 2026-08-19 Codex: `backend/app/tasks/match_products.py`의 orphan predicate
+  4개를 `orphan_product_filters()`로 추출하고, 기존 배치 쿼리의
+  `ProductMatchCandidate.id.is_(None)` 중복 방지 조건은 유지함.
+- 2026-08-19 Codex: `GET /api/admin/coverage` 추가. active product count,
+  shared orphan count, `matched = total - orphan`, coverage %, 오래된 orphan
+  샘플 최대 8건을 반환. 샘플 source_country는 실제 범위대로 `JP`.
+- 2026-08-19 Codex: `/admin/coverage` placeholder를 실제 화면으로 교체.
+  `useAdminSecret`/`setAdminSecretHeader` 재사용, 라벨은
+  `교차 매칭 커버리지 (JP -> EN 백필)`, 지난 배치 신규매칭 델타와
+  전체 orphan export 링크는 제거.
+- 2026-08-19 Codex: 검증 결과:
+  `.venv/bin/mypy --strict app/api/admin.py app/tasks/match_products.py` 통과,
+  `.venv/bin/pytest tests/api/test_admin.py` 10 passed,
+  `.venv/bin/pytest` 521 passed / 1 skipped,
+  `npm run test` 13 passed,
+  `npm run build` 통과(Vite chunk size warning만 표시),
+  `npm run lint` 통과,
+  `git diff --check` 통과.
+- 2026-08-19 Codex: 전체 `backend/.venv/bin/mypy --strict .`는 기존 테스트/알렘빅
+  타입 annotation 및 기존 `type: ignore` 문제 141건으로 실패. 변경 앱 파일
+  기준 mypy는 통과했고, 신규 coverage 테스트 함수에는 annotation을 추가해
+  `tests/api/test_admin.py`의 기존 오류 수를 늘리지 않음.
+- 2026-08-19 Codex: 브라우저 스크린샷 검증은 미실행. Browser/Playwright 도구가
+  현재 세션에 없고 Playwright 패키지도 설치돼 있지 않아, `npm install` 금지
+  규칙을 지키기 위해 추가 설치하지 않음. 서비스 재시작/커밋도 하지 않음.
+
+## 6. Reviewer Log (Claude Sonnet 5, 2026-08-19)
+
+`mypy --strict app/`(프로젝트 정식 검증 범위)는 0 errors — Codex가 보고한
+141건은 `tests/`/`alembic/`까지 포함한 전체 스캔이라 컨벤션 밖, 기존부터
+있던 무관한 부채. 실제 검증:
+
+- `mypy --strict app/`: 0 errors (88 files).
+- `pytest tests/ -q` (live PG): 521 passed, 1 skipped (+2 신규, 회귀 0).
+- `npm run build`/`lint`/`test`(13 passed) 전부 통과.
+- API 서비스 재시작 후 `compa.mwco.io/admin/coverage` 실브라우저 확인 —
+  "마지막 배치 18:40 UTC · 다음 배치 00:40 UTC · 스케줄 기준" 정확히 표시
+  (celery beat crontab(minute=40, hour="*/6")과 일치), 시크릿 게이트 UI
+  일관된 스타일.
+- `orphan_product_filters()`로 `_match_pending_products`의 조건을 함수로
+  추출해 admin.py 커버리지 API와 공유 — 정의 중복 없이 재사용됨(지시대로).
+
+커밋 승인.
