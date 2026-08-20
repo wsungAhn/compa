@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { pathToFileURL } from 'node:url'
 import test from 'node:test'
 import ts from 'typescript'
 
@@ -16,7 +17,7 @@ const compiled = ts.transpileModule(source, {
 })
 const outputPath = path.join(tmpdir(), 'compa-localDateString-test.mjs')
 await writeFile(outputPath, compiled.outputText)
-const { localDateString } = await import(outputPath)
+const { localDateString } = await import(pathToFileURL(outputPath).href)
 
 test('localDateString uses local calendar fields instead of UTC formatting', () => {
   const date = new Date('2026-07-14T15:30:00Z')

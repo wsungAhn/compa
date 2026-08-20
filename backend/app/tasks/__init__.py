@@ -58,5 +58,10 @@ celery.conf.update(
             "task": "app.tasks.match_products.match_pending_products",
             "schedule": crontab(minute=40, hour="*/6"),
         },
+        # 이벤트 0개로 24h 넘게 방치된 고아 product 정리 (언어 무관, JP 매칭과 무관).
+        "cleanup-empty-orphans-daily": {
+            "task": "app.tasks.cleanup.cleanup_empty_orphan_products",
+            "schedule": crontab(hour=4, minute=0),
+        },
     },
 )

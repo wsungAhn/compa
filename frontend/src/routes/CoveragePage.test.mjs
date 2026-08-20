@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { pathToFileURL } from 'node:url'
 import test from 'node:test'
 import ts from 'typescript'
 
@@ -17,7 +18,7 @@ const compiled = ts.transpileModule(source, {
 })
 const outputPath = path.join(tmpdir(), 'compa-coverage-page-test.mjs')
 await writeFile(outputPath, compiled.outputText)
-const { clampPct, formatCount, getBatchWindow } = await import(outputPath)
+const { clampPct, formatCount, getBatchWindow } = await import(pathToFileURL(outputPath).href)
 
 test('getBatchWindow returns previous and next UTC six-hour batch slots', () => {
   assert.deepEqual(getBatchWindow(new Date('2026-08-19T12:39:00Z')), {

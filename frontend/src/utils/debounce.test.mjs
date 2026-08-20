@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { pathToFileURL } from 'node:url'
 import test from 'node:test'
 import ts from 'typescript'
 
@@ -16,7 +17,7 @@ const compiled = ts.transpileModule(source, {
 })
 const outputPath = path.join(tmpdir(), 'compa-debounce-test.mjs')
 await writeFile(outputPath, compiled.outputText)
-const { debounce } = await import(outputPath)
+const { debounce } = await import(pathToFileURL(outputPath).href)
 
 test('debounce runs only the last call after delay', (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] })
