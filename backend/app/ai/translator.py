@@ -39,16 +39,28 @@ def _call_translategemma(text: str, source_lang: str) -> str | None:
     """실패 시 None(예외 전파 금지 — CLAUDE.md 절대 규칙). 랩탑이 꺼져있어도 서비스가
     안 죽어야 한다."""
     try:
-        response: httpx.Response = httpx.post(
-            f"{settings.translation_ollama_url}/api/generate",
-            json={
-                "model": settings.local_translation_model,
-                "prompt": _build_translate_prompt(text, source_lang),
-                "stream": False,
-            },
-            timeout=60.0,
-        )
-        
+        prompt = _build_translate_prompt(text, source_lang)
+        if settings.translation_backend == "llamacpp":
+            response: httpx.Response = httpx.post(
+                f"{settings.translation_llamacpp_url}/v1/chat/completions",
+                json={
+                    "model": settings.llamacpp_translation_model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "stream": False,
+                },
+                timeout=60.0,
+            )
+        else:
+            response = httpx.post(
+                f"{settings.translation_ollama_url}/api/generate",
+                json={
+                    "model": settings.local_translation_model,
+                    "prompt": prompt,
+                    "stream": False,
+                },
+                timeout=60.0,
+            )
+
         if response.status_code != 200:
             _logger.warning(
                 f"Translation API returned status {response.status_code} for text: {text[:50]}..."
@@ -56,14 +68,17 @@ def _call_translategemma(text: str, source_lang: str) -> str | None:
             return None
 
         result = response.json()
-        translated: str = str(result.get("response", "")).strip()
+        if settings.translation_backend == "llamacpp":
+            translated = str(result["choices"][0]["message"]["content"]).strip()
+        else:
+            translated = str(result.get("response", "")).strip()
 
         if not translated:
             return None
 
         return translated
 
-    except (httpx.HTTPError, ValueError) as e:
+    except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError) as e:
         # ValueError covers response.json()의 JSONDecodeError — 응답 바디가 깨진 경우도
         # 예외를 밖으로 새게 두면 안 된다(실측: 랩탑이 재기동 중이면 빈/HTML 응답이 옴).
         _logger.warning(f"Translation API error for text: {text[:50]}... Error: {e}")

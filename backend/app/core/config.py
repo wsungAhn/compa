@@ -25,12 +25,18 @@ class Settings(BaseSettings):
     admin_secret: str | None = None
     allowed_origins: list[str] = ["http://localhost:5173"]
     # 로컬 AI (Ollama) 설정 — use_local_ai=True 시 Claude API 대신 Ollama 사용
+    local_ai_backend: str = "ollama"
     ollama_url: str = "http://localhost:11434"
     local_ai_model: str = "qwen2.5:14b"
+    llamacpp_url: str = "http://127.0.0.1:8082"
+    llamacpp_ai_model: str = ""
     use_local_ai: bool = False
     # 번역 전용 Ollama 엔드포인트 — local_ai_model과 분리(다른 머신으로 오프로드 가능하게)
+    translation_backend: str = "ollama"
     translation_ollama_url: str = "http://localhost:11434"
     local_translation_model: str = "translategemma:4b"
+    translation_llamacpp_url: str = "http://127.0.0.1:8083"
+    llamacpp_translation_model: str = ""
     # Firecrawl 스크래핑 서버. Docker compose에서는 FIRECRAWL_URL=http://firecrawl-local:8765로 override.
     firecrawl_url: str = "http://localhost:8765"
     firecrawl_extract_provider: str = "local"

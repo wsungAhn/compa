@@ -10,7 +10,7 @@ _logger = logging.getLogger(__name__)
 
 
 async def local_chat(system: str, user: str) -> str:
-    """Ollama /v1/chat/completions 엔드포인트로 텍스트 생성.
+    """로컬 OpenAI 호환 /v1/chat/completions 엔드포인트로 텍스트 생성.
 
     Ollama 0.1.14+ OpenAI-compatible API 사용.
     temperature=0.1로 설정 (구조화 JSON 출력에 최적).
@@ -29,12 +29,23 @@ async def local_chat(system: str, user: str) -> str:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": user})
 
-        # Ollama OpenAI-compatible endpoint 호출
+        base_url = (
+            settings.llamacpp_url
+            if settings.local_ai_backend == "llamacpp"
+            else settings.ollama_url
+        )
+        model = (
+            settings.llamacpp_ai_model
+            if settings.local_ai_backend == "llamacpp"
+            else settings.local_ai_model
+        )
+
+        # OpenAI-compatible endpoint 호출
         async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(
-                f"{settings.ollama_url}/v1/chat/completions",
+                f"{base_url}/v1/chat/completions",
                 json={
-                    "model": settings.local_ai_model,
+                    "model": model,
                     "messages": messages,
                     "temperature": 0.1,
                     "stream": False,

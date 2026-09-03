@@ -1,4 +1,5 @@
 """번역 계층의 모든 기능을 테스트한다."""
+import inspect
 import pytest
 from unittest.mock import patch
 import httpx
@@ -25,11 +26,68 @@ class TestCallTranslategemma:
     @patch("httpx.post")
     def test_success_response_returns_translated_text(self, mock_post):
         """200 응답 + 번역 결과 → 문자열 반환."""
-        mock_post.return_value.json.return_value = {"response": "SK-II Facial Treatment Essence, 75ml"}
-        mock_post.return_value.status_code = 200
-        
-        result = _call_translategemma("SK-II フェイシャルトリートメント エッセンス 75mL", "ja")
+        with patch("app.ai.translator.settings") as mock_settings:
+            from app.ai.translator import _build_translate_prompt
+
+            mock_settings.translation_backend = "ollama"
+            mock_settings.translation_ollama_url = "http://localhost:11434"
+            mock_settings.local_translation_model = "translategemma:4b"
+            mock_settings.translation_llamacpp_url = "http://127.0.0.1:8083"
+            mock_settings.llamacpp_translation_model = "llama-translate"
+
+            prompt = _build_translate_prompt(
+                "SK-II フェイシャルトリートメント エッセンス 75mL", "ja"
+            )
+            mock_post.return_value.json.return_value = {
+                "response": "SK-II Facial Treatment Essence, 75ml"
+            }
+            mock_post.return_value.status_code = 200
+
+            result = _call_translategemma(
+                "SK-II フェイシャルトリートメント エッセンス 75mL", "ja"
+            )
         assert result == "SK-II Facial Treatment Essence, 75ml"
+        mock_post.assert_called_once_with(
+            "http://localhost:11434/api/generate",
+            json={
+                "model": "translategemma:4b",
+                "prompt": prompt,
+                "stream": False,
+            },
+            timeout=60.0,
+        )
+
+    @patch("httpx.post")
+    def test_llamacpp_backend_uses_chat_completions_shape(self, mock_post):
+        """llama.cpp 분기는 OpenAI 호환 body/응답 shape를 사용해야 한다."""
+        with patch("app.ai.translator.settings") as mock_settings:
+            mock_settings.translation_backend = "llamacpp"
+            mock_settings.translation_llamacpp_url = "http://127.0.0.1:8083"
+            mock_settings.llamacpp_translation_model = "llama-translate"
+            mock_settings.translation_ollama_url = "http://localhost:11434"
+            mock_settings.local_translation_model = "translategemma:4b"
+
+            prompt = _build_translate_prompt("SK-II フェイシャルトリートメント エッセンス 75mL", "ja")
+            mock_post.return_value.json.return_value = {
+                "choices": [{"message": {"content": "SK-II Facial Treatment Essence, 75ml"}}]
+            }
+            mock_post.return_value.status_code = 200
+
+            result = _call_translategemma("SK-II フェイシャルトリートメント エッセンス 75mL", "ja")
+
+        assert result == "SK-II Facial Treatment Essence, 75ml"
+        mock_post.assert_called_once_with(
+            "http://127.0.0.1:8083/v1/chat/completions",
+            json={
+                "model": "llama-translate",
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": False,
+            },
+            timeout=60.0,
+        )
+
+    def test_call_translategemma_stays_synchronous(self):
+        assert inspect.iscoroutinefunction(_call_translategemma) is False
 
     @patch("httpx.post")
     def test_500_response_returns_none(self, mock_post):
