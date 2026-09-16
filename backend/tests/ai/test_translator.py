@@ -1,7 +1,7 @@
 """번역 계층의 모든 기능을 테스트한다."""
 import inspect
 import pytest
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 import httpx
 
 from app.ai.translator import (
@@ -39,7 +39,7 @@ class TestCallTranslategemma:
                 "SK-II フェイシャルトリートメント エッセンス 75mL", "ja"
             )
             mock_post.return_value.json.return_value = {
-                "response": "SK-II Facial Treatment Essence, 75ml"
+                "choices": [{"message": {"content": "SK-II Facial Treatment Essence, 75ml"}}]
             }
             mock_post.return_value.status_code = 200
 
@@ -48,11 +48,15 @@ class TestCallTranslategemma:
             )
         assert result == "SK-II Facial Treatment Essence, 75ml"
         mock_post.assert_called_once_with(
-            "http://localhost:11434/api/generate",
+            "http://127.0.0.1:8083/v1/chat/completions",
+            headers=ANY,
             json={
-                "model": "translategemma:4b",
-                "prompt": prompt,
+                "model": "llama-translate",
+                "messages": [{"role": "user", "content": prompt}],
                 "stream": False,
+                "max_tokens": 2048,
+                "reasoning_effort": "none",
+                "chat_template_kwargs": {"enable_thinking": False},
             },
             timeout=60.0,
         )
@@ -78,10 +82,14 @@ class TestCallTranslategemma:
         assert result == "SK-II Facial Treatment Essence, 75ml"
         mock_post.assert_called_once_with(
             "http://127.0.0.1:8083/v1/chat/completions",
+            headers=ANY,
             json={
                 "model": "llama-translate",
                 "messages": [{"role": "user", "content": prompt}],
                 "stream": False,
+                "max_tokens": 2048,
+                "reasoning_effort": "none",
+                "chat_template_kwargs": {"enable_thinking": False},
             },
             timeout=60.0,
         )
@@ -217,3 +225,24 @@ class TestTranslateForMatching:
         
         result = translate_for_matching("日本語のテキスト", "ja")
         assert result is None
+
+@pytest.mark.parametrize("content", [None, 42, {}, "   "])
+def test_invalid_content_is_not_cached(content, monkeypatch, caplog):
+    from app.ai import translator
+    from unittest.mock import MagicMock
+    translator._translation_cache.clear()
+    response = MagicMock(status_code=200)
+    response.json.return_value = {"choices": [{"message": {"content": content}}]}
+    monkeypatch.setattr(httpx, "post", lambda *a, **k: response)
+    text = "日本語のテキスト"
+    assert translate_for_llm(text) == text
+    assert text not in translator._translation_cache
+    assert "invalid content" in caplog.text
+
+
+def test_unknown_backend_never_calls_transport(monkeypatch):
+    from app.ai import translator
+    monkeypatch.setattr(translator.settings, "translation_backend", "typo")
+    with patch("httpx.post") as post:
+        assert _call_translategemma("test", "ja") is None
+        post.assert_not_called()

@@ -6,6 +6,7 @@ from typing import Optional
 import httpx
 
 from app.core.config import settings
+from app.ai.local_client import chat_url, validate_backend, llamacpp_headers
 from app.scrapers.brand_dictionary import canonicalize_brand_mentions
 
 _logger = logging.getLogger(__name__)
@@ -40,26 +41,20 @@ def _call_translategemma(text: str, source_lang: str) -> str | None:
     안 죽어야 한다."""
     try:
         prompt = _build_translate_prompt(text, source_lang)
-        if settings.translation_backend == "llamacpp":
-            response: httpx.Response = httpx.post(
-                f"{settings.translation_llamacpp_url}/v1/chat/completions",
-                json={
-                    "model": settings.llamacpp_translation_model,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "stream": False,
-                },
-                timeout=60.0,
-            )
-        else:
-            response = httpx.post(
-                f"{settings.translation_ollama_url}/api/generate",
-                json={
-                    "model": settings.local_translation_model,
-                    "prompt": prompt,
-                    "stream": False,
-                },
-                timeout=60.0,
-            )
+        validate_backend(settings.translation_backend)
+        response: httpx.Response = httpx.post(
+            chat_url(settings.translation_llamacpp_url),
+            headers=llamacpp_headers(),
+            json={
+                "model": settings.llamacpp_translation_model,
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": False,
+                "max_tokens": 2048,
+                "reasoning_effort": "none",
+                "chat_template_kwargs": {"enable_thinking": False},
+            },
+            timeout=60.0,
+        )
 
         if response.status_code != 200:
             _logger.warning(
@@ -68,13 +63,11 @@ def _call_translategemma(text: str, source_lang: str) -> str | None:
             return None
 
         result = response.json()
-        if settings.translation_backend == "llamacpp":
-            translated = str(result["choices"][0]["message"]["content"]).strip()
-        else:
-            translated = str(result.get("response", "")).strip()
-
-        if not translated:
+        translated = result["choices"][0]["message"]["content"]
+        if not isinstance(translated, str) or not translated.strip():
+            _logger.warning("Translation API returned empty or invalid content")
             return None
+        translated = translated.strip()
 
         return translated
 
