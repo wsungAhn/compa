@@ -83,7 +83,7 @@ def _parse_updated(raw: str) -> datetime | None:
 def match_brand(title: str, brands: list[str]) -> str | None:
     """제목에 등장하는 브랜드.
 
-    감지 사전을 먼저 본다 — 수집 레지스트리(가격을 받을 수 있는 26개)는 감지 범위가
+    감지 사전을 먼저 본다 — 수집 레지스트리(가격을 받을 수 있는 브랜드)는 감지 범위가
     너무 좁아서 K뷰티 딜을 통째로 흘렸다(2026-08-06 Torriden 실측).
     """
     detected = detect_brand(title)

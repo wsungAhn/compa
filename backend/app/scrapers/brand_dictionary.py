@@ -2,7 +2,7 @@
 
 두 목록은 목적이 다르다:
 
-- `brands/shopify.py:BRANDS` (26개) = **가격을 수집할 수 있는** 브랜드.
+- `brands/shopify.py:BRANDS` = **가격을 수집할 수 있는** 브랜드.
   products.json이 열려 있어야 들어간다.
 - 이 파일 = **딜을 감지할** 브랜드. 가격 수집이 안 돼도, 우리가 파는 게 아니어도,
   "이 브랜드 세일이 났다"를 알아야 하면 넣는다.
@@ -86,6 +86,23 @@ BRAND_ALIASES: dict[str, tuple[str, ...]] = {
     "Byredo": ("byredo",),
     "Aesop": ("aesop",),
     "Guerlain": ("guerlain",),
+    "Omorovicza": ("omorovicza", "오모로비카"),
+    "Erno Laszlo": ("erno laszlo", "에르노라즐로"),
+    "Royal Fern": ("royal fern",),
+    "Tom Ford Beauty": ("tom ford beauty", "톰포드뷰티", "톰포드 뷰티"),
+    "Dermalogica": ("dermalogica", "더말로지카"),
+    "Rodial": ("rodial",),
+    "Susanne Kaufmann": ("susanne kaufmann",),
+    "Kjaer Weis": ("kjaer weis",),
+    "Vintner's Daughter": ("vintner's daughter", "vintners daughter"),
+    "Dr. Loretta": ("dr. loretta", "dr loretta"),
+    "Makeup by Mario": ("makeup by mario",),
+    "Danessa Myricks": ("danessa myricks",),
+    "Violette_FR": ("violette_fr", "violette fr"),
+    "Anastasia Beverly Hills": ("anastasia beverly hills",),
+    "Supergoop!": ("supergoop", "슈퍼굽"),
+    "Oribe": ("oribe", "오리베"),
+    "Natasha Denona": ("natasha denona", "나타샤데노나"),
     # ── 미국 인디 / DTC ─────────────────────────────────────
     "Glossier": ("glossier",),
     "Rare Beauty": ("rare beauty",),

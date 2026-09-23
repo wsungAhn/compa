@@ -198,11 +198,36 @@ BRANDS: list[tuple[str, str, str]] = [
     ("Saie 공홈", "saiehello.com", "Saie"),
     ("Natasha Denona 공홈", "natashadenona.com", "Natasha Denona"),
     ("Pat McGrath 공홈", "www.patmcgrath.com", "Pat McGrath Labs"),
+    # 럭셔리 확장 (2026-09-23 products.json 실측 — docs/design-luxury-brand-coverage-2026-09-23.md)
+    ("Clinique 공홈", "www.clinique.com", "Clinique"),
+    ("Chantecaille 공홈", "www.chantecaille.com", "Chantecaille"),
+    # 루트는 en-uk(GBP)로 302 — 미국 스토어프런트 경로를 직접 쓴다
+    ("Augustinus Bader 공홈", "augustinusbader.com/en-us", "Augustinus Bader"),
+    ("Omorovicza 공홈", "www.omorovicza.com", "Omorovicza"),
+    ("Erno Laszlo 공홈", "ernolaszlo.com", "Erno Laszlo"),
+    ("Royal Fern 공홈", "royalfern.com", "Royal Fern"),
+    ("Tom Ford Beauty 공홈", "www.tomfordbeauty.com", "Tom Ford Beauty"),
+    ("Hourglass 공홈", "www.hourglasscosmetics.com", "Hourglass"),
+    ("Laura Mercier 공홈", "www.lauramercier.com", "Laura Mercier"),
+    ("Dermalogica 공홈", "www.dermalogica.com", "Dermalogica"),
+    ("Rodial 공홈", "rodial.com", "Rodial"),
+    ("Susanne Kaufmann 공홈", "www.susannekaufmann.com", "Susanne Kaufmann"),
+    ("Kjaer Weis 공홈", "www.kjaerweis.com", "Kjaer Weis"),
+    ("Vintner's Daughter 공홈", "vintnersdaughter.com", "Vintner's Daughter"),
+    ("Dr. Loretta 공홈", "drloretta.com", "Dr. Loretta"),
+    ("Makeup by Mario 공홈", "www.makeupbymario.com", "Makeup by Mario"),
+    ("Danessa Myricks 공홈", "danessamyricksbeauty.com", "Danessa Myricks"),
+    ("Violette_FR 공홈", "www.violettefr.com", "Violette_FR"),
+    ("Anastasia Beverly Hills 공홈", "www.anastasiabeverlyhills.com", "Anastasia Beverly Hills"),
+    ("Rhode 공홈", "www.rhodeskin.com", "Rhode"),
+    ("Glow Recipe 공홈", "www.glowrecipe.com", "Glow Recipe"),
+    ("Supergoop 공홈", "supergoop.com", "Supergoop!"),
+    ("Oribe 공홈", "www.oribe.com", "Oribe"),
 ]
 
 
 def _brand_class(platform_name: str, domain: str, brand: str) -> type[ShopifyBrandScraper]:
-    """브랜드별 서브클래스를 레지스트리에서 생성. 26개를 손으로 쓰지 않는다."""
+    """브랜드별 서브클래스를 레지스트리에서 생성. 수십 개를 손으로 쓰지 않는다."""
     class_name = "".join(ch for ch in brand.title() if ch.isalnum()) + "OfficialScraper"
     return type(
         class_name,
