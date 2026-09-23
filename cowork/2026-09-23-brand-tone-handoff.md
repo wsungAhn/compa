@@ -7,7 +7,7 @@
 > **시작 기록(Started by):** _(empty — the first party to start work stamps
 > `session=<id> machine=<tag> started=<ISO8601>` here)_
 >
-> **작성자(Author):** Claude Opus 5.5 (design & review) → **수행자(Executor):** Codex gpt-5.5
+> **작성자(Author):** Claude Opus 5.5 (design & review) → **수행자(Executor):** Codex gpt-5.6-luna (low)
 > **작업명(Task):** Apply the compa brand tokens (color, type, surfaces) to every public screen.
 > **설계 근거(Design basis):** `docs/design-brand-tone-2026-09-23.md` (read it) and
 > `docs/brand/brand-identity-2026-09-23.md` sections 4–5 (the values).
