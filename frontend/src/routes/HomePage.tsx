@@ -6,7 +6,6 @@ import { SiteEventsGrid } from '../components/SiteEventsGrid'
 import { EventTimeline } from '../components/EventTimeline'
 import { PriceChart } from '../components/PriceChart'
 import { SiteManager } from '../components/SiteManager'
-import { AdSlot } from '../components/AdSlot'
 import { FeedbackButton } from '../components/FeedbackButton'
 import { PremiumBanner } from '../components/PremiumBanner'
 import { useSitePrefs } from '../hooks/useSitePrefs'
@@ -166,11 +165,6 @@ export function HomePage() {
               </div>
             )}
 
-            {data && !data.premium && (
-              <div className='mt-6'>
-                <AdSlot slot='results-bottom' />
-              </div>
-            )}
           </div>
         )}
 
@@ -179,9 +173,6 @@ export function HomePage() {
             <div className="text-center py-16 text-gray-300">
               <div className="text-6xl mb-4">🔍</div>
               <p className="text-sm">검색어를 입력해 할인 정보를 확인하세요</p>
-            </div>
-            <div>
-              <AdSlot slot='home' />
             </div>
           </div>
         )}
