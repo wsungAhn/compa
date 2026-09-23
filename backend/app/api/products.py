@@ -220,6 +220,7 @@ def _build_recommendation(events: list[SaleEvent], country: str | None = None) -
             "off_list_pct": position.off_list_pct,
             "currency": currency,
             "history_days": position.history_days,
+            "observed_since": position.observed_since,
             "sample_size": position.sample_size,
         })
 
@@ -252,8 +253,8 @@ def _build_recommendation(events: list[SaleEvent], country: str | None = None) -
         return _with_position(Recommendation(
             verdict="good_deal",
             reason=(
-                f"관측 이력이 {position.history_days}일({position.sample_size}건)로 짧아 "
-                "최저가 판단이 이릅니다. 며칠 뒤 다시 확인해 보세요."
+                f"{position.observed_since.isoformat()}부터 관측 중입니다({position.sample_size}건). "
+                "최저가 판단은 며칠 더 쌓인 뒤에 할 수 있습니다."
             ),
             next_event_name=upcoming.name if upcoming else None,
             days_until_next=upcoming.days_until if upcoming else None,

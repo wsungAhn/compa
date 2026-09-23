@@ -48,6 +48,7 @@ class Recommendation(BaseModel):
     off_list_pct: float | None = None  # 정가 대비 할인율
     currency: str | None = None
     history_days: int | None = None  # 관측 기간 — 얕으면 얕다고 말한다
+    observed_since: date | None = None  # 첫 관측일 — "0일" 대신 언제부터 봤는지 말한다
     sample_size: int | None = None
 
 

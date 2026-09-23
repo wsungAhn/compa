@@ -67,6 +67,19 @@ def test_position_measures_distance_from_observed_low() -> None:
     assert not pos.at_observed_low
 
 
+def test_history_runs_from_first_observation_to_today() -> None:
+    """관측 기간은 첫 관측부터 조회 당일까지다 — 마지막 관측일에서 끊지 않는다."""
+    now = price_position.now_utc()
+    obs = [
+        price_position.Observation(price=100.0, observed_at=now - timedelta(days=30)),
+        price_position.Observation(price=90.0, observed_at=now - timedelta(days=20)),
+    ]
+    pos = price_position.compute(obs, now=now)
+    assert pos is not None
+    assert pos.history_days == 30
+    assert pos.observed_since == (now - timedelta(days=30)).date()
+
+
 def test_position_without_observations_is_none() -> None:
     assert price_position.compute([]) is None
 
@@ -112,8 +125,11 @@ def test_shallow_history_is_reported_not_hidden() -> None:
     events = [_event(100.0, 0), _event(120.0, 0)]
     rec = _build_recommendation(events)
     assert rec.verdict == "good_deal"
-    assert "이력이 0일" in rec.reason
     assert rec.history_days == 0
+    # "0일"은 데이터가 없다는 뜻으로 읽힌다 — 언제부터 보고 있는지를 말한다.
+    assert "0일" not in rec.reason
+    assert rec.observed_since is not None
+    assert f"{rec.observed_since.isoformat()}부터 관측" in rec.reason
 
 
 def test_position_fields_are_attached_to_every_verdict() -> None:

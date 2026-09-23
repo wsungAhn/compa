@@ -42,3 +42,10 @@ Rare Beauty 2, Nécessaire 3.
   no events after 24h).
 - Retailer brand-catalog sweep for the closed houses (Sephora brand pages / other retailers).
 - `MAX_PER_BRAND=100` and first-page-only `products.json` (250) truncate Clinique and Tom Ford.
+
+## Observation-window fix (2026-09-23, user decision)
+`history_days` now runs from the first observation to the request time, not to the last
+observation. Measured: 275 of 4,184 products (collection gaps) showed a shorter history than
+they really had. A shallow history now says "YYYY-MM-DD부터 관측 중(N건)" instead of "0일",
+and the API exposes `observed_since`. This does not create past data. Products first seen
+today are still day 0. Historical backfill (e.g. Wayback snapshots) is a Layer B candidate.

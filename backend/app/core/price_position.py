@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 
 @dataclass(frozen=True)
@@ -27,8 +27,10 @@ class PricePosition:
     above_min_pct: float
     # 정가(list price) 대비 할인율. 정가 정보가 없으면 None.
     off_list_pct: float | None
+    # 첫 관측부터 조회 당일까지. 마지막 관측일에서 끊으면 수집이 멈춘 상품의 이력이 줄어든다.
     history_days: int
     sample_size: int
+    observed_since: date
 
     @property
     def at_observed_low(self) -> bool:
@@ -36,7 +38,7 @@ class PricePosition:
         return self.above_min_pct <= 2.0
 
 
-def compute(observations: list[Observation]) -> PricePosition | None:
+def compute(observations: list[Observation], now: datetime | None = None) -> PricePosition | None:
     """관측 시계열 → 가격 위치. 관측이 없으면 None."""
     usable = [o for o in observations if o.price and o.price > 0]
     if not usable:
@@ -53,7 +55,7 @@ def compute(observations: list[Observation]) -> PricePosition | None:
         off_list_pct = round((1 - latest.price / latest.list_price) * 100, 1)
 
     oldest = min(usable, key=lambda o: o.observed_at)
-    span = latest.observed_at - oldest.observed_at
+    span = (now or now_utc()) - oldest.observed_at
     # tz-naive/aware가 섞여 들어오면 비교에서 터진다 — 일수만 쓰므로 방어적으로 처리.
     history_days = max(span.days, 0)
 
@@ -65,6 +67,7 @@ def compute(observations: list[Observation]) -> PricePosition | None:
         off_list_pct=off_list_pct,
         history_days=history_days,
         sample_size=len(usable),
+        observed_since=oldest.observed_at.date(),
     )
 
 
