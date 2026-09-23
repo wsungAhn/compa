@@ -1,16 +1,16 @@
 /* Deal signal feed page styles. */
 .deal-feed-page {
   min-height: 100vh;
-  background: #fafafa;
-  color: #111114;
-  font-family: 'Instrument Sans', sans-serif;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
 }
 
 .deal-feed-topbar {
   height: 64px;
   padding: 0 48px;
-  background: #ffffff;
-  border-bottom: 1px solid #e4e4e7;
+  background: var(--color-paper);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-ink) 10%, transparent);
   display: flex;
   align-items: center;
   gap: 36px;
@@ -23,13 +23,13 @@
 .deal-feed-source,
 .deal-feed-discount,
 .deal-feed-price {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: var(--font-display);
 }
 
 .deal-feed-logo {
-  color: #111114;
+  color: var(--color-ink);
   font-size: 19px;
-  font-weight: 700;
+  font-weight: 500;
   letter-spacing: -0.02em;
   text-decoration: none;
 }
@@ -46,17 +46,17 @@
   height: 64px;
   display: inline-flex;
   align-items: center;
-  color: #71717a;
+  color: color-mix(in srgb, var(--color-ink) 70%, transparent);
   text-decoration: none;
 }
 
 .deal-feed-nav a:hover {
-  color: #111114;
+  color: var(--color-ink);
 }
 
 .deal-feed-nav a.active {
-  color: #111114;
-  box-shadow: inset 0 -2px 0 #0e96c1;
+  color: var(--color-ink);
+  border-bottom: 2px solid var(--color-moss);
 }
 
 .deal-feed-live {
@@ -65,7 +65,7 @@
   align-items: center;
   gap: 7px;
   font-size: 12px;
-  color: #71717a;
+  color: color-mix(in srgb, var(--color-ink) 70%, transparent);
   white-space: nowrap;
 }
 
@@ -73,7 +73,7 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #0e96c1;
+  background: var(--color-moss);
   display: inline-block;
 }
 
@@ -109,21 +109,21 @@
 .deal-feed-main h1 {
   margin: 0 0 8px;
   font-size: 28px;
-  font-weight: 600;
+  font-weight: 400;
   letter-spacing: -0.02em;
 }
 
 .deal-feed-copy {
   margin: 0;
   font-size: 14px;
-  color: #71717a;
+  color: color-mix(in srgb, var(--color-ink) 70%, transparent);
   line-height: 1.5;
 }
 
 .deal-feed-list,
 .deal-feed-panel {
-  background: #ffffff;
-  border: 1px solid #e4e4e7;
+  background: var(--color-paper);
+  border: 1px solid color-mix(in srgb, var(--color-ink) 10%, transparent);
 }
 
 .deal-feed-list {
@@ -137,14 +137,14 @@
   justify-content: space-between;
   gap: 24px;
   padding: 18px 24px;
-  border-bottom: 1px solid #ececef;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-ink) 10%, transparent);
   color: inherit;
   text-decoration: none;
   box-sizing: border-box;
 }
 
 a.deal-feed-item:hover {
-  background: #f7fbfc;
+  background: var(--color-linen);
   text-decoration: none;
 }
 
@@ -171,10 +171,10 @@ a.deal-feed-item:hover {
 
 .deal-feed-brand {
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: #71717a;
+  color: color-mix(in srgb, var(--color-ink) 70%, transparent);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -182,7 +182,7 @@ a.deal-feed-item:hover {
 
 .deal-feed-time {
   font-size: 11px;
-  color: #71717a;
+  color: color-mix(in srgb, var(--color-ink) 70%, transparent);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -192,7 +192,7 @@ a.deal-feed-item:hover {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #111114;
+  color: var(--color-ink);
   font-size: 15px;
   font-weight: 500;
   line-height: 1.4;
@@ -204,13 +204,13 @@ a.deal-feed-item:hover {
   gap: 8px;
   margin-top: 6px;
   font-size: 12px;
-  color: #9a9aa3;
+  color: color-mix(in srgb, var(--color-ink) 70%, transparent);
 }
 
 .deal-feed-source {
   padding: 1px 7px;
-  border: 1px solid #e4e4e7;
-  color: #71717a;
+  border: 1px solid color-mix(in srgb, var(--color-ink) 10%, transparent);
+  color: color-mix(in srgb, var(--color-ink) 70%, transparent);
   font-size: 11px;
   font-weight: 500;
   letter-spacing: 0.04em;
@@ -224,15 +224,15 @@ a.deal-feed-item:hover {
 }
 
 .deal-feed-discount {
-  color: #0e96c1;
+  color: var(--color-moss);
   font-size: 18px;
-  font-weight: 600;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
 
 .deal-feed-price {
   margin-top: 3px;
-  color: #71717a;
+  color: color-mix(in srgb, var(--color-ink) 70%, transparent);
   font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
@@ -253,41 +253,41 @@ a.deal-feed-item:hover {
 }
 
 .deal-feed-dot.muted {
-  background: #c4c4cb;
+  background: var(--color-stone);
 }
 
 .deal-feed-panel-title {
   margin-top: 6px;
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .deal-feed-panel-copy {
   max-width: 320px;
-  color: #71717a;
+  color: color-mix(in srgb, var(--color-ink) 70%, transparent);
   font-size: 13px;
   line-height: 1.55;
 }
 
 .deal-feed-empty-link {
   margin-top: 10px;
-  color: #9a9aa3;
+  color: color-mix(in srgb, var(--color-ink) 70%, transparent);
   font-size: 12px;
 }
 
 .deal-feed-empty-link a {
-  color: #0e96c1;
+  color: var(--color-moss);
   text-decoration: none;
 }
 
 .deal-feed-empty-link a:hover {
-  color: #0b7a9e;
+  color: var(--color-ink);
   text-decoration: underline;
 }
 
 .deal-feed-footnote {
   margin: 14px 2px 0;
-  color: #9a9aa3;
+  color: color-mix(in srgb, var(--color-ink) 70%, transparent);
   font-size: 12px;
 }
 
@@ -327,7 +327,7 @@ a.deal-feed-item:hover {
     width: calc(100% + 40px);
     margin: 0 -20px;
     padding: 0 20px;
-    border-top: 1px solid #e4e4e7;
+    border-top: 1px solid color-mix(in srgb, var(--color-ink) 10%, transparent);
     gap: 20px;
     font-size: 13px;
   }
@@ -371,8 +371,8 @@ a.deal-feed-item:hover {
   .deal-feed-item {
     display: block;
     padding: 14px 16px;
-    border: 1px solid #e4e4e7;
-    background: #ffffff;
+    border: 1px solid color-mix(in srgb, var(--color-ink) 10%, transparent);
+    background: var(--color-paper);
   }
 
   .deal-feed-meta-line {

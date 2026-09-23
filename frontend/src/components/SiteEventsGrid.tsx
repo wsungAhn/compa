@@ -47,7 +47,7 @@ export function SiteEventsGrid({ eventsByPlatform }: Props) {
 
   return (
     <div className="space-y-4">
-      <h3 className="text-sm font-semibold text-gray-600">사이트별 할인 이력</h3>
+      <h3 className="text-sm font-medium text-ink">사이트별 할인 이력</h3>
       <div className="platform-grid">
         {platforms.map(platformName => {
           const events = eventsByPlatform[platformName]

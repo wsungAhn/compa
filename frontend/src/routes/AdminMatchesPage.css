@@ -4,7 +4,7 @@
   color: #111114;
   display: flex;
   flex-direction: column;
-  font-family: 'Instrument Sans', sans-serif;
+  font-family: var(--font-sans);
 }
 
 .admin-match-topbar {
@@ -33,7 +33,7 @@
 .admin-match-score,
 .admin-match-empty-count,
 .admin-match-resolved-label {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: var(--font-display);
 }
 
 .admin-match-logo {
@@ -245,7 +245,7 @@
 
 .admin-match-product-id {
   margin-top: 3px;
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: var(--font-display);
   font-size: 12px;
   color: #9a9aa3;
   font-variant-numeric: tabular-nums;
@@ -258,7 +258,7 @@
   display: flex;
   justify-content: center;
   color: #c4c4cb;
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: var(--font-display);
   font-size: 14px;
 }
 
@@ -306,7 +306,7 @@
 }
 
 .admin-match-button {
-  font-family: 'Instrument Sans', sans-serif;
+  font-family: var(--font-sans);
   font-size: 13px;
   font-weight: 600;
   padding: 8px 18px;
@@ -444,7 +444,7 @@
   border: 1px solid #d4d4d8;
   background: #ffffff;
   color: #111114;
-  font-family: 'Instrument Sans', sans-serif;
+  font-family: var(--font-sans);
   font-size: 13px;
 }
 

@@ -20,7 +20,8 @@ interface ChartDataPoint {
   [key: string]: string | number | undefined
 }
 
-const COLORS = ['#ef4444', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316']
+const COLORS = ['#1E1D1B', '#3E5646', '#8A8378']
+const DASHES = ['', '6 4', '2 3']
 
 function formatPrice(price: number | null, currency: string | null): string {
   if (!price || !currency) return ''
@@ -109,11 +110,11 @@ export function PriceChart({ events }: Props) {
   const platformList = Array.from(platforms)
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+    <div className="bg-paper rounded-md border border-ink/10 p-5">
       <div className="mb-4">
-        <h3 className="text-sm font-semibold text-gray-700">가격 추이</h3>
+        <h3 className="text-sm font-medium text-ink">가격 추이</h3>
         {excluded.length > 0 && (
-          <p className="text-xs text-gray-400 mt-1">
+          <p className="text-xs text-ink/70 mt-1">
             {excluded.join(', ')} (단위 제외)
           </p>
         )}
@@ -159,9 +160,10 @@ export function PriceChart({ events }: Props) {
                 key={platform}
                 type="monotone"
                 dataKey={platform}
-                stroke={COLORS[idx % COLORS.length]}
-                strokeWidth={2}
-                dot={{ fill: COLORS[idx % COLORS.length], r: 4 }}
+                stroke={COLORS[idx % 3]}
+                strokeDasharray={DASHES[Math.floor(idx / 3) % 3]}
+                strokeWidth={1.25}
+                dot={{ fill: COLORS[idx % 3], r: 2 }}
                 connectNulls
                 isAnimationActive={false}
               />
@@ -171,7 +173,7 @@ export function PriceChart({ events }: Props) {
       </div>
 
       {currency && (
-        <p className="text-xs text-gray-400 mt-3 text-center">
+        <p className="text-xs text-ink/70 mt-3 text-center">
           단위: {getCurrencySymbol(currency)}
         </p>
       )}

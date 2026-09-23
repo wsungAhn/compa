@@ -1,5 +1,22 @@
 @import "tailwindcss";
 
+@theme {
+  --color-paper: #F7F4EF;
+  --color-linen: #EDE8E0;
+  --color-ink: #1E1D1B;
+  --color-stone: #8A8378;
+  --color-moss: #3E5646;
+  --color-clay: #A5634D;
+  --font-display: "Fraunces", "Pretendard Variable", "Pretendard", "Noto Sans JP", "Noto Sans SC", Georgia, serif; /* CJK headings fall to sans: brand rule "no serif CJK headings" */
+  --font-sans: "Inter", "Pretendard Variable", "Pretendard", "Noto Sans JP", "Noto Sans SC", system-ui, sans-serif;
+}
+
+body {
+  background-color: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
 .platform-grid {
   display: grid;
   gap: 1rem;

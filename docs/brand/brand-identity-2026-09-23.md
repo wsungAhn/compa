@@ -210,7 +210,7 @@ A 방향 AI 이미지 프롬프트 (8단계에서 확장):
   --color-stone: #8A8378;
   --color-moss: #3E5646;
   --color-clay: #A5634D;
-  --font-display: "Fraunces", Georgia, serif;
+  --font-display: "Fraunces", "Pretendard Variable", "Pretendard", "Noto Sans JP", "Noto Sans SC", Georgia, serif; /* 2026-09-23: CJK 제목이 시스템 명조로 떨어지지 않게 산세리프 폴백 — "CJK에 세리프 제목 혼용" 금지 규칙 */
   --font-sans: "Inter", "Pretendard", "Noto Sans JP", "Noto Sans SC", system-ui, sans-serif;
 }
 ```

@@ -5,7 +5,7 @@
   color: #111114;
   display: flex;
   flex-direction: column;
-  font-family: 'Instrument Sans', sans-serif;
+  font-family: var(--font-sans);
 }
 
 .coverage-topbar {
@@ -43,7 +43,7 @@
 .coverage-brand-cell,
 .coverage-country-cell,
 .coverage-age {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: var(--font-display);
 }
 
 .coverage-logo {
@@ -146,7 +146,7 @@
   border: 1px solid #d4d4d8;
   background: #ffffff;
   color: #111114;
-  font-family: 'Instrument Sans', sans-serif;
+  font-family: var(--font-sans);
   font-size: 13px;
 }
 
@@ -162,7 +162,7 @@
 }
 
 .coverage-button {
-  font-family: 'Instrument Sans', sans-serif;
+  font-family: var(--font-sans);
   font-size: 13px;
   font-weight: 600;
   padding: 8px 18px;
@@ -301,7 +301,7 @@
 
 .coverage-orphan-heading h1 {
   margin: 0;
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: var(--font-display);
   font-size: 18px;
   font-weight: 600;
 }

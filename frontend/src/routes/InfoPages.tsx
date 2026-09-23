@@ -7,14 +7,14 @@ const UPDATED = '2026-09-23'
 
 function InfoLayout({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-paper">
       <header className="max-w-2xl mx-auto px-4 pt-8">
-        <Link to="/" className="text-sm font-semibold text-gray-700">← compa</Link>
+        <Link to="/" className="text-sm font-medium text-ink">← compa</Link>
       </header>
-      <main className="max-w-2xl mx-auto px-4 py-8 text-sm leading-relaxed text-gray-700 space-y-4">
-        <h1 className="text-2xl font-semibold text-gray-900">{title}</h1>
+      <main className="max-w-2xl mx-auto px-4 py-8 text-sm leading-relaxed text-ink/70 space-y-4">
+        <h1 className="text-2xl font-display font-normal text-ink">{title}</h1>
         {children}
-        <p className="text-xs text-gray-400">Last updated {UPDATED}</p>
+        <p className="text-xs text-ink/70">Last updated {UPDATED}</p>
       </main>
       <SiteFooter />
     </div>
@@ -22,7 +22,7 @@ function InfoLayout({ title, children }: { title: string; children: ReactNode })
 }
 
 const H = ({ children }: { children: ReactNode }) => (
-  <h2 className="text-base font-semibold text-gray-900 pt-4">{children}</h2>
+  <h2 className="text-base font-display font-normal text-ink pt-4">{children}</h2>
 )
 
 const Mail = () => (
@@ -75,6 +75,7 @@ export function PrivacyPage() {
       <ul className="list-disc pl-5 space-y-1">
         <li>Cloudflare delivers the site and processes connection data.</li>
         <li>Google Fonts serves the site fonts and receives your IP address.</li>
+        <li>jsDelivr serves the Korean font (Pretendard) and receives your IP address.</li>
         <li>
           Retailer and affiliate links (such as Amazon) take you to other sites, which may set
           their own cookies under their own policies.
@@ -87,7 +88,7 @@ export function PrivacyPage() {
       <p>
         compa는 회원가입이 없고 분석·광고 추적 도구를 쓰지 않습니다. 검색어·결과 수·시각,
         보내주신 피드백(연락처는 입력한 경우에만), 보안·과다요청 방지를 위한 서버 로그(IP)만
-        처리합니다. 사이트는 Cloudflare로 전송되고 Google Fonts를 사용하며, 제휴 링크(Amazon 등)로
+        처리합니다. 사이트는 Cloudflare로 전송되고 Google Fonts와 jsDelivr(Pretendard)를 사용하며, 제휴 링크(Amazon 등)로
         이동한 사이트는 자체 정책에 따라 쿠키를 쓸 수 있습니다. 개인정보를 판매하지 않습니다.
         삭제 요청·문의: <Mail />
       </p>

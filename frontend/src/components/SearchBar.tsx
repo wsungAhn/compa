@@ -201,62 +201,61 @@ export function SearchBar({ onSelect, onCollecting }: Props) {
 
   return (
     <div ref={containerRef} className="relative w-full max-w-xl">
-      <div className="flex items-center gap-2 bg-white border-2 border-rose-300 rounded-2xl px-4 py-3 shadow-sm focus-within:border-rose-500 transition-colors">
-        <span className="text-gray-400 text-lg">🔍</span>
+      <div className="flex items-center gap-2 bg-paper border border-ink/20 rounded-md px-4 py-3 focus-within:border-moss transition-colors">
         <input
-          className="flex-1 outline-none text-gray-800 placeholder-gray-400 text-base"
+          className="flex-1 outline-none text-ink placeholder-ink/70 text-base"
           placeholder="제품명을 입력하세요 (예: 설화수 윤조에센스)"
           value={query}
           onChange={e => handleSearch(e.target.value)}
           onKeyDown={handleKeyDown}
           onFocus={() => (results.length > 0 || (query.trim().length >= 2 && results.length === 0)) && setOpen(true)}
         />
-        {(loading || collecting) && <span className="text-gray-400 text-sm animate-pulse">검색 중…</span>}
+        {(loading || collecting) && <span className="text-ink/70 text-sm animate-pulse">검색 중…</span>}
       </div>
 
       {collecting && results.length === 0 && (
-        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
-          <div className="px-4 py-3 text-sm text-gray-500 text-center">
+        <div className="absolute z-10 w-full mt-1 bg-paper border border-ink/10 rounded-md overflow-hidden">
+          <div className="px-4 py-3 text-sm text-ink/70 text-center">
             수집 중...
           </div>
         </div>
       )}
 
       {open && results.length > 0 && (
-        <ul className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+        <ul className="absolute z-10 w-full mt-1 bg-paper border border-ink/10 rounded-md overflow-hidden">
           {collecting && (
-            <li className="px-4 py-2 bg-amber-50 border-b border-amber-200">
-              <div className="text-xs text-amber-700">수집 중...</div>
+            <li className="px-4 py-2 bg-linen border-b border-ink/10">
+              <div className="text-xs text-ink/70">수집 중...</div>
             </li>
           )}
           {collectionTimeout && (
-            <li className="px-4 py-2 bg-red-50 border-b border-red-200">
-              <div className="text-xs text-red-700">수집 시간이 초과됐어요. 부분 결과만 표시됩니다.</div>
+            <li className="px-4 py-2 bg-linen border-b border-ink/10">
+              <div className="text-xs text-ink">수집 시간이 초과됐어요. 부분 결과만 표시됩니다.</div>
             </li>
           )}
           {results.length > 1 && !collecting && (
-            <li className="px-4 py-2 bg-blue-50 border-b border-blue-200">
-              <div className="text-xs text-blue-700 font-medium">{results.length}개 결과 찾았어요</div>
+            <li className="px-4 py-2 bg-linen border-b border-ink/10">
+              <div className="text-xs text-ink font-medium">{results.length}개 결과 찾았어요</div>
             </li>
           )}
           {results.map(p => (
             <li
               key={p.id}
-              className="px-4 py-3 hover:bg-rose-50 cursor-pointer transition-colors border-t border-gray-100"
+              className="px-4 py-3 hover:bg-linen cursor-pointer transition-colors border-t border-ink/10"
               onClick={() => handleSelect(p)}
             >
-              <div className="text-sm font-medium text-gray-800">{p.name_kr ?? p.name_en}</div>
-              {p.brand && <div className="text-xs text-gray-400">{p.brand}</div>}
+              <div className="text-sm font-medium text-ink">{p.name_kr ?? p.name_en}</div>
+              {p.brand && <div className="text-xs text-ink/70">{p.brand}</div>}
             </li>
           ))}
         </ul>
       )}
 
       {open && results.length === 0 && !collecting && query.trim().length >= 2 && (
-        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
-          <div className="px-4 py-3 text-sm text-gray-400 text-center">
+        <div className="absolute z-10 w-full mt-1 bg-paper border border-ink/10 rounded-md overflow-hidden">
+          <div className="px-4 py-3 text-sm text-ink/70 text-center">
             <span>Enter를 눌러 </span>
-            <span className="font-semibold text-gray-600">"{query}"</span>
+            <span className="font-medium text-ink">"{query}"</span>
             <span> 검색</span>
           </div>
         </div>

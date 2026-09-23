@@ -123,13 +123,13 @@ function CustomTooltip(props: unknown) {
   const currency = e.currency ?? null
 
   return (
-    <div className="bg-gray-800 text-white text-[11px] rounded-lg px-3 py-2 shadow-xl pointer-events-none">
-      <p className="font-semibold mb-0.5">{e.event_name ?? '-'}</p>
+    <div className="bg-ink text-paper text-[11px] rounded-md px-3 py-2 pointer-events-none">
+      <p className="font-medium mb-0.5">{e.event_name ?? '-'}</p>
       <p>
         {formatPrice(e.sale_price, currency)}
-        <span className="text-blue-300 ml-1">-{point.discount}%</span>
+        <span className="text-paper ml-1 tabular-nums">-{point.discount}%</span>
       </p>
-      <p className="text-gray-400 text-[10px] mt-0.5">
+      <p className="text-paper/70 text-[10px] mt-0.5">
         {e.start_date} ~ {e.end_date ?? '?'}
       </p>
     </div>
@@ -152,25 +152,23 @@ export function SiteTimeline({ platformName, events, isCheapest }: SiteTimelineP
   const chartData = buildChartData(timelineEvents)
   const maxDiscount = Math.max(...chartData.map(p => p.discount), 10)
 
-  const gradientId = `grad-${platformName.replace(/\s+/g, '-')}`
-
   return (
-    <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden flex flex-col">
+    <div className="bg-paper rounded-md border border-ink/10 overflow-hidden flex flex-col">
       {/* 헤더 */}
-      <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
+      <div className="px-4 py-3 border-b border-ink/10 bg-linen">
         <div className="flex items-center gap-2">
           <span className="text-lg">{flag}</span>
-          <span className="font-semibold text-gray-800 text-sm flex-1">{platformName}</span>
+          <span className="font-medium text-ink text-sm flex-1">{platformName}</span>
           {currentPrice != null && (
             <div className="flex items-center gap-2">
               <div className="text-right">
-                <div className="text-xs text-gray-500">{currentLabel}</div>
-                <div className={`font-semibold text-sm ${isCurrentOngoing ? 'text-rose-600' : 'text-gray-700'}`}>
+                <div className="text-xs text-ink/70">{currentLabel}</div>
+                <div className={`font-medium text-sm tabular-nums ${isCurrentOngoing ? 'text-moss' : 'text-ink'}`}>
                   {formatPrice(currentPrice, currency)}
                 </div>
               </div>
               {isCheapest && (
-                <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1 py-0.5 rounded whitespace-nowrap">
+                <span className="text-[10px] bg-moss text-paper px-1 py-0.5 rounded whitespace-nowrap">
                   최저가
                 </span>
               )}
@@ -181,7 +179,7 @@ export function SiteTimeline({ platformName, events, isCheapest }: SiteTimelineP
               href={currentUrl}
               target="_blank"
               rel="noopener"
-              className="ml-2 text-blue-500 hover:text-blue-700 text-lg"
+              className="ml-2 text-ink/70 hover:text-moss text-lg"
               title="상품 페이지 이동"
             >
               →
@@ -193,19 +191,13 @@ export function SiteTimeline({ platformName, events, isCheapest }: SiteTimelineP
       {/* 타임라인 (AreaChart) */}
       <div className="px-4 pb-4 flex-1">
         {timelineEvents.length === 0 ? (
-          <p className="text-gray-400 text-xs text-center py-8">수집된 이력 없음</p>
+          <p className="text-ink/70 text-xs text-center py-8">수집된 이력 없음</p>
         ) : (
           <ResponsiveContainer width="100%" height={100}>
             <AreaChart
               data={chartData}
               margin={{ top: 8, right: 4, left: -30, bottom: 0 }}
             >
-              <defs>
-                <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.02} />
-                </linearGradient>
-              </defs>
               <XAxis
                 dataKey="date"
                 tickFormatter={formatDateTick}
@@ -222,11 +214,11 @@ export function SiteTimeline({ platformName, events, isCheapest }: SiteTimelineP
               <Area
                 type="stepAfter"
                 dataKey="discount"
-                stroke="#3b82f6"
+                stroke="#3E5646"
                 strokeWidth={1.5}
-                fill={`url(#${gradientId})`}
+                fill="#EDE8E0"
                 dot={false}
-                activeDot={{ r: 4, fill: '#3b82f6' }}
+                activeDot={{ r: 4, fill: '#3E5646' }}
                 isAnimationActive={false}
               />
             </AreaChart>

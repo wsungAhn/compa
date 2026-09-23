@@ -62,12 +62,11 @@ export function HomePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b border-gray-100 sticky top-0 z-20 shadow-sm">
+    <div className="min-h-screen bg-paper">
+      <header className="bg-paper border-b border-ink/10 sticky top-0 z-20">
         <div className="max-w-5xl mx-auto px-4 py-4 flex items-center gap-3">
-          <span className="text-2xl">💄</span>
-          <h1 className="text-lg font-bold text-gray-800">COMPA</h1>
-          <span className="text-xs text-gray-400">지금 살지 · 기다릴지</span>
+          <h1 className="text-lg font-medium tracking-wide text-ink">compa</h1>
+          <span className="text-xs text-ink/70">지금 살지 · 기다릴지</span>
           <div className="ml-auto flex items-center gap-2">
             <FeedbackButton />
             <SiteManager
@@ -84,44 +83,44 @@ export function HomePage() {
 
       <main className="max-w-5xl mx-auto px-4 py-8 space-y-6">
         <div className="flex flex-col items-center gap-2">
-          <p className="text-gray-500 text-sm">화장품 이름을 검색하면 할인 이력을 분석해드려요</p>
+        <p className="text-ink/70 text-sm">화장품 이름을 검색하면 할인 이력을 분석해드려요</p>
           <div className="w-full flex items-center gap-2">
             <div className="flex-1">
               <SearchBar onSelect={handleSelect} onCollecting={setCollecting} />
             </div>
           </div>
           {preferred && (
-            <p className="text-xs text-gray-400">
-              기준 사이트: <span className="font-semibold text-gray-600">{preferred.flag} {preferred.name}</span>
+            <p className="text-xs text-ink/70">
+              기준 사이트: <span className="font-medium text-ink">{preferred.flag} {preferred.name}</span>
             </p>
           )}
         </div>
 
         {collecting && (
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center gap-2">
-            <span className="animate-spin">🔄</span>
-            <span className="text-sm text-amber-700">백그라운드 수집 중... 잠시 후 결과가 업데이트됩니다</span>
+          <div className="bg-linen border border-ink/10 rounded-md p-4 flex items-center gap-2">
+            <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-ink/20 border-t-moss" />
+            <span className="text-sm text-ink/70">백그라운드 수집 중... 잠시 후 결과가 업데이트됩니다</span>
           </div>
         )}
 
         {loading && (
           <div className="space-y-3 animate-pulse">
-            <div className="h-28 bg-gray-200 rounded-2xl" />
-            <div className="h-20 bg-gray-200 rounded-xl" />
-            <div className="h-20 bg-gray-200 rounded-xl" />
+            <div className="h-28 bg-linen rounded-md" />
+            <div className="h-20 bg-linen rounded-md" />
+            <div className="h-20 bg-linen rounded-md" />
           </div>
         )}
 
         {error && (
-          <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-600 text-sm">{error}</div>
+          <div className="bg-linen border border-clay rounded-md p-4 text-ink text-sm">{error}</div>
         )}
 
         {(data || comparison) && !loading && (
           <div className="space-y-5">
             {data && (
               <div>
-                <h2 className="text-xl font-bold text-gray-900">{data.product.name_kr ?? data.product.name_en}</h2>
-                {data.product.brand && <p className="text-sm text-gray-500">{data.product.brand}</p>}
+                <h2 className="text-xl font-display font-normal text-ink">{data.product.name_kr ?? data.product.name_en}</h2>
+                {data.product.brand && <p className="text-sm text-ink/70">{data.product.brand}</p>}
               </div>
             )}
 
@@ -162,7 +161,7 @@ export function HomePage() {
             )}
             {data && data.events.length === 0 && (
               <div className="text-center py-8">
-                <p className="text-gray-400 text-sm">아직 수집된 할인 이력이 없어요</p>
+                <p className="text-ink/70 text-sm">아직 수집된 할인 이력이 없어요</p>
               </div>
             )}
 
@@ -171,8 +170,7 @@ export function HomePage() {
 
         {!selected && !loading && (
           <div className="space-y-8">
-            <div className="text-center py-16 text-gray-300">
-              <div className="text-6xl mb-4">🔍</div>
+          <div className="text-center py-16 text-ink/70">
               <p className="text-sm">검색어를 입력해 할인 정보를 확인하세요</p>
             </div>
           </div>
