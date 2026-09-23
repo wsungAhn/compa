@@ -114,7 +114,8 @@ def test_at_observed_low_with_discount_is_buy_now() -> None:
 def test_far_above_low_with_near_sale_is_wait() -> None:
     """관측 최저보다 비싸고 정기 세일이 가까우면 기다리라고 한다."""
     events = [_event(70.0, 30), _event(100.0, 0)]
-    rec = _build_recommendation(events, country="US")
+    # 날짜 고정: 실제 오늘 기준이면 블프까지 60일 넘는 시기(예: 9월 하순)에 깨진다.
+    rec = _build_recommendation(events, country="US", today=date(2026, 11, 1))
     assert rec.verdict == "wait"
     assert rec.days_until_next is not None and rec.days_until_next <= 60
     assert rec.above_min_pct is not None and rec.above_min_pct > 10

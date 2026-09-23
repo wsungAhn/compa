@@ -187,7 +187,9 @@ async def search_products(
     )
 
 
-def _build_recommendation(events: list[SaleEvent], country: str | None = None) -> Recommendation:
+def _build_recommendation(
+    events: list[SaleEvent], country: str | None = None, today: date | None = None
+) -> Recommendation:
     """가격 위치 + 정기 세일 달력으로 판단.
 
     이전 구현은 event_type/start_date/end_date에 의존했는데, 스크래핑으로는 미래
@@ -195,7 +197,7 @@ def _build_recommendation(events: list[SaleEvent], country: str | None = None) -
     수집일). 그래서 세 분기가 모두 죽고 폴백 문구만 나갔다. 판단 근거를 관측
     가격 시계열과 규칙으로 열거되는 세일 달력으로 옮긴다.
     """
-    today = date.today()
+    today = today or date.today()
     observations = [
         Observation(
             price=float(e.sale_price),
