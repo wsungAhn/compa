@@ -6,6 +6,7 @@ import { SiteEventsGrid } from '../components/SiteEventsGrid'
 import { EventTimeline } from '../components/EventTimeline'
 import { PriceChart } from '../components/PriceChart'
 import { SiteManager } from '../components/SiteManager'
+import { SiteFooter } from '../components/SiteFooter'
 import { FeedbackButton } from '../components/FeedbackButton'
 import { PremiumBanner } from '../components/PremiumBanner'
 import { useSitePrefs } from '../hooks/useSitePrefs'
@@ -177,9 +178,7 @@ export function HomePage() {
           </div>
         )}
       </main>
-      <footer className="text-center text-xs text-gray-400 py-6">
-        As an Amazon Associate, compa earns from qualifying purchases.
-      </footer>
+      <SiteFooter />
     </div>
   )
 }
