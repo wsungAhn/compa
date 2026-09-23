@@ -171,7 +171,8 @@ class ShopifyBrandScraper(BaseScraper):
 BRANDS: list[tuple[str, str, str]] = [
     ("SK-II 공홈", "www.sk-ii.com", "SK-II"),
     ("Tatcha 공홈", "www.tatcha.com", "Tatcha"),
-    ("La Prairie 공홈", "www.laprairie.com", "La Prairie"),
+    # 루트가 /en-ch(CHF)로 302 — 2026-08-05~09-23 이벤트 822건이 CHF 값을 USD로 저장했다
+    ("La Prairie 공홈", "www.laprairie.com/en-us", "La Prairie"),
     ("Glossier 공홈", "www.glossier.com", "Glossier"),
     # K-beauty (미국 법인몰)
     ("Laneige 공홈", "us.laneige.com", "Laneige"),
