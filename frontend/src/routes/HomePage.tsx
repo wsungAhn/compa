@@ -65,7 +65,7 @@ export function HomePage() {
     <div className="min-h-screen bg-paper">
       <header className="bg-paper border-b border-ink/10 sticky top-0 z-20">
         <div className="max-w-5xl mx-auto px-4 py-4 flex items-center gap-3">
-          <h1 className="text-lg font-medium tracking-wide text-ink">compa</h1>
+          <h1><img src="/brand/compa-wordmark.svg" alt="compa" className="h-6 w-auto" /></h1>
           <span className="text-xs text-ink/70">지금 살지 · 기다릴지</span>
           <div className="ml-auto flex items-center gap-2">
             <FeedbackButton />

@@ -191,7 +191,7 @@ A 방향 AI 이미지 프롬프트 (8단계에서 확장):
 **폰트** (전부 SIL Open Font License — 앱·웹·상업 사용 가능)
 | 용도 | 폰트 | 설정 |
 |---|---|---|
-| 로고 | **Jost** 기반 (Futura 계열 지오메트릭) | 소문자, 자간 +8%, `o` 다이얼 커스텀 |
+| 로고 | **Jost** 기반 (Futura 계열 지오메트릭) | 소문자, 자간 +5%(2026-09-24: 선택 시안 P1-a에 맞춰 +8%에서 조정), wght 450, `o` 1시 방향 쐐기 노치. 정본: `frontend/public/brand/*.svg` ← `docs/brand/logo-svg/build.py` |
 | 제목 | **Fraunces** | 가변축 SOFT 0 · WONK 0, weight 400~500 (장식 억제) |
 | 본문·UI (라틴) | **Inter** | 400/500, 숫자는 tabular-nums (가격 정렬) |
 | 한국어 | **Pretendard** | Inter와 메트릭 호환 |
