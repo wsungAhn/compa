@@ -29,12 +29,12 @@ cd frontend && npm run build && npm run lint
 |--------|------|
 | Backend | Python 3.12+ · FastAPI · Pydantic v2 · SQLAlchemy 2 · Alembic |
 | Task Queue | Celery + Redis (beat: 일일 수집·분류·소셜) |
-| Scraping | Playwright (Google Chrome `/usr/bin/google-chrome-stable`) · httpx · firecrawl · deep-translator |
+| Scraping | Playwright (Google Chrome) · httpx · firecrawl · deep-translator |
 | AI | Claude `claude-sonnet-4-6` (프롬프트 캐싱) / Ollama 로컬 (`USE_LOCAL_AI=true`) |
 | Frontend | React 19 · TypeScript(strict) · Vite · Tailwind CSS v4 · Recharts |
 | DB | PostgreSQL 16 (pg_trgm) · Redis |
 
-> Playwright는 반드시 `executable_path="/usr/bin/google-chrome-stable"`, `args=["--no-sandbox", "--disable-dev-shm-usage"]`
+> Playwright 실행 옵션은 `scrapers/base.py`의 `chrome_launch_kwargs()`를 쓴다 (Linux는 `/usr/bin/google-chrome-stable`, 그 외는 `channel="chrome"`, `CHROME_PATH`로 덮어쓰기 가능; `--no-sandbox`·`--disable-dev-shm-usage` 포함)
 
 ---
 
@@ -114,11 +114,10 @@ backend/app/
 - **[docs/BETA-TASKS.md](docs/BETA-TASKS.md)** — 베타 배포 준비 작업 명세 (T1~T5 + 피드백 결정)
 - **[docs/AUDIT-2026-06-10.md](docs/AUDIT-2026-06-10.md)** — 구현 현황 전방위 감사
 
-## 로컬 스크래핑 도구 (frankencrawler, 2026-07-14 추가)
-- 위치: `~/dev/firecrawl-local` — Firecrawl 호환 self-hosted 스크래핑/미디어 API, v0.12.0
+## 로컬 스크래핑 도구 (frankencrawler)
+- 위치: `~/dev/firecrawl-local` — Firecrawl 호환 self-hosted 스크래핑/미디어 API (버전은 그 레포의 `VERSION` 파일 기준)
 - 상시 실행: `http://localhost:8765` (launchd `com.firecrawl-local`, health: `/health`)
 - SDK: `pip install -e ~/dev/firecrawl-local` → `from firecrawl_local import FirecrawlClient`
 - MCP 도구: `scrape_clean`/`crawl_and_search`/`research_site` + `scrape`/`crawl`/`map_site`/`media_*`
-- `backend/app/core/config.py`에 `firecrawl_url=http://localhost:8765` 기본값 이미 있으나
-  `backend/requirements.txt`에 SDK 미포함 — 2026-07-14 감사 P0-4 참조
-  (`~/agent_hub/docs/design-cross-project-audit-remediation-2026-07-14.md`)
+- `backend/app/core/config.py`에 `firecrawl_url=http://localhost:8765` 기본값이 있고, SDK는
+  `backend/requirements-firecrawl-local.txt`로 설치한다 (CI·Docker 이미지에는 설치하지 않음)
